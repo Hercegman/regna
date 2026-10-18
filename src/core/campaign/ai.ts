@@ -21,13 +21,14 @@ import {
   recruitableUnits,
   startConstruction,
   startRecruitment,
+  disbandRegiment,
   transferProvince,
   beginSiege,
   MAX_RECRUIT_QUEUE,
   MAX_GARRISON_REGIMENTS,
   MAX_ARMY_REGIMENTS,
 } from './actions';
-import { factionFinances } from './economy';
+import { annualNet, factionFinances } from './economy';
 import { getBuildingType } from '../data/buildings';
 import { getUnitType } from '../data/units';
 import { tryGetFaction, INDEPENDENT_ID } from '../data/factions';
@@ -66,9 +67,20 @@ function manageEconomy(state: CampaignState, id: FactionId, rng: Rng): void {
   const provinces = provincesOf(state, id);
   if (provinces.length === 0) return;
 
+  // Before spending anything, pay off what the realm can no longer afford. A
+  // commander who is losing provinces reduces his establishment; waiting for
+  // the treasury to hit zero and having regiments taken away is the failure
+  // state, not the plan.
+  retrench(state, id);
+
   const atWar = countWars(state, id) > 0;
   // Keep enough in hand to pay upkeep for several turns.
-  const reserve = Math.max(500, (finances.armyUpkeep + finances.garrisonUpkeep) * 3);
+  const winterShortfall = Math.max(0, -factionFinances(state, id, 'winter').net);
+  const reserve = Math.max(
+    500,
+    (finances.armyUpkeep + finances.garrisonUpkeep) * 3,
+    winterShortfall * 6,
+  );
 
   // --- recruitment first when threatened, building first when safe
   const threatened = provinces.filter((province) => isThreatened(state, province));
@@ -85,6 +97,58 @@ function manageEconomy(state: CampaignState, id: FactionId, rng: Rng): void {
   // A faction sitting on a fortune and nothing to do raises more troops.
   if (faction.treasury > reserve * 4) {
     recruitWhereNeeded(state, id, provinces, reserve, rng);
+  }
+}
+
+/**
+ * Disbands the troops the realm cannot pay for, cheapest establishment first:
+ * garrison regiments in quiet provinces before anything in the field.
+ */
+function retrench(state: CampaignState, id: FactionId): void {
+  let budget = annualNet(state, id);
+  if (budget >= 0) return;
+  const faction = factionState(state, id);
+  // A realm with money in hand can run a deficit for a while before cutting.
+  const grace = faction.treasury / 8;
+  if (budget + grace >= 0) return;
+
+  const candidates: { upkeep: number; priority: number; disband: () => void }[] = [];
+  for (const province of provincesOf(state, id)) {
+    const exposed = isThreatened(state, province);
+    province.garrison.forEach((regiment, index) => {
+      // Never strip a settlement completely: that invites revolt and capture.
+      if (province.garrison.length <= 2) return;
+      candidates.push({
+        upkeep: getUnitType(regiment.type).upkeep,
+        // Quiet provinces give up their troops first; a threatened one only
+        // when there is nothing else left to cut.
+        priority: exposed ? 2 : 0,
+        disband: () => disbandRegiment(state, province.id, index),
+      });
+    });
+  }
+  // Field regiments are the last to go: an army in being is what keeps the
+  // realm's remaining provinces its own.
+  for (const army of state.armies.values()) {
+    if (army.faction !== id) continue;
+    if (army.regiments.length <= 2) continue;
+    army.regiments.forEach((regiment, index) => {
+      const type = getUnitType(regiment.type);
+      if (type.unitClass === 'general') return;
+      candidates.push({
+        upkeep: type.upkeep,
+        priority: 3,
+        disband: () => {
+          army.regiments.splice(index, 1);
+        },
+      });
+    });
+  }
+  candidates.sort((a, b) => a.priority - b.priority || b.upkeep - a.upkeep);
+  for (const candidate of candidates) {
+    if (budget >= 0) break;
+    candidate.disband();
+    budget += candidate.upkeep;
   }
 }
 
@@ -145,10 +209,18 @@ function buildSomething(
     if (best) ranked.push(best);
   }
   ranked.sort((a, b) => b.score - a.score);
+  // A building is a standing charge as much as a regiment is. The AI tracks
+  // what it has left to spend as it commits, instead of judging every project
+  // against the same untouched balance and then finding it cannot pay for any
+  // of them.
+  let headroom = annualNet(state, id);
   for (const entry of ranked) {
-    const cost = getBuildingType(entry.building).cost;
-    if (faction.treasury - cost < reserve) continue;
-    startConstruction(state, entry.province.id, entry.building);
+    const type = getBuildingType(entry.building);
+    if (faction.treasury - type.cost < reserve) continue;
+    if (headroom - type.upkeep <= 0) continue;
+    if (startConstruction(state, entry.province.id, entry.building).ok) {
+      headroom -= type.upkeep;
+    }
   }
 }
 
@@ -160,6 +232,11 @@ function recruitWhereNeeded(
   rng: Rng,
 ): void {
   const faction = factionState(state, id);
+  // Affordable means more than having the cash today: a regiment is a standing
+  // charge, and raising one that tips the realm into deficit only leads to
+  // disbanding it again a few turns later.
+  let headroom = annualNet(state, id);
+
   const targets = [...provinces]
     .filter(
       (province) =>
@@ -183,9 +260,10 @@ function recruitWhereNeeded(
       (min, role) => (have[role] < have[min] ? role : min),
       'melee' as 'melee' | 'missile' | 'cavalry',
     );
-    const affordable = options.filter(
-      (unit) => faction.treasury - recruitCost(id, unit) >= reserve,
-    );
+    const affordable = options.filter((unit) => {
+      if (faction.treasury - recruitCost(id, unit) < reserve) return false;
+      return headroom - getUnitType(unit).upkeep > 0;
+    });
     if (affordable.length === 0) continue;
     const matching = affordable.filter(
       (unit) => UNIT_ROLE[getUnitType(unit).unitClass] === wanted,
@@ -196,7 +274,9 @@ function recruitWhereNeeded(
       const type = getUnitType(unit);
       return Math.pow(type.tier, 2.2);
     });
-    startRecruitment(state, province.id, pick);
+    if (startRecruitment(state, province.id, pick).ok) {
+      headroom -= getUnitType(pick).upkeep;
+    }
   }
 }
 
@@ -274,6 +354,12 @@ function garrisonFloor(state: CampaignState, province: RegionState): number {
  * same its field armies never grew beyond their original escort.
  */
 function raiseFieldArmies(state: CampaignState, id: FactionId): void {
+  // Before spending anything, pay off what the realm can no longer afford. A
+  // commander who is losing provinces reduces his establishment; waiting for
+  // the treasury to hit zero and having regiments taken away is the failure
+  // state, not the plan.
+  retrench(state, id);
+
   const atWar = countWars(state, id) > 0;
   for (const province of provincesOf(state, id)) {
     if (province.siege) continue;

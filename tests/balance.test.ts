@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { newCampaign } from '../src/core/campaign';
 import {
   administrationCost,
+  annualNet,
   carryingCapacity,
   endTurn,
   factionFinances,
@@ -93,6 +94,37 @@ describe('the treasury', () => {
         .toBeGreaterThan(finances.provinceNet * 0.25);
     }
   }, 120_000);
+});
+
+describe('solvency', () => {
+  it('pays off troops it cannot afford instead of being bankrupted', () => {
+    const state = newCampaign({ seed: 'retrench' });
+    let bankruptcies = 0;
+    let seen = 0;
+    for (let turn = 0; turn < 160; turn++) {
+      endTurn(state);
+      for (const entry of state.log.slice(seen)) {
+        if (entry.text.includes('cannot pay its soldiers')) bankruptcies += 1;
+      }
+      seen = state.log.length;
+    }
+    // Running out of money should be a reverse of fortune, not the ordinary
+    // state of affairs. Factions reduce their establishment before it happens.
+    expect(bankruptcies).toBeLessThan(60);
+  }, 150_000);
+
+  it('budgets on the year rather than the harvest season', () => {
+    const state = newCampaign({ seed: 'annual' });
+    for (let turn = 0; turn < 40; turn++) endTurn(state);
+    for (const [id, faction] of state.factions) {
+      if (!faction.alive || id === INDEPENDENT_ID) continue;
+      const summer = factionFinances(state, id, 'summer').net;
+      const winter = factionFinances(state, id, 'winter').net;
+      // Winter is leaner than summer everywhere there is a harvest to bring in.
+      if (provincesOf(state, id).length > 0) expect(winter).toBeLessThanOrEqual(summer);
+      expect(annualNet(state, id)).toBeCloseTo((summer + winter) / 2, 6);
+    }
+  }, 60_000);
 });
 
 describe('warfare', () => {

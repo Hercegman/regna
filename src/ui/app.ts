@@ -82,6 +82,13 @@ export class App {
     this.campaign = new CampaignScreen(this.host, state, {
       onBattle: (plan) => this.askAboutBattle(plan),
     });
+    // Development aids: `?turns=40` plays forty turns before handing over, and
+    // `?tab=realm` opens a given panel.
+    const params = new URLSearchParams(window.location.search);
+    const turns = Number.parseInt(params.get('turns') ?? '', 10);
+    if (Number.isFinite(turns) && turns > 0) this.campaign.fastForward(Math.min(turns, 400));
+    const tab = params.get('tab');
+    if (tab) this.campaign.openTab(tab);
     this.checkEnd();
   }
 

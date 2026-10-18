@@ -10,7 +10,7 @@
 import type { FactionId, RegionId } from '../types';
 import { characterId } from '../types';
 import type { CampaignState, Character } from './state';
-import { factionState, logEvent, newArmyId } from './state';
+import { characterName, factionState, logEvent, newArmyId } from './state';
 import { FACTIONS, getFaction, INDEPENDENT_ID } from '../data/factions';
 import { generalUnitFor } from '../data/roster';
 import { getRegion } from '../data/regions';
@@ -122,7 +122,7 @@ export function emerge(state: CampaignState, id: FactionId, rng: Rng): boolean {
   const leader: Character = {
     id: characterId(`char-${state.nextCharacterSerial}`),
     faction: id,
-    name: definition.adjective,
+    name: characterName(id, rng),
     command: rng.int(4, 8),
     governance: rng.int(3, 7),
     guile: rng.int(2, 7),

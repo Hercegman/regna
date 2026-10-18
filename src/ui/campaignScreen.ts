@@ -131,6 +131,25 @@ export class CampaignScreen {
     this.renderAll();
   }
 
+  /**
+   * Opens a given panel. Used by the development URL parameters to bring up a
+   * known screen without a sequence of clicks.
+   */
+  openTab(tab: string): void {
+    const known: readonly PanelTab[] = ['province', 'build', 'recruit', 'diplomacy', 'realm'];
+    if ((known as readonly string[]).includes(tab)) {
+      this.tab = tab as PanelTab;
+      this.renderPanel();
+    }
+  }
+
+  /** Plays a number of turns without the player, for development and testing. */
+  fastForward(turns: number): void {
+    for (let i = 0; i < turns; i++) endTurn(this.state);
+    this.selectProvince(this.view.selected);
+    this.renderAll();
+  }
+
   /** Replaces the state, after a battle has been resolved elsewhere. */
   setState(state: CampaignState): void {
     this.state = state;

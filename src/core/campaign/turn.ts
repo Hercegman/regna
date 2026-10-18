@@ -12,6 +12,7 @@ import { characterId, clamp, SETTLEMENT_ORDER, unitTypeId } from '../types';
 import type { CampaignState, Character, RegionState } from './state';
 import {
   CAMPAIGN_END_YEAR,
+  characterName,
   commitRng,
   factionState,
   logEvent,
@@ -399,7 +400,7 @@ function promoteHeir(state: CampaignState, id: FactionId, rng: Rng): void {
   const fresh: Character = {
     id: characterId(`char-${state.nextCharacterSerial}`),
     faction: id,
-    name: getFaction(id).adjective,
+    name: characterName(id, rng),
     command: rng.int(2, 7),
     governance: rng.int(2, 7),
     guile: rng.int(1, 7),
@@ -422,7 +423,7 @@ export function addCharacter(state: CampaignState, id: FactionId, rng: Rng): voi
   const character: Character = {
     id: characterId(`char-${state.nextCharacterSerial}`),
     faction: id,
-    name: getFaction(id).adjective,
+    name: characterName(id, rng),
     command: rng.int(1, 7),
     governance: rng.int(1, 7),
     guile: rng.int(1, 7),

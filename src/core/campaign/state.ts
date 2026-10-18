@@ -236,14 +236,27 @@ const NAME_POOLS: Readonly<Record<string, readonly string[]>> = {
   celtic: ['Domnall', 'Muirchertach', 'Gruffydd', 'Malcolm', 'Donnchad', 'Owain', 'Diarmait', 'Aed'],
 };
 
-function nextCharacter(state: CampaignState, faction: FactionId, rng: Rng, leader: boolean): Character {
+/**
+ * A given name drawn from the faction's own culture. Successors and newly
+ * emerged rulers go through this too, so that a dynasty is never reduced to
+ * being called after its own adjective.
+ */
+export function characterName(faction: FactionId, rng: Rng): string {
   const culture = tryGetFaction(faction)?.culture ?? 'latin_west';
   const pool = NAME_POOLS[culture] ?? NAME_POOLS.latin_west!;
+  const given = rng.pick(pool);
+  // Regnal numbers make a line of rulers legible at a glance.
+  const numeral = rng.int(1, 6);
+  const numerals = ['I', 'II', 'III', 'IV', 'V', 'VI'];
+  return `${given} ${numerals[numeral - 1]}`;
+}
+
+function nextCharacter(state: CampaignState, faction: FactionId, rng: Rng, leader: boolean): Character {
   state.nextCharacterSerial += 1;
   return {
     id: characterId(`char-${state.nextCharacterSerial}`),
     faction,
-    name: rng.pick(pool),
+    name: characterName(faction, rng),
     command: rng.int(leader ? 3 : 1, leader ? 8 : 6),
     governance: rng.int(1, leader ? 8 : 6),
     guile: rng.int(1, leader ? 8 : 6),

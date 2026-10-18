@@ -7,7 +7,7 @@
  */
 import type { FactionId, RegionId } from '../types';
 import { clamp, SETTLEMENT_ORDER } from '../types';
-import type { CampaignState, RegionState } from './state';
+import type { CampaignState, RegionState, Season } from './state';
 import { factionState, provincesOf, strengthOf, wallTier } from './state';
 import { getBuildingType } from '../data/buildings';
 import { getRegion } from '../data/regions';
@@ -61,8 +61,8 @@ export interface ProvinceIncome {
 }
 
 /** Summer harvest brings in the money; winter does not. */
-function seasonFactor(state: CampaignState): number {
-  return state.season === 'summer' ? 1.0 : 0.55;
+export function seasonFactor(season: Season): number {
+  return season === 'summer' ? 1.0 : 0.6;
 }
 
 function buildingEffectSum(
@@ -114,22 +114,26 @@ export function tradeRoutes(state: CampaignState, region: RegionState): number {
   return routes;
 }
 
-export function provinceIncome(state: CampaignState, region: RegionState): ProvinceIncome {
+export function provinceIncome(
+  state: CampaignState,
+  region: RegionState,
+  season: Season = state.season,
+): ProvinceIncome {
   const geography = getRegion(region.id);
   const faction = tryGetFaction(region.owner);
   const traits = faction?.traits ?? {};
-  const season = seasonFactor(state);
+  const harvest = seasonFactor(season);
   const governor = region.governor;
 
   const orderPenalty = 1 - clamp(region.unrest, 0, 100) / 150;
 
   const farmBonus = 1 + buildingEffectSum(region, (e) => e.farming);
   const farming =
-    region.population * 4.5 * geography.fertility * farmBonus * season * orderPenalty;
+    region.population * 4.5 * geography.fertility * farmBonus * harvest * orderPenalty;
 
   const taxRate = TAX_PER_THOUSAND[region.tier] ?? 8;
   const governorBonus = governor ? 1 + governor.governance * 0.02 : 1;
-  const tax = region.population * taxRate * orderPenalty * governorBonus * season;
+  const tax = region.population * taxRate * orderPenalty * governorBonus * harvest;
 
   const tradeBuildings = buildingEffectSum(region, (e) => e.trade);
   const resource = RESOURCE_VALUE[geography.resource] ?? 0;
@@ -189,11 +193,15 @@ export function regimentUpkeep(faction: FactionId, type: ReturnType<typeof getUn
   return type.upkeep * (1 + (traits.upkeep ?? 0));
 }
 
-export function factionFinances(state: CampaignState, id: FactionId): FactionFinances {
+export function factionFinances(
+  state: CampaignState,
+  id: FactionId,
+  season: Season = state.season,
+): FactionFinances {
   let provinceNet = 0;
   let garrisonUpkeep = 0;
   for (const region of provincesOf(state, id)) {
-    provinceNet += provinceIncome(state, region).net;
+    provinceNet += provinceIncome(state, region, season).net;
     for (const regiment of region.garrison) {
       // A regiment at half strength costs half as much to keep.
       const type = getUnitType(regiment.type);
@@ -232,6 +240,19 @@ export function factionFinances(state: CampaignState, id: FactionId): FactionFin
       reported.administration +
       reported.stipend,
   };
+}
+
+/**
+ * What the realm earns across a full year, averaged over both seasons.
+ *
+ * Budgeting on the summer figure is what sent the AI bankrupt every winter:
+ * the harvest pays for an army that the following season cannot keep. A
+ * treasurer plans for the year.
+ */
+export function annualNet(state: CampaignState, id: FactionId): number {
+  const summer = factionFinances(state, id, 'summer').net;
+  const winter = factionFinances(state, id, 'winter').net;
+  return (summer + winter) / 2;
 }
 
 /**
