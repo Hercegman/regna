@@ -1,0 +1,313 @@
+/**
+ * Provincial economy and faction finances.
+ *
+ * The model is deliberately legible: four income streams and two cost streams,
+ * each computed from data the player can see. A province that looks rich should
+ * be rich for a reason the player can point at.
+ */
+import type { FactionId, RegionId } from '../types';
+import { clamp, SETTLEMENT_ORDER } from '../types';
+import type { CampaignState, RegionState } from './state';
+import { factionState, provincesOf, strengthOf, wallTier } from './state';
+import { getBuildingType } from '../data/buildings';
+import { getRegion } from '../data/regions';
+import { landNeighbours, seaNeighbours } from '../data/adjacency';
+import { getUnitType } from '../data/units';
+import { tryGetFaction } from '../data/factions';
+import { INDEPENDENT_ID } from '../data/factions';
+
+/** Tax yield per thousand inhabitants, by settlement rank. */
+const TAX_PER_THOUSAND: Readonly<Record<string, number>> = {
+  village: 7,
+  town: 9,
+  large_town: 11,
+  city: 13,
+  large_city: 15,
+  huge_city: 17,
+};
+
+/** What a province's special resource is worth per trade route. */
+const RESOURCE_VALUE: Readonly<Record<string, number>> = {
+  none: 0,
+  fish: 6,
+  timber: 7,
+  grain: 8,
+  wool: 10,
+  salt: 11,
+  furs: 12,
+  copper: 10,
+  tin: 11,
+  iron: 12,
+  horses: 13,
+  wine: 12,
+  amber: 14,
+  marble: 12,
+  dyes: 15,
+  silk: 20,
+  spices: 20,
+  ivory: 18,
+  silver: 22,
+  gold: 30,
+};
+
+export interface ProvinceIncome {
+  readonly region: RegionId;
+  readonly farming: number;
+  readonly tax: number;
+  readonly trade: number;
+  readonly mining: number;
+  readonly buildingUpkeep: number;
+  readonly net: number;
+}
+
+/** Summer harvest brings in the money; winter does not. */
+function seasonFactor(state: CampaignState): number {
+  return state.season === 'summer' ? 1.0 : 0.55;
+}
+
+function buildingEffectSum(
+  region: RegionState,
+  pick: (effects: ReturnType<typeof getBuildingType>['effects']) => number | undefined,
+): number {
+  let total = 0;
+  for (const id of region.buildings) {
+    const value = pick(getBuildingType(id).effects);
+    if (value) total += value;
+  }
+  return total;
+}
+
+/** Does the province have a working harbour, from geography and buildings? */
+export function hasPort(region: RegionState): boolean {
+  if (!getRegion(region.id).port) return false;
+  for (const id of region.buildings) if (getBuildingType(id).effects.port) return true;
+  // A natural harbour trades even before a quay is built, just less.
+  return true;
+}
+
+/**
+ * Trade routes: adjacent provinces that are actually open for trade, which
+ * means owned by us, by a trade partner or by an ally, and not at war. Sea
+ * routes count double, which is why the maritime republics are rich.
+ */
+export function tradeRoutes(state: CampaignState, region: RegionState): number {
+  const owner = region.owner;
+  let routes = 0;
+  const openTo = (other: RegionId, weight: number): void => {
+    const neighbour = state.regions.get(other);
+    if (!neighbour) return;
+    if (neighbour.owner === owner) {
+      routes += weight * 0.5;
+      return;
+    }
+    if (neighbour.owner === INDEPENDENT_ID) {
+      routes += weight * 0.5;
+      return;
+    }
+    const relation = factionState(state, owner).relations.get(neighbour.owner);
+    const stance = relation?.stance ?? 'neutral';
+    if (stance === 'war') return;
+    routes += stance === 'trade' || stance === 'alliance' ? weight * 1.5 : weight;
+  };
+  for (const other of landNeighbours(region.id)) openTo(other, 1);
+  if (hasPort(region)) for (const other of seaNeighbours(region.id)) openTo(other, 2);
+  return routes;
+}
+
+export function provinceIncome(state: CampaignState, region: RegionState): ProvinceIncome {
+  const geography = getRegion(region.id);
+  const faction = tryGetFaction(region.owner);
+  const traits = faction?.traits ?? {};
+  const season = seasonFactor(state);
+  const governor = region.governor;
+
+  const orderPenalty = 1 - clamp(region.unrest, 0, 100) / 150;
+
+  const farmBonus = 1 + buildingEffectSum(region, (e) => e.farming);
+  const farming =
+    region.population * 4.5 * geography.fertility * farmBonus * season * orderPenalty;
+
+  const taxRate = TAX_PER_THOUSAND[region.tier] ?? 8;
+  const governorBonus = governor ? 1 + governor.governance * 0.02 : 1;
+  const tax = region.population * taxRate * orderPenalty * governorBonus * season;
+
+  const tradeBuildings = buildingEffectSum(region, (e) => e.trade);
+  const resource = RESOURCE_VALUE[geography.resource] ?? 0;
+  const trade = (tradeBuildings + resource * tradeRoutes(state, region)) * orderPenalty;
+
+  const mining = buildingEffectSum(region, (e) => e.mining) * (geography.resource === 'gold' ? 1.6 : 1);
+
+  const buildingUpkeep = (() => {
+    let total = 0;
+    for (const id of region.buildings) total += getBuildingType(id).upkeep;
+    return total;
+  })();
+
+  const economyMultiplier = 1 + (traits.economy ?? 0);
+  const tradeMultiplier = 1 + (traits.trade ?? 0);
+
+  const gross =
+    (farming + tax + mining) * economyMultiplier + trade * tradeMultiplier;
+
+  return {
+    region: region.id,
+    farming: Math.round(farming * economyMultiplier),
+    tax: Math.round(tax * economyMultiplier),
+    trade: Math.round(trade * tradeMultiplier),
+    mining: Math.round(mining * economyMultiplier),
+    buildingUpkeep: Math.round(buildingUpkeep),
+    net: Math.round(gross - buildingUpkeep),
+  };
+}
+
+export interface FactionFinances {
+  readonly faction: FactionId;
+  readonly provinceNet: number;
+  readonly armyUpkeep: number;
+  readonly garrisonUpkeep: number;
+  readonly stipend: number;
+  readonly net: number;
+}
+
+/** Upkeep of one regiment, after the faction's upkeep trait. */
+export function regimentUpkeep(faction: FactionId, type: ReturnType<typeof getUnitType>): number {
+  const traits = tryGetFaction(faction)?.traits ?? {};
+  return type.upkeep * (1 + (traits.upkeep ?? 0));
+}
+
+export function factionFinances(state: CampaignState, id: FactionId): FactionFinances {
+  let provinceNet = 0;
+  let garrisonUpkeep = 0;
+  for (const region of provincesOf(state, id)) {
+    provinceNet += provinceIncome(state, region).net;
+    for (const regiment of region.garrison) {
+      // A regiment at half strength costs half as much to keep.
+      const type = getUnitType(regiment.type);
+      const fraction = regiment.soldiers / type.soldiers;
+      garrisonUpkeep += regimentUpkeep(id, type) * fraction;
+    }
+  }
+  let armyUpkeep = 0;
+  for (const army of state.armies.values()) {
+    if (army.faction !== id) continue;
+    for (const regiment of army.regiments) {
+      const type = getUnitType(regiment.type);
+      const fraction = regiment.soldiers / type.soldiers;
+      armyUpkeep += regimentUpkeep(id, type) * fraction;
+    }
+  }
+  const stipend = tryGetFaction(id)?.traits.stipend ?? 0;
+  // The reported components are rounded, and the total is computed from those
+  // rounded figures rather than from the raw ones. A breakdown the player can
+  // see must add up to the total the player is charged.
+  const reported = {
+    provinceNet: Math.round(provinceNet),
+    armyUpkeep: Math.round(armyUpkeep),
+    garrisonUpkeep: Math.round(garrisonUpkeep),
+    stipend,
+  };
+  return {
+    faction: id,
+    ...reported,
+    net: reported.provinceNet - reported.armyUpkeep - reported.garrisonUpkeep + reported.stipend,
+  };
+}
+
+/**
+ * Public order. Positive values are calm; the province revolts when unrest
+ * reaches 100, and unrest moves towards the equilibrium implied by this score.
+ */
+export function publicOrder(state: CampaignState, region: RegionState): number {
+  const faction = tryGetFaction(region.owner);
+  let order = 4;
+  order += buildingEffectSum(region, (e) => e.order);
+  order += (faction?.traits.order ?? 0);
+  if (region.governor) order += region.governor.governance;
+
+  // A garrison keeps the peace, with diminishing returns.
+  const garrison = strengthOf(region.garrison);
+  order += Math.min(8, Math.sqrt(garrison) / 4);
+
+  // Walls make a town defensible against its own population too.
+  const walls = wallTier(region);
+  order += ['none', 'palisade', 'wooden', 'stone', 'large_stone', 'epic'].indexOf(walls) * 0.5;
+
+  // The wrong faith is the single largest source of trouble.
+  if (faction && region.religion !== faction.religion) {
+    order -= 6;
+    const sameFamily =
+      (faction.religion === 'catholic' && region.religion === 'orthodox') ||
+      (faction.religion === 'orthodox' && region.religion === 'catholic') ||
+      (faction.religion === 'sunni' && region.religion === 'shia') ||
+      (faction.religion === 'shia' && region.religion === 'sunni');
+    if (sameFamily) order += 3;
+  }
+
+  // Distance from the capital, measured in provinces, not kilometres.
+  const capital = faction ? factionState(state, region.owner).capital : undefined;
+  if (capital && capital !== region.id) {
+    order -= Math.min(6, distanceInProvinces(capital, region.id) * 0.7);
+  }
+
+  // Recent conquest: the first few years under a new lord are the worst.
+  const held = state.turn - region.ownedSince;
+  if (held < 12) order -= (12 - held) * 0.5;
+
+  // Big cities are harder to police than villages.
+  order -= SETTLEMENT_ORDER.indexOf(region.tier) * 0.8;
+
+  if (region.siege) order -= 5;
+  return order;
+}
+
+/** Breadth-first province distance, capped so the search stays cheap. */
+export function distanceInProvinces(from: RegionId, to: RegionId, cap = 12): number {
+  if (from === to) return 0;
+  let frontier: RegionId[] = [from];
+  const seen = new Set<RegionId>([from]);
+  for (let depth = 1; depth <= cap; depth++) {
+    const next: RegionId[] = [];
+    for (const current of frontier) {
+      for (const neighbour of landNeighbours(current)) {
+        if (neighbour === to) return depth;
+        if (seen.has(neighbour)) continue;
+        seen.add(neighbour);
+        next.push(neighbour);
+      }
+      for (const neighbour of seaNeighbours(current)) {
+        if (neighbour === to) return depth + 1;
+        if (seen.has(neighbour)) continue;
+        seen.add(neighbour);
+        next.push(neighbour);
+      }
+    }
+    if (next.length === 0) break;
+    frontier = next;
+  }
+  return cap;
+}
+
+/** Population growth for one turn, as a fraction of current population. */
+export function growthRate(state: CampaignState, region: RegionState): number {
+  const geography = getRegion(region.id);
+  const faction = tryGetFaction(region.owner);
+  let rate = 0.004 * geography.fertility;
+  rate += buildingEffectSum(region, (e) => e.growth);
+  rate += faction?.traits.growth ? faction.traits.growth * 0.01 : 0;
+  rate -= clamp(region.unrest, 0, 100) / 100 * 0.01;
+  if (region.siege) rate = -0.02;
+  if (state.season === 'winter') rate *= 0.5;
+  return rate;
+}
+
+/** Population at which the settlement is ready for the next rank. */
+export function tierThreshold(tier: string): number {
+  switch (tier) {
+    case 'village': return 8;
+    case 'town': return 14;
+    case 'large_town': return 22;
+    case 'city': return 32;
+    case 'large_city': return 48;
+    default: return Infinity;
+  }
+}

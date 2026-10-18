@@ -934,6 +934,15 @@ export function tryGetFaction(id: FactionId): Faction | undefined {
   return BY_ID.get(id);
 }
 
+/**
+ * Display name for any owner id. The independents are an owner but not a
+ * faction, so anything that writes a message must go through this rather than
+ * through getFaction.
+ */
+export function factionName(id: FactionId): string {
+  return BY_ID.get(id)?.name ?? 'the independent lords';
+}
+
 /** Factions on the map at campaign start. */
 export function startingFactions(startYear: number): readonly Faction[] {
   return FACTIONS.filter((faction) => faction.appearsIn <= startYear);
