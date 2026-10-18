@@ -243,13 +243,63 @@ const NAME_POOLS: Readonly<Record<string, readonly string[]>> = {
  */
 export function characterName(faction: FactionId, rng: Rng): string {
   const culture = tryGetFaction(faction)?.culture ?? 'latin_west';
-  const pool = NAME_POOLS[culture] ?? NAME_POOLS.latin_west!;
+  const pool =
+    FACTION_NAME_POOLS[faction as string] ?? NAME_POOLS[culture] ?? NAME_POOLS.latin_west!;
   const given = rng.pick(pool);
   // Regnal numbers make a line of rulers legible at a glance.
   const numeral = rng.int(1, 6);
   const numerals = ['I', 'II', 'III', 'IV', 'V', 'VI'];
   return `${given} ${numerals[numeral - 1]}`;
 }
+
+/**
+ * Dynastic names for the factions where a culture-wide pool is too coarse.
+ *
+ * The west-Slavic pool serves Poland, Bohemia, Croatia and Hungary at once,
+ * which produced Croatian kings called Mieszko. Where a realm has a
+ * recognisable line of its own, it gets one.
+ */
+const FACTION_NAME_POOLS: Readonly<Record<string, readonly string[]>> = {
+  croatia: ['Kresimir', 'Zvonimir', 'Stjepan', 'Tomislav', 'Dmitar', 'Petar', 'Branimir', 'Mislav'],
+  hungary: ['Bela', 'Laszlo', 'Geza', 'Kalman', 'Andras', 'Imre', 'Istvan', 'Lajos'],
+  poland: ['Boleslaw', 'Mieszko', 'Wladyslaw', 'Kazimierz', 'Leszek', 'Przemysl', 'Henryk'],
+  bohemia: ['Vratislav', 'Sobeslav', 'Vladislav', 'Premysl', 'Ottokar', 'Jaromir', 'Vaclav'],
+  serbia: ['Stefan', 'Vukan', 'Uros', 'Dragutin', 'Milutin', 'Dusan', 'Lazar'],
+  bosnia: ['Kulin', 'Stjepan', 'Tvrtko', 'Ninoslav', 'Dabisa', 'Ostoja'],
+  bulgaria: ['Asen', 'Kaloyan', 'Petar', 'Boril', 'Konstantin', 'Ivan', 'Mihail'],
+  ragusa: ['Marin', 'Nikola', 'Junije', 'Vlaho', 'Damjan', 'Lovro'],
+  england: ['William', 'Henry', 'Richard', 'Edward', 'Stephen', 'John', 'Harold'],
+  france: ['Philippe', 'Louis', 'Charles', 'Robert', 'Henri', 'Jean'],
+  scotland: ['Malcolm', 'Alexander', 'David', 'Donnchad', 'Uilleam', 'Robert'],
+  ireland: ['Domnall', 'Muirchertach', 'Diarmait', 'Toirdelbach', 'Ruaidri', 'Brian'],
+  wales: ['Gruffydd', 'Owain', 'Llywelyn', 'Dafydd', 'Rhys', 'Madog'],
+  milan: ['Azzone', 'Luchino', 'Galeazzo', 'Matteo', 'Bernabo'],
+  papal_states: ['Gregorius', 'Urbanus', 'Innocentius', 'Alexander', 'Clemens', 'Honorius'],
+  lithuania: ['Mindaugas', 'Gediminas', 'Algirdas', 'Kestutis', 'Vytautas'],
+  teutonic_order: ['Hermann', 'Konrad', 'Siegfried', 'Winrich', 'Ulrich'],
+  wallachia: ['Basarab', 'Mircea', 'Vlad', 'Radu', 'Dan'],
+  albania: ['Gjergj', 'Lek', 'Gjon', 'Pal', 'Arianit'],
+  denmark: ['Knut', 'Valdemar', 'Erik', 'Svend', 'Niels', 'Harald'],
+  norway: ['Harald', 'Olav', 'Magnus', 'Sigurd', 'Haakon', 'Eystein'],
+  sweden: ['Birger', 'Erik', 'Knut', 'Sverker', 'Magnus', 'Valdemar'],
+  byzantium: ['Alexios', 'Ioannes', 'Manuel', 'Andronikos', 'Isaakios', 'Konstantinos'],
+  kievan_rus: ['Vsevolod', 'Mstislav', 'Yaropolk', 'Izyaslav', 'Rostislav', 'Sviatopolk'],
+  muscovy: ['Ivan', 'Dmitri', 'Vasili', 'Yuri', 'Simeon', 'Daniil'],
+  novgorod: ['Mstislav', 'Yaroslav', 'Vsevolod', 'Aleksandr', 'Gavril'],
+  venice: ['Vitale', 'Domenico', 'Pietro', 'Ordelafo', 'Enrico', 'Sebastiano'],
+  genoa: ['Guglielmo', 'Simone', 'Oberto', 'Nicolo', 'Lanfranco'],
+  castile: ['Alfonso', 'Sancho', 'Fernando', 'Enrique', 'Pedro'],
+  aragon: ['Ramiro', 'Pedro', 'Jaime', 'Alfonso', 'Martin'],
+  portugal: ['Afonso', 'Sancho', 'Dinis', 'Duarte', 'Joao'],
+  hre: ['Heinrich', 'Konrad', 'Friedrich', 'Otto', 'Rudolf', 'Albrecht'],
+  seljuks: ['Malik', 'Alp', 'Tutush', 'Berkyaruq', 'Sanjar', 'Mahmud'],
+  ottomans: ['Osman', 'Orhan', 'Murad', 'Bayezid', 'Mehmed', 'Selim'],
+  fatimids: ['Mustansir', 'Mustali', 'Amir', 'Hafiz', 'Zafir'],
+  almoravids: ['Yusuf', 'Ali', 'Tashfin', 'Ibrahim', 'Ishaq'],
+  mali: ['Sundiata', 'Mansa Uli', 'Sakura', 'Musa', 'Maghan', 'Suleyman'],
+  georgia: ['David', 'Giorgi', 'Bagrat', 'Demetre', 'Tamar'],
+  armenia: ['Levon', 'Toros', 'Ruben', 'Hetum', 'Konstantin'],
+};
 
 function nextCharacter(state: CampaignState, faction: FactionId, rng: Rng, leader: boolean): Character {
   state.nextCharacterSerial += 1;
