@@ -398,6 +398,7 @@ export function sortieFromGarrison(
     movement: 0,
     embarked: false,
   };
+  army.movement = movementBudget(state, army);
   state.armies.set(army.id, army);
   return ok;
 }
