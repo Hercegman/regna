@@ -27,4 +27,5 @@ export * from './diplomacy';
 export * from './resolve';
 export * from './emergence';
 export * from './turn';
+export * from './save';
 export { takeAiTurn } from './ai';

@@ -118,4 +118,10 @@ export const FIELD_DEPTH = 1000;
 /** Simulation timestep in seconds. */
 export const TICK = 0.25;
 /** A battle is a draw if neither side breaks within this many seconds. */
-export const BATTLE_TIME_LIMIT = 60 * 45;
+export const BATTLE_TIME_LIMIT = 60 * 30;
+/**
+ * If neither side has lost a man for this long, the armies have disengaged and
+ * the day is over. Without this a stand-off runs to the time limit, which costs
+ * the campaign a great deal of simulation for no result.
+ */
+export const STALEMATE_SECONDS = 60 * 5;

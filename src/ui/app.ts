@@ -11,6 +11,7 @@ import { FACTIONS, factionName } from '../core/data/factions';
 import { CampaignScreen } from './campaignScreen';
 import { BattleScreen } from './battleScreen';
 import { renderFactionSelect } from './factionSelect';
+import { browserSaveMeta, loadFromBrowser, uploadSave } from './persistence';
 import { clear, count, el } from './dom';
 
 export class App {
@@ -40,7 +41,33 @@ export class App {
   }
 
   private showFactionSelect(): void {
-    renderFactionSelect(this.host, CAMPAIGN_START_YEAR, (id) => this.startCampaign(id));
+    const meta = browserSaveMeta();
+    renderFactionSelect(this.host, CAMPAIGN_START_YEAR, (id) => this.startCampaign(id), {
+      ...(meta
+        ? {
+            resume: {
+              label: `Continue ${factionName(meta.faction as FactionId)}, ${meta.year}`,
+              onResume: () => {
+                const loaded = loadFromBrowser();
+                if (!loaded) return;
+                this.state = loaded;
+                this.openCampaign();
+              },
+            },
+          }
+        : {}),
+      onImport: () => {
+        void uploadSave()
+          .then((loaded) => {
+            this.state = loaded;
+            this.openCampaign();
+          })
+          .catch(() => {
+            // A cancelled file dialog or an unreadable file leaves the player
+            // exactly where they were.
+          });
+      },
+    });
   }
 
   private startCampaign(player: FactionId): void {

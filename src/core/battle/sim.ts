@@ -16,7 +16,7 @@ import type {
   BattleUnit,
   Side,
 } from './types';
-import { BATTLE_TIME_LIMIT, FIELD_DEPTH, FIELD_WIDTH, TICK } from './types';
+import { BATTLE_TIME_LIMIT, FIELD_DEPTH, FIELD_WIDTH, STALEMATE_SECONDS, TICK } from './types';
 import { flatTerrain, ridgeTerrain } from './terrain';
 import { planSide } from './ai';
 
@@ -28,6 +28,17 @@ export interface BattleState {
   finished: boolean;
   result: BattleResult | undefined;
   terrainHeight: (point: Point) => number;
+  /** Units by id. A battle resolves thousands of ticks; a scan per lookup is
+   *  the difference between a campaign turn taking milliseconds and seconds. */
+  readonly byId: ReadonlyMap<string, BattleUnit>;
+  /** Share of each side that has broken, sampled once at the start of a tick
+   *  so that the order units are processed in cannot change their morale. */
+  routed: { attacker: number; defender: number };
+  /** Total soldiers standing when a casualty was last inflicted, and when. */
+  lastCasualtyAt: number;
+  lastTotal: number;
+  /** True once the first casualty has been inflicted. */
+  engaged: boolean;
 }
 
 export function createBattle(setup: BattleSetup): BattleState {
@@ -35,14 +46,20 @@ export function createBattle(setup: BattleSetup): BattleState {
     setup.terrain === 'hills' || setup.terrain === 'mountains'
       ? ridgeTerrain(setup.terrain)
       : flatTerrain(setup.terrain);
+  const units = setup.units.map((unit) => ({ ...unit, engagedWith: [...unit.engagedWith] }));
   return {
     setup,
-    units: setup.units.map((unit) => ({ ...unit, engagedWith: [...unit.engagedWith] })),
+    units,
     time: 0,
     rng: new Rng(setup.seed),
     finished: false,
     result: undefined,
     terrainHeight: (point) => terrain.height(point),
+    byId: new Map(units.map((unit) => [unit.id, unit])),
+    routed: { attacker: 0, defender: 0 },
+    lastCasualtyAt: 0,
+    lastTotal: units.reduce((sum, unit) => sum + unit.soldiers, 0),
+    engaged: false,
   };
 }
 
@@ -117,11 +134,18 @@ export function moraleThreshold(state: BattleState, unit: BattleUnit): number {
     unit.side === 'attacker' ? state.setup.attackerCommand : state.setup.defenderCommand;
   threshold += command * 0.6;
   // Troops that have seen their own side break lose heart.
-  threshold -= routedFraction(state, unit.side) * 8;
+  threshold -= state.routed[unit.side] * 8;
   if (has(unit, 'berserk')) threshold += 6;
   if (has(unit, 'highly_trained')) threshold += 2;
   if (state.setup.isWinter) threshold -= 1;
   return Math.max(3, threshold);
+}
+
+function sampleRouted(state: BattleState): void {
+  state.routed = {
+    attacker: routedFraction(state, 'attacker'),
+    defender: routedFraction(state, 'defender'),
+  };
 }
 
 function routedFraction(state: BattleState, side: Side): number {
@@ -208,7 +232,7 @@ function applyMovement(state: BattleState, dt: number): void {
 
     const order = unit.order;
     if (order.kind === 'attack' && order.targetUnit) {
-      const target = state.units.find((other) => other.id === order.targetUnit);
+      const target = state.byId.get(order.targetUnit);
       if (target && target.stance !== 'destroyed' && !target.fled) {
         const gap = distance(unit.position, target.position);
         const reach = contactDistance(unit, target);
@@ -227,7 +251,7 @@ function applyMovement(state: BattleState, dt: number): void {
     }
 
     if (order.kind === 'skirmish' && order.targetUnit) {
-      const target = state.units.find((other) => other.id === order.targetUnit);
+      const target = state.byId.get(order.targetUnit);
       if (target && target.stance !== 'destroyed' && !target.fled) {
         const type = getUnitType(unit.type);
         const gap = distance(unit.position, target.position);
@@ -384,7 +408,7 @@ function applyMelee(state: BattleState, dt: number): void {
   for (const unit of state.units) {
     if (unit.stance !== 'melee') continue;
     for (const otherId of unit.engagedWith) {
-      const other = state.units.find((candidate) => candidate.id === otherId);
+      const other = state.byId.get(otherId);
       if (!other || other.stance === 'destroyed') continue;
 
       const attack = attackPower(state, unit, other);
@@ -496,7 +520,21 @@ function startingStrength(setup: BattleSetup, side: Side): number {
 function checkVictory(state: BattleState): void {
   const attacker = sideStrength(state, 'attacker');
   const defender = sideStrength(state, 'defender');
-  if (attacker > 0 && defender > 0 && state.time < BATTLE_TIME_LIMIT) return;
+
+  // Track whether anyone is still being hurt. Armies that have drawn apart and
+  // stopped killing each other have ended the battle, whatever the clock says.
+  const total = state.units.reduce((sum, unit) => sum + unit.soldiers, 0);
+  if (total < state.lastTotal - 0.5) {
+    state.lastTotal = total;
+    state.lastCasualtyAt = state.time;
+    state.engaged = true;
+  }
+  // The rule applies only after the armies have actually come to blows. Two
+  // lines half a kilometre apart are marching towards each other, not standing
+  // off, and cutting the battle short there would end it before it began.
+  const stalled = state.engaged && state.time - state.lastCasualtyAt > STALEMATE_SECONDS;
+
+  if (attacker > 0 && defender > 0 && state.time < BATTLE_TIME_LIMIT && !stalled) return;
 
   const outcome =
     attacker <= 0 && defender <= 0
@@ -552,6 +590,7 @@ export function stepBattle(state: BattleState): void {
     planSide(state, 'defender');
   }
 
+  sampleRouted(state);
   applyMovement(state, dt);
   applyMissiles(state, dt);
   applyMelee(state, dt);

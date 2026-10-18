@@ -12,6 +12,8 @@ import type { Army, CampaignState, RegionState } from './state';
 import { factionState, provincesOf, strengthOf } from './state';
 import {
   availableBuildings,
+  mergeArmies,
+  sortieFromGarrison,
   isAtWar,
   militaryStrength,
   moveArmy,
@@ -22,6 +24,8 @@ import {
   transferProvince,
   beginSiege,
   MAX_RECRUIT_QUEUE,
+  MAX_GARRISON_REGIMENTS,
+  MAX_ARMY_REGIMENTS,
 } from './actions';
 import { factionFinances } from './economy';
 import { getBuildingType } from '../data/buildings';
@@ -127,17 +131,25 @@ function buildSomething(
   const faction = factionState(state, id);
   const candidates = provinces.filter((province) => !province.construction && !province.siege);
   if (candidates.length === 0) return;
-  // Build in the province where the best available option scores highest.
-  let best: { province: RegionState; building: BuildingId; score: number } | undefined;
+
+  // A state with an idle province and money in the treasury starts something
+  // there. Building in only one province a turn is what let the AI accumulate
+  // a fortune it never used.
+  const ranked: { province: RegionState; building: BuildingId; score: number }[] = [];
   for (const province of candidates) {
+    let best: { province: RegionState; building: BuildingId; score: number } | undefined;
     for (const building of availableBuildings(state, province.id)) {
-      const cost = getBuildingType(building).cost;
-      if (faction.treasury - cost < reserve) continue;
       const score = buildingScore(state, province, building) + rng.float(0, 0.3);
       if (!best || score > best.score) best = { province, building, score };
     }
+    if (best) ranked.push(best);
   }
-  if (best) startConstruction(state, best.province.id, best.building);
+  ranked.sort((a, b) => b.score - a.score);
+  for (const entry of ranked) {
+    const cost = getBuildingType(entry.building).cost;
+    if (faction.treasury - cost < reserve) continue;
+    startConstruction(state, entry.province.id, entry.building);
+  }
 }
 
 function recruitWhereNeeded(
@@ -149,10 +161,15 @@ function recruitWhereNeeded(
 ): void {
   const faction = factionState(state, id);
   const targets = [...provinces]
-    .filter((province) => !province.siege && province.recruitQueue.length < MAX_RECRUIT_QUEUE)
+    .filter(
+      (province) =>
+        !province.siege &&
+        province.recruitQueue.length < MAX_RECRUIT_QUEUE &&
+        province.garrison.length + province.recruitQueue.length < MAX_GARRISON_REGIMENTS,
+    )
     .sort((a, b) => strengthOf(a.garrison) - strengthOf(b.garrison));
 
-  for (const province of targets.slice(0, 3)) {
+  for (const province of targets) {
     const options = recruitableUnits(state, province.id);
     if (options.length === 0) continue;
     // Prefer a balanced garrison: whatever role is thinnest here.
@@ -210,7 +227,7 @@ function manageDiplomacy(state: CampaignState, id: FactionId, rng: Rng): void {
         proposeTrade(state, id, other);
       }
     }
-    if (current.stance === 'trade' && relation(state, other, id).attitude > 50 && rng.chance(0.12)) {
+    if (current.stance === 'trade' && relation(state, other, id).attitude > 62 && rng.chance(0.05)) {
       proposeAlliance(state, id, other);
     }
   }
@@ -234,6 +251,8 @@ function manageDiplomacy(state: CampaignState, id: FactionId, rng: Rng): void {
 // ---------------------------------------------------------------------------
 
 function manageArmies(state: CampaignState, id: FactionId, rng: Rng): void {
+  raiseFieldArmies(state, id);
+  consolidateArmies(state, id);
   const armies = [...state.armies.values()].filter((army) => army.faction === id);
   for (const army of armies) {
     if (!state.armies.has(army.id)) continue;
@@ -242,9 +261,83 @@ function manageArmies(state: CampaignState, id: FactionId, rng: Rng): void {
   }
 }
 
+/** Garrison a province needs for itself, before anything can march away. */
+function garrisonFloor(state: CampaignState, province: RegionState): number {
+  const rank = SETTLEMENT_ORDER.indexOf(province.tier) + 1;
+  const base = 120 + rank * 70;
+  return isThreatened(state, province) ? base * 2 : base;
+}
+
+/**
+ * Marches the surplus of a garrison into the field. A medieval state kept its
+ * towns held and campaigned with what it could spare, and until the AI did the
+ * same its field armies never grew beyond their original escort.
+ */
+function raiseFieldArmies(state: CampaignState, id: FactionId): void {
+  const atWar = countWars(state, id) > 0;
+  for (const province of provincesOf(state, id)) {
+    if (province.siege) continue;
+    const floor = garrisonFloor(state, province);
+    const strength = strengthOf(province.garrison);
+    if (strength <= floor) continue;
+    // In peacetime a state keeps a wider margin before it musters a field army.
+    if (!atWar && strength <= floor * 1.8) continue;
+
+    // Send the best troops and leave the militia on the walls.
+    const spare: number[] = [];
+    let remaining = strength - floor;
+    const ordered = province.garrison
+      .map((regiment, index) => ({ regiment, index }))
+      .sort((a, b) => getUnitType(b.regiment.type).tier - getUnitType(a.regiment.type).tier);
+    for (const entry of ordered) {
+      if (entry.regiment.soldiers > remaining) continue;
+      spare.push(entry.index);
+      remaining -= entry.regiment.soldiers;
+      if (remaining <= 0) break;
+    }
+    if (spare.length === 0) continue;
+    sortieFromGarrison(state, province.id, spare);
+  }
+}
+
+/** Two of our armies standing in the same province become one. */
+function consolidateArmies(state: CampaignState, id: FactionId): void {
+  const byLocation = new Map<RegionId, Army[]>();
+  for (const army of state.armies.values()) {
+    if (army.faction !== id) continue;
+    const list = byLocation.get(army.location) ?? [];
+    list.push(army);
+    byLocation.set(army.location, list);
+  }
+  for (const armies of byLocation.values()) {
+    if (armies.length < 2) continue;
+    const [first, ...rest] = armies;
+    if (!first) continue;
+    for (const other of rest) {
+      if (first.regiments.length + other.regiments.length > MAX_ARMY_REGIMENTS) continue;
+      mergeArmies(state, first.id, other.id);
+    }
+  }
+}
+
 function actWithArmy(state: CampaignState, army: Army, rng: Rng): void {
   const own = strengthOf(army.regiments);
   if (own === 0) return;
+
+  // 0. An army that is already besieging a place either storms it or stays to
+  // starve it out. Marching off to the next province, as it used to, left a
+  // trail of abandoned sieges and almost nothing ever fell.
+  const here = state.regions.get(army.location);
+  if (here?.siege && here.siege.besieger === army.faction) {
+    const odds = assaultOdds(state, army.location, army.faction, army.regiments);
+    const defenders = strengthOf(here.garrison);
+    const impatient = here.siege.turns >= 6;
+    if (own > defenders * (2 + odds * 4) && (impatient || rng.chance(0.35))) {
+      const plan = planBattle(state, army.location, [army], [], { isAssault: true });
+      applyBattleResult(state, plan, autoResolve(plan));
+    }
+    return;
+  }
 
   // 1. Relieve a besieged province of our own, if one is next door.
   const besieged = [...state.regions.values()].find(
@@ -271,13 +364,58 @@ function actWithArmy(state: CampaignState, army: Army, rng: Rng): void {
     }
   }
 
-  // 3. Otherwise garrison the most threatened province we can reach.
+  // 3. Relieve the most threatened province we can reach in one march.
   const home = [...state.regions.values()]
     .filter((province) => province.owner === army.faction && isThreatened(state, province))
     .sort((a, b) => strengthOf(a.garrison) - strengthOf(b.garrison))[0];
   if (home && home.id !== army.location && landNeighbours(army.location).includes(home.id)) {
     attemptMove(state, army, home.id, rng);
+    return;
   }
+
+  // 4. Otherwise march towards the nearest enemy province. An army that only
+  // ever considers its immediate neighbours never reaches the war.
+  const step = stepTowardsEnemy(state, army);
+  if (step) attemptMove(state, army, step, rng);
+}
+
+/**
+ * The first province on the shortest land route to the nearest enemy. A
+ * breadth-first search over at most a dozen provinces, which is cheap enough
+ * to run for every army every turn.
+ */
+function stepTowardsEnemy(state: CampaignState, army: Army): RegionId | undefined {
+  const hostile = (id: RegionId): boolean => {
+    const province = state.regions.get(id);
+    if (!province || province.owner === army.faction) return false;
+    return province.owner === INDEPENDENT_ID || isAtWar(state, army.faction, province.owner);
+  };
+  const seen = new Set<RegionId>([army.location]);
+  // Each entry remembers the first step that led to it.
+  let frontier: { id: RegionId; first: RegionId }[] = landNeighbours(army.location).map((id) => ({
+    id,
+    first: id,
+  }));
+  for (const entry of frontier) seen.add(entry.id);
+
+  for (let depth = 0; depth < 8 && frontier.length > 0; depth++) {
+    for (const entry of frontier) {
+      if (hostile(entry.id)) return entry.first;
+    }
+    const next: { id: RegionId; first: RegionId }[] = [];
+    for (const entry of frontier) {
+      // Do not plan a route through a province we would have to fight for.
+      const province = state.regions.get(entry.id);
+      if (!province || province.owner !== army.faction) continue;
+      for (const neighbour of landNeighbours(entry.id)) {
+        if (seen.has(neighbour)) continue;
+        seen.add(neighbour);
+        next.push({ id: neighbour, first: entry.first });
+      }
+    }
+    frontier = next;
+  }
+  return undefined;
 }
 
 function candidateTargets(state: CampaignState, army: Army): RegionId[] {
@@ -307,7 +445,7 @@ function targetScore(state: CampaignState, army: Army, target: RegionId): number
   // Walls make an assault expensive; the AI respects that.
   const penalty = assaultOdds(state, target, army.faction, army.regiments);
   const ratio = own / Math.max(1, defenders);
-  if (ratio < 1.2 + penalty * 2) return 0;
+  if (ratio < 1.15 + penalty) return 0;
 
   let score = (SETTLEMENT_ORDER.indexOf(province.tier) + 1) * 2 + province.population / 4;
   score += ratio;

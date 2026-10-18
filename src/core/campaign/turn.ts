@@ -271,8 +271,14 @@ function progressSieges(state: CampaignState, rng: Rng): void {
       transferProvince(state, region.id, siege.besieger);
       continue;
     }
-    const hopeless = siege.turns > 6 && strengthOf(region.garrison) < region.population * 10;
-    if (hopeless && rng.chance(0.18 + siege.turns * 0.02)) {
+    const besiegers = [...state.armies.values()]
+      .filter((army) => army.location === region.id && army.faction === siege.besieger)
+      .reduce((sum, army) => sum + strengthOf(army.regiments), 0);
+    // A garrison yields when it is badly outnumbered and no relief has come.
+    // The old test compared the garrison against the town's population, which
+    // almost nothing satisfied, so sieges never ended in surrender at all.
+    const hopeless = siege.turns > 3 && besiegers > strengthOf(region.garrison) * 2.5;
+    if (hopeless && rng.chance(0.12 + siege.turns * 0.04)) {
       logEvent(
         state,
         region.owner,

@@ -56,6 +56,7 @@ import type { MapView } from '../render/map';
 import { drawMap, provinceAt } from '../render/map';
 import { createCamera, panCamera, zoomCamera } from '../render/projection';
 import { bar, clear, count, el, money, pretty, row, swatch } from './dom';
+import { downloadSave, saveToBrowser } from './persistence';
 
 export interface CampaignScreenHooks {
   /** Hand a battle to the battle screen; resolve when the player is done. */
@@ -307,6 +308,19 @@ export class CampaignScreen {
       el('div', { class: 'top-right' },
         el('span', { class: 'coin' }, count(treasury)),
         el('span', { class: finances.net >= 0 ? 'income good' : 'income bad' }, money(finances.net)),
+        el('button', {
+          class: 'small',
+          title: 'Save to this browser',
+          onClick: () => {
+            const outcome = saveToBrowser(this.state);
+            this.flash(outcome.ok ? 'The campaign is saved.' : outcome.reason);
+          },
+        }, 'Save'),
+        el('button', {
+          class: 'small',
+          title: 'Download the campaign as a file',
+          onClick: () => downloadSave(this.state),
+        }, 'Export'),
         el('button', {
           class: 'primary',
           disabled: this.busy,
@@ -782,6 +796,7 @@ export class CampaignScreen {
       row('Provincial net', money(finances.provinceNet)),
       row('Army upkeep', `-${count(finances.armyUpkeep)}`),
       row('Garrison upkeep', `-${count(finances.garrisonUpkeep)}`),
+      row('Administration', `-${count(finances.administration)}`),
       finances.stipend > 0 && row('Stipend', money(finances.stipend)),
       row('Balance', money(finances.net), 'emphasis'),
     ));

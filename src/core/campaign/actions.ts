@@ -112,6 +112,16 @@ export function recruitCost(faction: FactionId, unit: UnitTypeId): number {
 
 export const MAX_RECRUIT_QUEUE = 3;
 
+/**
+ * An army is a command, not a nation in arms. Twenty regiments is already a
+ * very large medieval field army, and the cap also bounds the cost of
+ * simulating a battle, which otherwise grows with the square of the units
+ * present.
+ */
+export const MAX_ARMY_REGIMENTS = 20;
+/** A settlement can only billet so many troops. */
+export const MAX_GARRISON_REGIMENTS = 12;
+
 export function startRecruitment(
   state: CampaignState,
   id: RegionId,
@@ -120,6 +130,9 @@ export function startRecruitment(
   const region = regionState(state, id);
   if (region.siege) return no('The settlement is under siege.');
   if (region.recruitQueue.length >= MAX_RECRUIT_QUEUE) return no('The muster queue is full.');
+  if (region.garrison.length + region.recruitQueue.length >= MAX_GARRISON_REGIMENTS) {
+    return no('The settlement cannot billet any more troops.');
+  }
   if (!recruitableUnits(state, id).includes(unit)) return no('That unit cannot be raised here.');
   const faction = factionState(state, region.owner);
   const cost = recruitCost(region.owner, unit);
@@ -282,13 +295,18 @@ export function beginSiege(state: CampaignState, id: ArmyId, to: RegionId): Outc
   if (target.siege && target.siege.besieger !== army.faction) {
     return no('Another faction is already besieging it.');
   }
+  const alreadyOurs = target.siege?.besieger === army.faction;
   target.siege = { besieger: army.faction, turns: target.siege?.turns ?? 0 };
   army.location = to;
-  logEvent(
-    state,
-    army.faction,
-    `${getFaction(army.faction).adjective} forces lay siege to ${getRegion(to).settlement}.`,
-  );
+  // Only announce a siege that is actually beginning. Re-stating it every turn
+  // the army stands there would bury the rest of the chronicle.
+  if (!alreadyOurs) {
+    logEvent(
+      state,
+      army.faction,
+      `${getFaction(army.faction).adjective} forces lay siege to ${getRegion(to).settlement}.`,
+    );
+  }
   return ok;
 }
 
@@ -332,6 +350,9 @@ export function mergeArmies(state: CampaignState, into: ArmyId, from: ArmyId): O
   if (!target || !source) return no('No such army.');
   if (target.faction !== source.faction) return no('Those armies serve different lords.');
   if (target.location !== source.location) return no('The armies are not in the same province.');
+  if (target.regiments.length + source.regiments.length > MAX_ARMY_REGIMENTS) {
+    return no('An army that size cannot be kept in the field as one command.');
+  }
   target.regiments.push(...source.regiments);
   if (!target.general && source.general) target.general = source.general;
   target.movement = Math.min(target.movement, source.movement);
@@ -383,7 +404,10 @@ export function sortieFromGarrison(
     region.garrison.splice(index, 1);
   }
   const existing = [...state.armies.values()].find(
-    (army) => army.location === id && army.faction === region.owner,
+    (army) =>
+      army.location === id &&
+      army.faction === region.owner &&
+      army.regiments.length + moved.length <= MAX_ARMY_REGIMENTS,
   );
   if (existing) {
     existing.regiments.push(...moved.reverse());
@@ -409,6 +433,9 @@ export function garrisonArmy(state: CampaignState, id: ArmyId): Outcome {
   if (!army) return no('No such army.');
   const region = regionState(state, army.location);
   if (region.owner !== army.faction) return no('That settlement is not ours.');
+  if (region.garrison.length + army.regiments.length > MAX_GARRISON_REGIMENTS) {
+    return no('The settlement cannot billet that many troops.');
+  }
   region.garrison.push(...army.regiments);
   state.armies.delete(id);
   return ok;

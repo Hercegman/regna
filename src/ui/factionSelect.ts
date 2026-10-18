@@ -25,10 +25,18 @@ const GROUPS: readonly { readonly title: string; readonly cultures: readonly Cul
   { title: 'Africa', cultures: ['sahelian'] },
 ];
 
+export interface SelectOptions {
+  /** Shown as a "continue" button when a stored campaign exists. */
+  readonly resume?: { readonly label: string; readonly onResume: () => void };
+  /** Loads a campaign from a file the player chooses. */
+  readonly onImport?: () => void;
+}
+
 export function renderFactionSelect(
   host: HTMLElement,
   startYear: number,
   onChoose: (id: FactionId) => void,
+  options: SelectOptions = {},
 ): void {
   clear(host);
   let selected: Faction | undefined;
@@ -110,7 +118,13 @@ export function renderFactionSelect(
         ),
       ),
       el('div', { class: 'select-body' }, list, detail),
-      el('footer', { class: 'select-footer' }, startButton),
+      el('footer', { class: 'select-footer' },
+        options.onImport && el('button', { class: 'small', onClick: options.onImport }, 'Load a file'),
+        options.resume && el('button', { class: 'small', onClick: options.resume.onResume },
+          options.resume.label,
+        ),
+        startButton,
+      ),
     ),
   );
 

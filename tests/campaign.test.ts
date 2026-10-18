@@ -159,8 +159,13 @@ describe('economy', () => {
       if (!faction.alive || id === INDEPENDENT_ID) continue;
       const finances = factionFinances(state, id);
       expect(finances.net).toBe(
-        finances.provinceNet - finances.armyUpkeep - finances.garrisonUpkeep + finances.stipend,
+        finances.provinceNet -
+          finances.armyUpkeep -
+          finances.garrisonUpkeep -
+          finances.administration +
+          finances.stipend,
       );
+      expect(finances.administration).toBeGreaterThanOrEqual(0);
       expect(Number.isFinite(finances.net)).toBe(true);
     }
   });

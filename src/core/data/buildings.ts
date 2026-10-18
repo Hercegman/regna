@@ -59,19 +59,19 @@ export const BUILDING_TYPES: readonly BuildingType[] = [
   b({
     id: 'governors_house', name: "Governor's House", category: 'settlement', chain: 'governance', level: 0,
     cost: 500, turnsToBuild: 2, upkeep: 15, minSettlement: 'village',
-    effects: { order: 1, trade: 10, growth: 0.005 },
+    effects: { order: 1, trade: 9, growth: 0.005 },
     description: 'A hall for the lord or his steward: rents collected, disputes judged, order kept.',
   }),
   b({
     id: 'governors_villa', name: "Governor's Villa", category: 'settlement', chain: 'governance', level: 1,
     cost: 1400, turnsToBuild: 3, upkeep: 35, minSettlement: 'town', requires: 'governors_house',
-    effects: { order: 2, trade: 25, growth: 0.01 },
+    effects: { order: 2, trade: 21, growth: 0.01 },
     description: 'A seat of provincial administration with clerks, a treasury and a gaol.',
   }),
   b({
     id: 'governors_palace', name: "Governor's Palace", category: 'settlement', chain: 'governance', level: 2,
     cost: 3200, turnsToBuild: 4, upkeep: 70, minSettlement: 'city', requires: 'governors_villa',
-    effects: { order: 4, trade: 50, growth: 0.015 },
+    effects: { order: 4, trade: 39, growth: 0.015 },
     description: 'A palace fit to hold a court, overawe the local nobility and house an army of officials.',
   }),
 
@@ -165,49 +165,49 @@ export const BUILDING_TYPES: readonly BuildingType[] = [
   b({
     id: 'market', name: 'Market', category: 'economy', chain: 'trade', level: 0,
     cost: 600, turnsToBuild: 2, upkeep: 10, minSettlement: 'village',
-    effects: { trade: 30, growth: 0.005 },
+    effects: { trade: 24, growth: 0.005 },
     description: 'A weekly market under charter, where the countryside turns surplus into coin and tolls.',
   }),
   b({
     id: 'merchants_guild', name: "Merchants' Guild", category: 'economy', chain: 'trade', level: 1,
     cost: 1600, turnsToBuild: 3, upkeep: 30, minSettlement: 'town', requires: 'market',
-    effects: { trade: 70, growth: 0.01, order: 1 },
+    effects: { trade: 54, growth: 0.01, order: 1 },
     description: 'Chartered merchants with privileges, warehouses and the capital to finance a caravan.',
   }),
   b({
     id: 'great_exchange', name: 'Great Exchange', category: 'economy', chain: 'trade', level: 2,
     cost: 3800, turnsToBuild: 4, upkeep: 60, minSettlement: 'large_town', requires: 'merchants_guild',
-    effects: { trade: 140, growth: 0.015, order: 1 },
+    effects: { trade: 100, growth: 0.015, order: 1 },
     description: 'Bills of exchange, marine insurance and double-entry books: banking before banks.',
   }),
   b({
     id: 'mine', name: 'Mine', category: 'economy', chain: 'mining', level: 0,
     cost: 1200, turnsToBuild: 3, upkeep: 25, minSettlement: 'village',
-    effects: { mining: 120 },
+    effects: { mining: 105 },
     description: 'Shafts and adits worked by specialists, often German miners under their own law.',
   }),
   b({
     id: 'deep_mine', name: 'Deep Mine', category: 'economy', chain: 'mining', level: 1,
     cost: 3000, turnsToBuild: 4, upkeep: 60, minSettlement: 'town', requires: 'mine',
-    effects: { mining: 300 },
+    effects: { mining: 255 },
     description: 'Drainage wheels and winding gear reaching ore that hand-digging cannot.',
   }),
   b({
     id: 'harbour', name: 'Harbour', category: 'economy', chain: 'port', level: 0,
     cost: 900, turnsToBuild: 2, upkeep: 20, minSettlement: 'village',
-    effects: { trade: 50, port: true },
+    effects: { trade: 40, port: true },
     description: 'A quay, a crane and a customs shed. Sea freight costs a fraction of carting.',
   }),
   b({
     id: 'shipyard', name: 'Shipyard', category: 'economy', chain: 'port', level: 1,
     cost: 2200, turnsToBuild: 3, upkeep: 45, minSettlement: 'town', requires: 'harbour',
-    effects: { trade: 110, port: true },
+    effects: { trade: 84, port: true },
     description: 'Slipways and shipwrights building round ships for cargo and galleys for war.',
   }),
   b({
     id: 'arsenal', name: 'Arsenal', category: 'economy', chain: 'port', level: 2,
     cost: 5200, turnsToBuild: 5, upkeep: 90, minSettlement: 'large_town', requires: 'shipyard',
-    effects: { trade: 200, port: true, order: 1 },
+    effects: { trade: 145, port: true, order: 1 },
     description:
       'A state shipyard building hulls on a production line, as Venice does, able to replace ' +
       'a fleet faster than an enemy can sink one.',
@@ -217,13 +217,13 @@ export const BUILDING_TYPES: readonly BuildingType[] = [
   b({
     id: 'dirt_roads', name: 'Dirt Roads', category: 'infrastructure', chain: 'roads', level: 0,
     cost: 500, turnsToBuild: 2, upkeep: 10, minSettlement: 'village',
-    effects: { trade: 20, roads: 0.15 },
+    effects: { trade: 16, roads: 0.15 },
     description: 'Cleared tracks and fords. Passable in summer, which is when campaigns happen.',
   }),
   b({
     id: 'paved_roads', name: 'Paved Roads', category: 'infrastructure', chain: 'roads', level: 1,
     cost: 1500, turnsToBuild: 3, upkeep: 30, minSettlement: 'town', requires: 'dirt_roads',
-    effects: { trade: 55, roads: 0.3 },
+    effects: { trade: 42, roads: 0.3 },
     description: 'Metalled surfaces, culverts and stone bridges: supply and reinforcement all year.',
   }),
   b({
@@ -263,13 +263,13 @@ export const BUILDING_TYPES: readonly BuildingType[] = [
   b({
     id: 'scriptorium', name: 'Scriptorium', category: 'culture', chain: 'learning', level: 0,
     cost: 900, turnsToBuild: 3, upkeep: 20, minSettlement: 'town',
-    effects: { order: 1, trade: 15 },
+    effects: { order: 1, trade: 12 },
     description: 'Copyists at their desks. Every charter, account and law the state relies on starts here.',
   }),
   b({
     id: 'university', name: 'University', category: 'culture', chain: 'learning', level: 1,
     cost: 2800, turnsToBuild: 5, upkeep: 60, minSettlement: 'large_town', requires: 'scriptorium',
-    effects: { order: 2, trade: 40, growth: 0.01 },
+    effects: { order: 2, trade: 30, growth: 0.01 },
     description:
       'A chartered corporation of masters and students with its own courts. Law, medicine and ' +
       'theology, and a permanent source of trained administrators.',

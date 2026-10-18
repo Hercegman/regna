@@ -174,11 +174,27 @@ export function proposeTrade(state: CampaignState, a: FactionId, b: FactionId): 
   return true;
 }
 
+/** Nobody binds themselves to everyone: an alliance is meant to cost something. */
+export const MAX_ALLIANCES = 2;
+
+export function countAlliances(state: CampaignState, id: FactionId): number {
+  const faction = state.factions.get(id);
+  if (!faction) return 0;
+  let total = 0;
+  for (const [other, rel] of faction.relations) {
+    if (other === INDEPENDENT_ID) continue;
+    if (rel.stance === 'alliance' && state.factions.get(other)?.alive) total += 1;
+  }
+  return total;
+}
+
 export function proposeAlliance(state: CampaignState, a: FactionId, b: FactionId): boolean {
   if (a === INDEPENDENT_ID || b === INDEPENDENT_ID || a === b) return false;
   const current = relation(state, a, b);
   if (current.stance === 'war') return false;
-  if (relation(state, b, a).attitude < 45) return false;
+  if (relation(state, b, a).attitude < 62) return false;
+  if (countAlliances(state, a) >= MAX_ALLIANCES) return false;
+  if (countAlliances(state, b) >= MAX_ALLIANCES) return false;
   setStance(state, a, b, 'alliance');
   adjustAttitude(state, a, b, 10);
   adjustAttitude(state, b, a, 10);
@@ -242,10 +258,11 @@ export function driftRelations(state: CampaignState, rng: Rng): void {
           delta -= 2;
           break;
         case 'alliance':
-          delta += 1.5;
+          delta += rel.attitude < 85 ? 1.2 : 0;
           break;
         case 'trade':
-          delta += 1;
+          // Trade warms a relationship towards friendly, not towards devotion.
+          delta += rel.attitude < 65 ? 0.7 : -0.2;
           break;
         case 'ceasefire':
           delta += 0.5;

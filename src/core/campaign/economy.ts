@@ -18,12 +18,12 @@ import { INDEPENDENT_ID } from '../data/factions';
 
 /** Tax yield per thousand inhabitants, by settlement rank. */
 const TAX_PER_THOUSAND: Readonly<Record<string, number>> = {
-  village: 7,
-  town: 9,
-  large_town: 11,
-  city: 13,
-  large_city: 15,
-  huge_city: 17,
+  village: 6,
+  town: 7,
+  large_town: 9,
+  city: 10,
+  large_city: 12,
+  huge_city: 13,
 };
 
 /** What a province's special resource is worth per trade route. */
@@ -165,8 +165,22 @@ export interface FactionFinances {
   readonly provinceNet: number;
   readonly armyUpkeep: number;
   readonly garrisonUpkeep: number;
+  /** Court, chancery, couriers and the price of keeping distant lords loyal. */
+  readonly administration: number;
   readonly stipend: number;
   readonly net: number;
+}
+
+/**
+ * What it costs to govern a realm of a given size, before any of its armies
+ * are paid. The cost rises faster than the realm does: a king with thirty
+ * provinces needs more than five times the officials, garrisons of clerks and
+ * outright bribes that a king with six provinces needs. This is the brake that
+ * stops a large AI empire accumulating a treasury it has no use for.
+ */
+export function administrationCost(provinces: number): number {
+  if (provinces <= 0) return 0;
+  return Math.round(18 * Math.pow(provinces, 1.25));
 }
 
 /** Upkeep of one regiment, after the faction's upkeep trait. */
@@ -197,6 +211,7 @@ export function factionFinances(state: CampaignState, id: FactionId): FactionFin
     }
   }
   const stipend = tryGetFaction(id)?.traits.stipend ?? 0;
+  const administration = administrationCost(provincesOf(state, id).length);
   // The reported components are rounded, and the total is computed from those
   // rounded figures rather than from the raw ones. A breakdown the player can
   // see must add up to the total the player is charged.
@@ -204,12 +219,18 @@ export function factionFinances(state: CampaignState, id: FactionId): FactionFin
     provinceNet: Math.round(provinceNet),
     armyUpkeep: Math.round(armyUpkeep),
     garrisonUpkeep: Math.round(garrisonUpkeep),
+    administration,
     stipend,
   };
   return {
     faction: id,
     ...reported,
-    net: reported.provinceNet - reported.armyUpkeep - reported.garrisonUpkeep + reported.stipend,
+    net:
+      reported.provinceNet -
+      reported.armyUpkeep -
+      reported.garrisonUpkeep -
+      reported.administration +
+      reported.stipend,
   };
 }
 
@@ -226,7 +247,7 @@ export function publicOrder(state: CampaignState, region: RegionState): number {
 
   // A garrison keeps the peace, with diminishing returns.
   const garrison = strengthOf(region.garrison);
-  order += Math.min(8, Math.sqrt(garrison) / 4);
+  order += Math.min(6, Math.sqrt(garrison) / 5);
 
   // Walls make a town defensible against its own population too.
   const walls = wallTier(region);
@@ -234,13 +255,13 @@ export function publicOrder(state: CampaignState, region: RegionState): number {
 
   // The wrong faith is the single largest source of trouble.
   if (faction && region.religion !== faction.religion) {
-    order -= 6;
+    order -= 10;
     const sameFamily =
       (faction.religion === 'catholic' && region.religion === 'orthodox') ||
       (faction.religion === 'orthodox' && region.religion === 'catholic') ||
       (faction.religion === 'sunni' && region.religion === 'shia') ||
       (faction.religion === 'shia' && region.religion === 'sunni');
-    if (sameFamily) order += 3;
+    if (sameFamily) order += 4;
   }
 
   // Distance from the capital, measured in provinces, not kilometres.
@@ -249,12 +270,13 @@ export function publicOrder(state: CampaignState, region: RegionState): number {
     order -= Math.min(6, distanceInProvinces(capital, region.id) * 0.7);
   }
 
-  // Recent conquest: the first few years under a new lord are the worst.
+  // Recent conquest: a generation can pass before a province stops resenting
+  // the lord who took it.
   const held = state.turn - region.ownedSince;
-  if (held < 12) order -= (12 - held) * 0.5;
+  if (held < 20) order -= (20 - held) * 0.6;
 
   // Big cities are harder to police than villages.
-  order -= SETTLEMENT_ORDER.indexOf(region.tier) * 0.8;
+  order -= SETTLEMENT_ORDER.indexOf(region.tier) * 1.1;
 
   if (region.siege) order -= 5;
   return order;
@@ -287,15 +309,49 @@ export function distanceInProvinces(from: RegionId, to: RegionId, cap = 12): num
   return cap;
 }
 
-/** Population growth for one turn, as a fraction of current population. */
+/**
+ * How many thousands of people a province can feed and house.
+ *
+ * Medieval population was bounded by land, not by ambition: a province grew
+ * until it hit the limit of what its fields, markets and water supply could
+ * support, and then stopped. Without this ceiling a province compounds for
+ * centuries and ends up with a tax base no medieval state ever had.
+ */
+export function carryingCapacity(region: RegionState): number {
+  const geography = getRegion(region.id);
+  const farming = 1 + buildingEffectSum(region, (e) => e.farming);
+  const health = 1 + buildingEffectSum(region, (e) => e.growth) * 4;
+  const rank = SETTLEMENT_ORDER.indexOf(region.tier);
+  // A grown settlement supports more than its own fields do, because it can
+  // buy grain: that is what a market town is for.
+  const urban = 1 + rank * 0.5;
+  const port = geography.port ? 1.2 : 1;
+  return 6 * geography.fertility * farming * health * urban * port;
+}
+
+/**
+ * Population growth for one turn, as a fraction of current population.
+ *
+ * Logistic: fast when there is room, zero at the ceiling, negative above it.
+ */
 export function growthRate(state: CampaignState, region: RegionState): number {
   const geography = getRegion(region.id);
   const faction = tryGetFaction(region.owner);
-  let rate = 0.004 * geography.fertility;
-  rate += buildingEffectSum(region, (e) => e.growth);
-  rate += faction?.traits.growth ? faction.traits.growth * 0.01 : 0;
-  rate -= clamp(region.unrest, 0, 100) / 100 * 0.01;
-  if (region.siege) rate = -0.02;
+  if (region.siege) return -0.02;
+
+  let vigour = 0.006 * geography.fertility;
+  vigour += buildingEffectSum(region, (e) => e.growth);
+  vigour += faction?.traits.growth ? faction.traits.growth * 0.01 : 0;
+  vigour -= (clamp(region.unrest, 0, 100) / 100) * 0.012;
+  // Even the healthiest province does not double in a decade.
+  vigour = clamp(vigour, -0.02, 0.035);
+
+  const capacity = Math.max(1, carryingCapacity(region));
+  const headroom = 1 - region.population / capacity;
+  let rate = vigour * headroom;
+  // Above the ceiling the province starves back towards it regardless of how
+  // well it is governed.
+  if (headroom < 0) rate = Math.max(-0.03, headroom * 0.05);
   if (state.season === 'winter') rate *= 0.5;
   return rate;
 }
