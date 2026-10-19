@@ -65,8 +65,11 @@ export const SHIP_TYPES: readonly UnitType[] = [
     speed: 3.2, range: 110, missileAttack: 10, ammunition: 18, capacity: 1,
     abilities: ['oared', 'ram'],
     cost: 560, requires: 'harbour',
-    pools: ['latin_west', 'italian', 'maritime', 'hellenic', 'byzantine', 'levantine',
-            'maghrebi', 'balkan', 'iberian', 'andalusian'],
+    // The oared galley is a Mediterranean and Black Sea weapon. Northern states
+    // crossed water in sailing transports and did not keep galley fleets.
+    pools: ['italian', 'maritime', 'mediterranean', 'hellenic', 'byzantine', 'greek',
+            'levantine', 'maghrebi', 'berber', 'balkan', 'iberian', 'andalusian',
+            'crusader', 'caucasian'],
     waters: 'sea',
     description:
       'The standard fighting ship of the inland sea from antiquity onwards: oars for ' +

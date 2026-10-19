@@ -68,6 +68,21 @@ describe('campaign setup', () => {
     expect(relation(state, CROATIA, HUNGARY).stance).toBe('neutral');
   });
 
+  it('seats every faction at a capital it actually holds', () => {
+    const state = newCampaign();
+    for (const [id, faction] of state.factions) {
+      if (!faction.alive || id === INDEPENDENT_ID) continue;
+      expect(faction.capital, `${id} has no capital`).toBeDefined();
+      const seat = regionState(state, faction.capital!);
+      expect(seat.owner, `${id} is seated in someone else's province`).toBe(id);
+    }
+    // And at the seat the record gives it, not at whichever province happened
+    // to come first in the table.
+    expect(regionState(state, factionState(state, factionId('byzantium')).capital!).id)
+      .toBe(regionId('constantinople'));
+    expect(factionState(state, CROATIA).capital).toBe(regionId('knin'));
+  });
+
   it('is reproducible from its seed', () => {
     const a = newCampaign({ seed: 'identical' });
     const b = newCampaign({ seed: 'identical' });

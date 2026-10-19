@@ -457,12 +457,23 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
   for (const faction of FACTIONS) {
     const provinces = provincesByFaction.get(faction.id) ?? [];
     const present = faction.appearsIn <= CAMPAIGN_START_YEAR && provinces.length > 0;
+    // The historical seat where the map records one, otherwise the largest
+    // province the faction holds.
+    const seat =
+      REGIONS.find((region) => region.owner === faction.id && region.capital)?.id ??
+      [...provinces]
+        .map((id) => REGIONS.find((region) => region.id === id)!)
+        .sort(
+          (a, b) =>
+            SETTLEMENT_ORDER.indexOf(b.tier) - SETTLEMENT_ORDER.indexOf(a.tier) ||
+            b.population - a.population,
+        )[0]?.id;
     state.factions.set(faction.id, {
       id: faction.id,
       treasury: present ? startingTreasury(provinces.length) : 0,
       alive: present,
       relations: new Map(),
-      capital: provinces[0],
+      capital: seat,
       characters: [],
       joinedOn: present ? 0 : -1,
       destroyedOn: undefined,
@@ -512,10 +523,16 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
     if (!faction.alive || id === INDEPENDENT_ID) continue;
     const definition = tryGetFaction(id);
     if (!definition) continue;
-    const harbours = REGIONS.filter(
-      (region) => region.owner === id && region.port,
-    );
+    const harbours = REGIONS.filter((region) => region.owner === id && region.port);
     if (harbours.length === 0) continue;
+    // A fleet is based where the state can pay for and protect it: the capital
+    // if it has a harbour, otherwise its largest port. Taking whichever port
+    // came first in the table put the Byzantine navy at Cherson in the Crimea
+    // rather than at Constantinople.
+    harbours.sort((a, b) => {
+      const capitalFirst = Number(b.id === faction.capital) - Number(a.id === faction.capital);
+      return capitalFirst !== 0 ? capitalFirst : b.population - a.population;
+    });
 
     const home = harbours[0]!;
     const waters = zonesOffPort(home.id);

@@ -68,6 +68,24 @@ describe('region data', () => {
     }
   });
 
+  it('marks one historical seat at most for each faction that holds one', () => {
+    const seats = new Map<string, string[]>();
+    for (const region of REGIONS) {
+      if (!region.capital) continue;
+      const list = seats.get(region.owner as string) ?? [];
+      list.push(region.settlement);
+      seats.set(region.owner as string, list);
+    }
+    for (const [owner, held] of seats) {
+      expect(held.length, `${owner} has two capitals: ${held.join(', ')}`).toBe(1);
+      expect(owner).not.toBe(INDEPENDENT_ID);
+    }
+    // The great powers of 1080 all have one.
+    for (const id of ['byzantium', 'france', 'england', 'hungary', 'croatia', 'fatimids']) {
+      expect(seats.has(id), `${id} has no seat`).toBe(true);
+    }
+  });
+
   it('resolves regions by id and rejects unknown ones', () => {
     expect(getRegion(REGIONS[0]!.id).settlement).toBe(REGIONS[0]!.settlement);
     // @ts-expect-error deliberately unknown id
