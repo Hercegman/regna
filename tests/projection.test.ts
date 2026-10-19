@@ -5,7 +5,9 @@ import {
   mercatorY,
   panCamera,
   project,
+  projectMercator,
   unproject,
+  viewTransform,
   zoomCamera,
 } from '../src/render/projection';
 
@@ -67,5 +69,29 @@ describe('projection', () => {
     expect(camera.zoom).toBeLessThanOrEqual(camera.maxZoom);
     for (let i = 0; i < 100; i++) zoomCamera(camera, viewport, 0.5, 600, 400);
     expect(camera.zoom).toBeGreaterThanOrEqual(camera.minZoom);
+  });
+});
+
+describe('bulk transform', () => {
+  it('agrees with projecting one point at a time', () => {
+    const camera = createCamera();
+    const { scale, offsetX, offsetY } = viewTransform(camera, viewport);
+    for (const [lon, lat] of [[0, 0], [16, 43], [-9, 38.7], [31, 55]] as const) {
+      const direct = project(camera, viewport, lon, lat);
+      const bulkX = lon * scale + offsetX;
+      const bulkY = offsetY - mercatorY(lat) * scale;
+      expect(bulkX).toBeCloseTo(direct.x, 6);
+      expect(bulkY).toBeCloseTo(direct.y, 6);
+    }
+  });
+
+  it('projects from Mercator space to the same place', () => {
+    const camera = createCamera();
+    for (const [lon, lat] of [[12.5, 41.9], [-0.1, 51.5], [35, 31.8]] as const) {
+      const direct = project(camera, viewport, lon, lat);
+      const viaMercator = projectMercator(camera, viewport, lon, mercatorY(lat));
+      expect(viaMercator.x).toBeCloseTo(direct.x, 9);
+      expect(viaMercator.y).toBeCloseTo(direct.y, 9);
+    }
   });
 });

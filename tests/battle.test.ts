@@ -222,22 +222,34 @@ describe('battle simulation', () => {
   });
 
   it('rewards the defender for holding high ground', () => {
-    const onHills = runBattle(
-      battle(
-        side('france', [regiment('feudal_knights'), regiment('armoured_sergeants')]),
-        side('scotland', [regiment('highland_pikes'), regiment('kerns')]),
-        { seed: 'ground', terrain: 'hills' },
-      ),
-    );
-    const onPlains = runBattle(
-      battle(
-        side('france', [regiment('feudal_knights'), regiment('armoured_sergeants')]),
-        side('scotland', [regiment('highland_pikes'), regiment('kerns')]),
-        { seed: 'ground', terrain: 'plains' },
-      ),
-    );
-    // The Scots should lose fewer men defending the ridge than the open field.
-    expect(onHills.defenderLosses).toBeLessThanOrEqual(onPlains.defenderLosses * 1.02);
+    // What a ridge buys is a better exchange, not a cheaper battle: a fight
+    // uphill takes longer and costs both sides more men in total. So the thing
+    // to measure is how many of the enemy the defender takes with him, over
+    // enough seeds that one unlucky melee cannot decide it.
+    const exchange = (terrain: 'hills' | 'plains', seed: string): number => {
+      const result = runBattle(
+        battle(
+          side('france', [regiment('feudal_knights'), regiment('armoured_sergeants')]),
+          side('scotland', [regiment('highland_pikes'), regiment('kerns')]),
+          { seed, terrain },
+        ),
+      );
+      return result.attackerLosses / Math.max(1, result.defenderLosses);
+    };
+
+    const seeds = ['ground', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k'];
+    let better = 0;
+    let hillsTotal = 0;
+    let plainsTotal = 0;
+    for (const seed of seeds) {
+      const hills = exchange('hills', seed);
+      const plains = exchange('plains', seed);
+      hillsTotal += hills;
+      plainsTotal += plains;
+      if (hills > plains) better += 1;
+    }
+    expect(hillsTotal / seeds.length).toBeGreaterThan(plainsTotal / seeds.length);
+    expect(better).toBeGreaterThanOrEqual(seeds.length * 0.75);
   });
 
   it('handles a battle where one side has nothing', () => {

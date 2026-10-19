@@ -389,6 +389,13 @@ export class CampaignScreen {
     }
   }
 
+  /** Development aid: put the camera somewhere specific at a given zoom. */
+  look(id: RegionId, zoom: number | undefined): void {
+    this.focusOn(id);
+    if (zoom !== undefined) this.view.camera.zoom = zoom;
+    this.draw();
+  }
+
   private focusOn(id: RegionId): void {
     const geography = getRegion(id);
     this.view.camera.centreLon = geography.lon;

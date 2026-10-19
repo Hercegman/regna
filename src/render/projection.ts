@@ -60,6 +60,35 @@ export function project(
   return { x, y };
 }
 
+/**
+ * Projects a point already in Mercator space, which is where the province
+ * cells and the coastline are precomputed. Saves recomputing the latitude
+ * transform for every one of ten thousand points a frame.
+ */
+export function projectMercator(
+  camera: Camera,
+  viewport: Viewport,
+  lon: number,
+  mercY: number,
+): Point {
+  return {
+    x: (lon - camera.centreLon) * camera.zoom + viewport.width / 2,
+    y: (mercatorY(camera.centreLat) - mercY) * camera.zoom + viewport.height / 2,
+  };
+}
+
+/** The scale and offsets of the current view, for transforming in bulk. */
+export function viewTransform(
+  camera: Camera,
+  viewport: Viewport,
+): { readonly scale: number; readonly offsetX: number; readonly offsetY: number } {
+  return {
+    scale: camera.zoom,
+    offsetX: viewport.width / 2 - camera.centreLon * camera.zoom,
+    offsetY: viewport.height / 2 + mercatorY(camera.centreLat) * camera.zoom,
+  };
+}
+
 export function unproject(
   camera: Camera,
   viewport: Viewport,

@@ -77,7 +77,13 @@ order: orders and movement, missile fire, melee, morale, victory check.
   by the unit, its experience and the general's command, it routs; clear of the
   fighting it may rally.
 - **Terrain** is a height function. Hills and mountains fight on a ridge, which
-  is worth real combat and missile advantage.
+  is worth real combat and missile advantage. What the ridge buys is a better
+  exchange rather than a cheaper battle: a fight uphill takes longer and costs
+  both sides more men in total.
+- **Deployment** forms a continuous line. Regiments stand shoulder to shoulder,
+  each taking the ground its own numbers need; the wings form on the flanks of
+  the centre rather than off on their own. A gap in a line of battle is an
+  invitation, so the simulation does not leave any.
 
 Both presentations run the same model. A battle the player watches and a battle
 the campaign resolves for them differ only in whether it is drawn.
@@ -227,6 +233,57 @@ treasury, and its rank among the surviving powers.
 The end date existed in the rules from the beginning and nothing consulted it,
 so a campaign simply ran on for ever. `reckon` now answers all three cases in
 one place, and the interface asks it after every turn and every battle.
+
+## How it is drawn
+
+The renderer is a separate layer with no state of its own beyond a camera. It
+reads the simulation and draws it; nothing it does can change an outcome.
+
+**Provinces have shapes the data does not give them.** `regions.ts` stores a
+settlement and its coordinates, nothing more. The ground around each one is
+worked out once, by dividing the whole theatre between the settlements with a
+Voronoi diagram. It is computed by clipping a bounding rectangle against the
+perpendicular bisector to every other site in turn — O(n²) in the number of
+provinces, a few milliseconds for 222 of them, and no Delaunay triangulation
+to get wrong. The result is cached for the life of the page, because the
+settlements never move.
+
+Each cell also records, for every edge, which province lies across it. That is
+found by taking the edge's midpoint and asking which other site is as close to
+it as its own — within a tolerance, which is how a shared border is told from
+the edge of the map. National frontiers are drawn heavier than the lines
+inside a realm because of it, and the band of the owner's colour is laid along
+them.
+
+**The coastline is real.** Natural Earth's 1:50m land, lakes and rivers,
+public domain, clipped to the theatre and simplified by Ramer–Douglas–Peucker
+to about seven thousand points, checked in as `src/core/data/geography.ts`.
+Province fills are clipped to it, so a province is the land it holds and not a
+polygon floating over the sea. Fifteen harbours — Venice on its lagoon, Split
+under its mountain — fall just outside a coastline simplified this far, so the
+clip region is the land together with a small disc around every settlement.
+
+**Nothing is an image file.** Every mark on either screen is drawn with path
+operations: terrain symbols, settlements by rank and wall, armies, ships,
+caravans, banners. That is what lets a settlement take any of seventy-three
+faction colours without seventy-three sprites, and stay sharp at any zoom.
+
+**Ground reads by slope, not by height.** On the battlefield the shading is
+the gradient of the height function lit from the north-west. Colouring by
+altitude makes a uniform rise invisible; lighting it from one side makes the
+shape of the land appear, which is the whole point of fighting on a ridge.
+
+**A regiment is the men in it.** Ranks and files from the unit's own formation,
+as many figures as the block has room for, thinning from the back as it takes
+losses. Below about two pixels a man the renderer gives up and draws a bar,
+because a smear of dots reads worse than a block does. Arrows are drawn only
+where the simulation would have that unit shooting this tick, and dust only
+where units are actually in contact: the picture does not say anything the
+model is not doing.
+
+**The battle has its own camera.** A field 1400 m across and a man a metre
+wide do not share a scale. Untouched, the camera frames the two armies; the
+player zooms and pans from there.
 
 ## What is deliberately simple
 

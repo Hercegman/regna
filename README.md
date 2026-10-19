@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-d9b55f?style=flat-square&labelColor=12161a)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white&labelColor=12161a)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-6-646cff?style=flat-square&logo=vite&logoColor=white&labelColor=12161a)](https://vite.dev)
-[![Tests](https://img.shields.io/badge/tests-235%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
+[![Tests](https://img.shields.io/badge/tests-270%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
 [![Runtime deps](https://img.shields.io/badge/runtime%20dependencies-none-8b91a0?style=flat-square&labelColor=12161a)](#architecture)
 
 [Why](#why-regna) · [The world](#the-world) · [Features](#features) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Playing](#playing) · [Architecture](#architecture) · [Roadmap](#roadmap)
@@ -55,6 +55,23 @@ play in the year it actually rose, at the place it rose from.
 | Campaign | 1080 to 1530, two turns to the year |
 
 ## Features
+
+- **Drawn, not diagrammed.** The map is a real coastline — Natural Earth's
+  1:50m public-domain vector data, clipped to the theatre and simplified — with
+  every province a polygon of ground in its owner's colours, the terrain it
+  actually has marked on it, lakes, the great rivers, and settlements drawn as
+  the places they are: a hamlet of two roofs, a walled town with towers, a city
+  with a cathedral spire. Armies are a rank of men behind a shield; fleets are
+  hulls. Nothing is an image file — every mark is vector work, so it stays sharp
+  at any zoom and takes any faction's colour.
+
+  | | |
+  | :--- | :--- |
+  | Provinces | divided by a Voronoi diagram of the settlements, computed by half-plane clipping and cached |
+  | Ownership | the ground keeps its own colour; the owner's colour gathers in a band along the frontier, where the question is actually being asked |
+  | Terrain | scattered over the whole province on a jittered grid — a mountainous province is a range, not one caret |
+  | Battles | regiments are the men in them, in ranks and files, thinning from the back as they take losses |
+  | Ground | shaded by slope rather than height, lit from the north-west, so a ridge looks like a ridge |
 
 - **A map with two layers.** Provinces are the land; sea zones are the water. A
   harbour opens onto one or more zones, and fleets move from zone to zone. Great
@@ -175,6 +192,11 @@ Choose a faction, then:
 | Every trade road | `T` |
 | End the turn | `Enter` |
 
+In a battle the camera is yours too: scroll to zoom, drag with the right button
+to pan, `+` and `-` from the keyboard, `Home` to frame both armies again. A
+kilometre and a half of ground and a man a metre wide do not share a scale, so
+close in you watch the men and pulled back you read the shape of the battle.
+
 The panel on the right has the province, its building, recruitment and
 shipbuilding options, the trade roads through it, diplomacy and the state of the
 realm.
@@ -209,9 +231,10 @@ Both are offered again on the faction select screen.
 | `src/core/data/` | Factions, units, ships, mercenaries, buildings, provinces, borders, seas, trade roads. Tables, with no logic in them. |
 | `src/core/campaign/` | The turn loop, economy, public order, recruitment, diplomacy, faction emergence, the navy, trade, hiring, the AI, and saves. |
 | `src/core/battle/` | Deployment, the fixed-timestep simulation, the battle AI and the ground. |
-| `src/render/` | The Mercator projection and camera, the campaign map, the battlefield. |
+| `src/render/` | The Mercator projection and camera, the province geometry, the vector art, the campaign map, the battlefield. |
 | `src/ui/` | Screens, panels, persistence. Plain DOM, no framework. |
-| `tests/` | 235 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
+| `tools/` | `build-geography.py`, which turns Natural Earth's vectors into the checked-in coastline. |
+| `tests/` | 270 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
 
 Nothing in `src/core/` touches the DOM or calls `Math.random`. Randomness comes
 from a xoshiro128\*\* generator whose state is saved with the campaign, which is
@@ -242,7 +265,9 @@ URL parameters open a known state without a sequence of clicks:
 
 ```
 ?faction=croatia&turns=60&tab=trade      a campaign already sixty turns in
+?faction=venice&look=venice&zoom=40      the map, over a given province, close in
 ?demo=battle&at=255                      a land battle four minutes in
+?demo=battle&at=255&bzoom=3              the same battle, close enough to see the men
 ?demo=sea&play=1                         a sea fight, running
 ?demo=end&faction=croatia                the closing reckoning
 ```
@@ -260,6 +285,13 @@ Regna is written from scratch. It is not a port, a decompilation or a
 reimplementation of any existing game: no commercial binary was disassembled,
 and no third-party game data, art or text is included. The genre is the
 inspiration; the code, the data and the prose are this project's own.
+
+The coastline, the lakes and the rivers come from
+[Natural Earth](https://www.naturalearthdata.com) 1:50m, which is in the public
+domain and carries no attribution requirement. The generator that clips and
+simplifies it is [`tools/build-geography.py`](tools/build-geography.py), and
+its output is checked in as `src/core/data/geography.ts`. Everything else drawn on the map is vector work
+written for this project.
 
 Historical facts are not copyrightable, and the entire world — the polities, the
 settlements, the units, the roads, the dates — is built from them. See

@@ -12,6 +12,7 @@ import { getUnitType } from '../data/units';
 import type { Army, Fleet, Regiment } from '../campaign/state';
 import type { BattleSetup, BattleUnit, Side } from './types';
 import { FIELD_DEPTH, FIELD_WIDTH } from './types';
+import { frontageOf } from './sim';
 
 export interface SideComposition {
   readonly faction: FactionId;
@@ -146,46 +147,94 @@ function deploySide(side: SideComposition, which: Side): BattleUnit[] {
     });
   };
 
-  // A fleet forms line abreast across most of the water, because there is no
-  // flank to refuse and no ground worth holding: sea room is the whole of it.
+  // A fleet forms line abreast with sea room between the hulls, because there
+  // is no flank to refuse and no ground worth holding.
   const afloat = slots.length > 0 && slots.every((slot) => isAfloat(slot.regiment.type));
-  const centreFrom = afloat ? FIELD_WIDTH * 0.12 : FIELD_WIDTH * 0.32;
-  const centreTo = afloat ? FIELD_WIDTH * 0.88 : FIELD_WIDTH * 0.68;
+  const middle = FIELD_WIDTH / 2;
 
-  // Centre: an even line across the middle third of the field.
-  spread(lanes.centre, centreFrom, centreTo, (slot, x) => place(slot, x, frontY));
-  // Second line: missiles and engines behind the centre.
-  spread(lanes.rear, FIELD_WIDTH * 0.34, FIELD_WIDTH * 0.66, (slot, x) =>
+  // The centre forms first and the rest of the army is laid out against it,
+  // so that the line is one line and the wings are on it rather than off on
+  // their own somewhere.
+  const centre = line(lanes.centre, middle, 'centre', afloat ? 70 : INTERVAL, (slot, x) =>
+    place(slot, x, frontY),
+  );
+  // The second line: missiles and engines behind the centre.
+  line(lanes.rear, middle, 'centre', INTERVAL, (slot, x) =>
     place(slot, x, frontY + depthSign * 70),
   );
-  // Wings.
-  spread(lanes.left, FIELD_WIDTH * 0.08, FIELD_WIDTH * 0.26, (slot, x) =>
+  // The wings, posted on either flank of the centre and drawn up a little
+  // forward of it, which is where a wing goes when it means to turn a flank.
+  line(lanes.left, centre.from - WING_GAP, 'end', INTERVAL, (slot, x) =>
     place(slot, x, frontY + depthSign * 30),
   );
-  spread(lanes.right, FIELD_WIDTH * 0.74, FIELD_WIDTH * 0.92, (slot, x) =>
+  line(lanes.right, centre.to + WING_GAP, 'start', INTERVAL, (slot, x) =>
     place(slot, x, frontY + depthSign * 30),
   );
   // The general and his retinue sit behind everything.
-  spread(lanes.reserve, FIELD_WIDTH * 0.45, FIELD_WIDTH * 0.55, (slot, x) =>
+  line(lanes.reserve, middle, 'centre', INTERVAL, (slot, x) =>
     place(slot, x, frontY + depthSign * 130),
   );
 
   return units;
 }
 
-function spread(
+/** The interval left between neighbouring regiments in a line, in metres. */
+const INTERVAL = 10;
+
+/** The ground left between the centre and a wing, in metres. */
+const WING_GAP = 45;
+
+/** Where a formed line begins and ends, in metres along the field. */
+interface Extent {
+  readonly from: number;
+  readonly to: number;
+}
+
+/**
+ * Forms a line of regiments and reports the ground it covers.
+ *
+ * Regiments stand shoulder to shoulder, each taking up the ground its own
+ * numbers need, with a short interval between them. A line of battle is
+ * continuous: gaps in it are an invitation, and a commander who leaves them
+ * loses. `anchor` is the middle, the left end or the right end of the line
+ * depending on `align`, and the whole is shifted back onto the field if it
+ * would otherwise form off the edge of it.
+ */
+function line(
   slots: readonly Slot[],
-  from: number,
-  to: number,
+  anchor: number,
+  align: 'centre' | 'start' | 'end',
+  interval: number,
   place: (slot: Slot, x: number) => void,
-): void {
-  if (slots.length === 0) return;
-  if (slots.length === 1) {
-    place(slots[0]!, (from + to) / 2);
-    return;
+): Extent {
+  if (slots.length === 0) return { from: anchor, to: anchor };
+
+  const widths = slots.map((slot) => frontageOf(slot.regiment.type, slot.regiment.soldiers));
+  const span = widths.reduce((sum, width) => sum + width, 0) + interval * (slots.length - 1);
+
+  const EDGE = 40;
+  let from = align === 'centre' ? anchor - span / 2 : align === 'start' ? anchor : anchor - span;
+  // A line too wide for the field is packed tighter rather than hanging off it.
+  const room = FIELD_WIDTH - EDGE * 2;
+  if (span > room) {
+    const squeeze = room / span;
+    let x = EDGE;
+    slots.forEach((slot, index) => {
+      const width = widths[index]! * squeeze;
+      place(slot, x + width / 2);
+      x += width + interval * squeeze;
+    });
+    return { from: EDGE, to: FIELD_WIDTH - EDGE };
   }
-  const step = (to - from) / (slots.length - 1);
-  slots.forEach((slot, index) => place(slot, from + step * index));
+  from = Math.max(EDGE, Math.min(FIELD_WIDTH - EDGE - span, from));
+
+  let x = from;
+  slots.forEach((slot, index) => {
+    const width = widths[index]!;
+    place(slot, x + width / 2);
+    x += width + interval;
+  });
+  return { from, to: from + span };
 }
 
 export function buildBattle(params: BattleParams): BattleSetup {

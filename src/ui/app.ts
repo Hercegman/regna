@@ -2,7 +2,7 @@
  * Application shell: faction selection, then the campaign, with battles
  * borrowing the screen and handing control back when they finish.
  */
-import type { FactionId } from '../core/types';
+import type { FactionId, RegionId } from '../core/types';
 import type { BattlePlan, CampaignState } from '../core/campaign';
 import type { Reckoning } from '../core/campaign';
 import {
@@ -108,6 +108,11 @@ export class App {
     if (Number.isFinite(turns) && turns > 0) this.campaign.fastForward(Math.min(turns, 400));
     const tab = params.get('tab');
     if (tab) this.campaign.openTab(tab);
+    const look = params.get('look');
+    if (look) {
+      const zoom = Number.parseFloat(params.get('zoom') ?? '');
+      this.campaign.look(look as RegionId, Number.isFinite(zoom) ? zoom : undefined);
+    }
     this.checkEnd();
   }
 
@@ -320,6 +325,8 @@ function applyBattleParams(screen: BattleScreen): void {
   const params = new URLSearchParams(window.location.search);
   const at = Number.parseInt(params.get('at') ?? '', 10);
   if (Number.isFinite(at) && at > 0) screen.advanceTo(Math.min(at, 2700));
+  const zoom = Number.parseFloat(params.get('bzoom') ?? '');
+  if (Number.isFinite(zoom) && zoom > 0) screen.setZoom(zoom);
   if (params.get('play') === '1') screen.start();
   if (params.get('resolve') === '1') screen.resolveNow();
 }

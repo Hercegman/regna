@@ -1,25 +1,38 @@
 /**
- * Campaign map renderer.
+ * The campaign map.
  *
- * The map is drawn as a political network: one disc per province, sized by the
- * rank of its settlement and filled with its owner's colour, joined by solid
- * lines where armies can march and dashed lines where they must sail. That is
- * a deliberate choice over a painted coastline: with 222 provinces it stays
- * legible at every zoom, and it never lies about where a border actually is.
+ * Drawn as a painted map rather than a diagram: a real coastline, every
+ * province a shape in its owner's colour, the ground marked with the terrain
+ * it is, and settlements, armies and fleets standing on it as the things they
+ * are. Nothing here is an image file. Every mark is vector work, so it stays
+ * sharp at any zoom and takes any faction's colour.
+ *
+ * The order of drawing is the order a painter would use: water, land, the
+ * division of the land, what grows on it, what runs through it, and last what
+ * is standing on it.
  */
-import type { Point, RegionId } from '../core/types';
+import type { Point, RegionId, Terrain } from '../core/types';
 import { SETTLEMENT_ORDER } from '../core/types';
 import type { CampaignState, RegionState } from '../core/campaign';
-import { strengthOf, wallTier } from '../core/campaign';
+import { caravanLocation, seaLaneClosed, strengthOf, wallTier } from '../core/campaign';
 import { REGIONS, getRegion } from '../core/data/regions';
 import { BORDERS } from '../core/data/adjacency';
 import { tryGetFaction, INDEPENDENT_ID } from '../core/data/factions';
+import { TRADE_ROUTES, routesThrough } from '../core/data/trade';
+import { LAKE_RINGS, RIVER_LINES } from '../core/data/geography';
 import type { SeaZoneId } from '../core/data/seas';
 import { SEA_ZONES, getSeaZone } from '../core/data/seas';
-import { caravanLocation, seaLaneClosed } from '../core/campaign';
-import { TRADE_ROUTES, routesThrough } from '../core/data/trade';
 import type { Camera, Viewport } from './projection';
-import { project } from './projection';
+import { mercatorY, project, viewTransform } from './projection';
+import { provinceShapes, landInMercator, terrainScatter, toMercator, cellExtent } from './provinces';
+import {
+  drawArmy,
+  drawCaravan,
+  drawSettlement,
+  drawShip,
+  drawTerrainMark,
+  terrainColour,
+} from './mapArt';
 
 export interface MapView {
   readonly camera: Camera;
@@ -41,145 +54,65 @@ export interface MapView {
 }
 
 const INDEPENDENT_COLOUR = '#8d8578';
-const SEA = '#1d2b38';
-const LAND = '#2c3a30';
+const SEA_DEEP = '#16222e';
+const SEA_SHALLOW = '#1d3345';
+const INK = 'rgba(26, 22, 17, 0.55)';
+const INK_STRONG = 'rgba(22, 18, 14, 0.9)';
 
-/** Disc radius in pixels for a settlement rank, before zoom scaling. */
-function radiusFor(region: RegionState, zoom: number): number {
-  const rank = SETTLEMENT_ORDER.indexOf(region.tier);
-  const base = 3.4 + rank * 1.5;
-  return base * Math.max(0.55, Math.min(1.9, zoom / 14));
+/** Pixels per degree below which the map is too small for detail work. */
+const DETAIL_ZOOM = 10;
+
+interface Transform {
+  readonly scale: number;
+  readonly offsetX: number;
+  readonly offsetY: number;
 }
 
-function colourOf(region: RegionState): string {
-  if (region.owner === INDEPENDENT_ID) return INDEPENDENT_COLOUR;
-  return tryGetFaction(region.owner)?.colour ?? INDEPENDENT_COLOUR;
-}
+const sx = (t: Transform, lon: number): number => lon * t.scale + t.offsetX;
+const sy = (t: Transform, mercY: number): number => t.offsetY - mercY * t.scale;
 
-function darkColourOf(region: RegionState): string {
-  if (region.owner === INDEPENDENT_ID) return '#5c564d';
-  return tryGetFaction(region.owner)?.colourDark ?? '#5c564d';
-}
+// ---------------------------------------------------------------------------
+// Hit testing
+// ---------------------------------------------------------------------------
 
 export function screenPositionOf(view: MapView, id: RegionId): Point {
   const geography = getRegion(id);
   return project(view.camera, view.viewport, geography.lon, geography.lat);
 }
 
-/** The province whose disc contains a screen point, if any. */
-export function provinceAt(view: MapView, state: CampaignState, x: number, y: number): RegionId | undefined {
+/** The province whose ground contains a screen point. */
+export function provinceAt(
+  view: MapView,
+  state: CampaignState,
+  x: number,
+  y: number,
+): RegionId | undefined {
+  // Nearest settlement in projected space is exactly the province the point
+  // falls in, because the provinces are that division of the map.
+  const t = viewTransform(view.camera, view.viewport);
   let best: RegionId | undefined;
   let bestDistance = Infinity;
-  for (const geography of REGIONS) {
-    const region = state.regions.get(geography.id);
-    if (!region) continue;
-    const point = project(view.camera, view.viewport, geography.lon, geography.lat);
-    const radius = radiusFor(region, view.camera.zoom) + 5;
-    const dx = point.x - x;
-    const dy = point.y - y;
-    const distance = Math.hypot(dx, dy);
-    if (distance <= radius && distance < bestDistance) {
-      bestDistance = distance;
-      best = geography.id;
+  for (const shape of provinceShapes()) {
+    if (!state.regions.has(shape.id)) continue;
+    const px = sx(t, shape.site[0]);
+    const py = sy(t, shape.site[1]);
+    const d = (px - x) ** 2 + (py - y) ** 2;
+    if (d < bestDistance) {
+      bestDistance = d;
+      best = shape.id;
     }
   }
-  return best;
+  // Off the edge of the drawn world, nothing is selected.
+  return bestDistance < 1e9 ? best : undefined;
 }
 
-export function drawMap(
-  ctx: CanvasRenderingContext2D,
-  state: CampaignState,
-  view: MapView,
-): void {
-  const { width, height } = view.viewport;
-  ctx.save();
-  ctx.clearRect(0, 0, width, height);
-
-  // Sea, then a broad land wash under the provinces so the map reads as a map
-  // rather than as a graph floating in nothing.
-  ctx.fillStyle = SEA;
-  ctx.fillRect(0, 0, width, height);
-  drawLandWash(ctx, state, view);
-  drawSeaZones(ctx, state, view);
-  drawBorders(ctx, state, view);
-  drawTradeRoutes(ctx, state, view);
-  drawReachable(ctx, state, view);
-  drawProvinces(ctx, state, view);
-  drawArmies(ctx, state, view);
-  drawFleets(ctx, state, view);
-  drawCaravans(ctx, state, view);
-  drawLabels(ctx, state, view);
-  drawHolyWar(ctx, state, view);
-  drawSelection(ctx, state, view);
-
-  ctx.restore();
-}
-
-/** Scratch canvas for the landmass, reused between frames. */
-let landLayer: HTMLCanvasElement | undefined;
-
-/**
- * A soft blob under every province, so neighbouring provinces merge into a
- * continent while the sea stays open.
- *
- * The blobs are composed on their own layer at full opacity first and the
- * finished landmass is then drawn once. Painting them straight onto the map
- * would stack one halo on top of another and turn a continent into a cloud.
- */
-function drawLandWash(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
-  const { width, height } = view.viewport;
-  if (!landLayer) landLayer = document.createElement('canvas');
-  const ratio = window.devicePixelRatio || 1;
-  if (landLayer.width !== Math.floor(width * ratio) || landLayer.height !== Math.floor(height * ratio)) {
-    landLayer.width = Math.max(1, Math.floor(width * ratio));
-    landLayer.height = Math.max(1, Math.floor(height * ratio));
-  }
-  const layer = landLayer.getContext('2d');
-  if (!layer) return;
-  layer.setTransform(ratio, 0, 0, ratio, 0, 0);
-  layer.clearRect(0, 0, width, height);
-  drawLandBlobs(layer, state, view);
-
-  ctx.save();
-  ctx.globalAlpha = 0.95;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(landLayer, 0, 0);
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-  ctx.restore();
-}
-
-function drawLandBlobs(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
-  ctx.save();
-  for (const geography of REGIONS) {
-    const region = state.regions.get(geography.id);
-    if (!region) continue;
-    const point = project(view.camera, view.viewport, geography.lon, geography.lat);
-    const spread = radiusFor(region, view.camera.zoom) * 6.5;
-    if (point.x < -spread || point.x > view.viewport.width + spread) continue;
-    if (point.y < -spread || point.y > view.viewport.height + spread) continue;
-    const gradient = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, spread);
-    // Opaque at the settlement and fading out, so overlapping provinces merge
-    // into a coastline rather than glowing.
-    gradient.addColorStop(0, LAND);
-    gradient.addColorStop(0.62, LAND);
-    gradient.addColorStop(0.86, 'rgba(44, 58, 48, 0.55)');
-    gradient.addColorStop(1, 'rgba(44, 58, 48, 0)');
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, spread, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.restore();
+function zoneRadius(zoom: number): number {
+  return Math.max(10, Math.min(30, zoom * 0.9));
 }
 
 export function zonePosition(view: MapView, id: SeaZoneId): Point {
   const zone = getSeaZone(id);
   return project(view.camera, view.viewport, zone.lon, zone.lat);
-}
-
-/** How large a sea zone's marker is on screen. */
-function zoneRadius(zoom: number): number {
-  return Math.max(10, Math.min(34, zoom * 1.1));
 }
 
 /** The water whose marker contains a screen point. */
@@ -198,11 +131,395 @@ export function zoneAt(view: MapView, x: number, y: number): SeaZoneId | undefin
   return best;
 }
 
+// ---------------------------------------------------------------------------
+// Drawing
+// ---------------------------------------------------------------------------
+
+export function drawMap(
+  ctx: CanvasRenderingContext2D,
+  state: CampaignState,
+  view: MapView,
+): void {
+  const { width, height } = view.viewport;
+  const t = viewTransform(view.camera, view.viewport);
+  const zoom = view.camera.zoom;
+
+  ctx.save();
+  ctx.clearRect(0, 0, width, height);
+  drawSea(ctx, view);
+
+  const land = buildLandPath(t);
+  drawLandBody(ctx, land);
+
+  // Everything that belongs to the ground is drawn inside the coastline, with
+  // a little allowance around each settlement so that a harbour on a lagoon or
+  // up a fjord still has ground under it.
+  ctx.save();
+  const groundPath = new Path2D(land);
+  for (const shape of provinceShapes()) {
+    const px = sx(t, shape.site[0]);
+    const py = sy(t, shape.site[1]);
+    groundPath.moveTo(px + zoom * 0.22, py);
+    groundPath.arc(px, py, zoom * 0.22, 0, Math.PI * 2);
+  }
+  ctx.clip(groundPath);
+
+  drawProvinceFills(ctx, state, view, t);
+  drawRealmBands(ctx, state, t, zoom);
+  drawTerrain(ctx, state, view, t);
+  drawProvinceBorders(ctx, state, view, t);
+  ctx.restore();
+
+  drawWater(ctx, t, zoom);
+  drawCoast(ctx, land, zoom);
+  drawSeaBorders(ctx, state, view);
+  drawSeaZones(ctx, state, view);
+  drawTradeRoutes(ctx, state, view);
+  drawReachable(ctx, state, view, t);
+  drawSettlements(ctx, state, view, t);
+  drawForces(ctx, state, view, t);
+  drawCaravans(ctx, state, view);
+  drawHolyWar(ctx, state, view);
+  drawLabels(ctx, state, view, t);
+  drawSelection(ctx, state, view, t);
+  ctx.restore();
+}
+
+function drawSea(ctx: CanvasRenderingContext2D, view: MapView): void {
+  const { width, height } = view.viewport;
+  const gradient = ctx.createLinearGradient(0, 0, 0, height);
+  gradient.addColorStop(0, SEA_DEEP);
+  gradient.addColorStop(0.55, SEA_SHALLOW);
+  gradient.addColorStop(1, SEA_DEEP);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+
+  // A suggestion of swell, so the water is not a flat field of colour.
+  ctx.save();
+  ctx.strokeStyle = 'rgba(140, 186, 220, 0.06)';
+  ctx.lineWidth = 1;
+  for (let y = 14; y < height; y += 26) {
+    ctx.beginPath();
+    for (let x = 0; x <= width; x += 22) {
+      const lift = Math.sin(x / 110 + y / 70) * 3.2;
+      if (x === 0) ctx.moveTo(x, y + lift);
+      else ctx.lineTo(x, y + lift);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function buildLandPath(t: Transform): Path2D {
+  const path = new Path2D();
+  for (const ring of landInMercator()) {
+    ring.forEach(([lon, mercY], index) => {
+      const x = sx(t, lon);
+      const y = sy(t, mercY);
+      if (index === 0) path.moveTo(x, y);
+      else path.lineTo(x, y);
+    });
+    path.closePath();
+  }
+  return path;
+}
+
+function drawLandBody(ctx: CanvasRenderingContext2D, land: Path2D): void {
+  ctx.save();
+  // A shelf of shallower water around the coast, so the land sits in the sea.
+  ctx.shadowColor = 'rgba(96, 148, 180, 0.5)';
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = '#8d9169';
+  ctx.fill(land);
+  ctx.shadowBlur = 0;
+  ctx.fill(land);
+  ctx.restore();
+}
+
+function ownerColours(region: RegionState): { fill: string; dark: string } {
+  if (region.owner === INDEPENDENT_ID) return { fill: INDEPENDENT_COLOUR, dark: '#5c564d' };
+  const faction = tryGetFaction(region.owner);
+  return { fill: faction?.colour ?? INDEPENDENT_COLOUR, dark: faction?.colourDark ?? '#5c564d' };
+}
+
+function tracePath(ctx: CanvasRenderingContext2D, cell: readonly (readonly [number, number])[], t: Transform): void {
+  ctx.beginPath();
+  cell.forEach(([lon, mercY], index) => {
+    const x = sx(t, lon);
+    const y = sy(t, mercY);
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.closePath();
+}
+
+function drawProvinceFills(
+  ctx: CanvasRenderingContext2D,
+  state: CampaignState,
+  view: MapView,
+  t: Transform,
+): void {
+  ctx.save();
+  for (const shape of provinceShapes()) {
+    const region = state.regions.get(shape.id);
+    if (!region || shape.cell.length < 3) continue;
+    const geography = getRegion(shape.id);
+    tracePath(ctx, shape.cell, t);
+    // The ground first, so that a province reads as the country it is.
+    ctx.fillStyle = terrainColour(geography.terrain);
+    ctx.fill();
+    // Then whose it is, as a wash over the ground rather than instead of it.
+    // Zoomed out, the wash has to carry the whole answer to "whose is it?",
+    // because the frontier band is then too thin to read. Zoomed in, the band
+    // does that work and the wash gets out of the way of the ground.
+    const wash = view.camera.zoom < 16 ? 0.46 : view.camera.zoom > 32 ? 0.26 : 0.36;
+    ctx.globalAlpha = region.owner === INDEPENDENT_ID ? wash * 0.6 : wash;
+    ctx.fillStyle = ownerColours(region).fill;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Unrest shows as a hatch, not as a pie chart on a disc.
+    if (region.unrest > 45) {
+      ctx.save();
+      ctx.clip();
+      ctx.globalAlpha = Math.min(0.4, (region.unrest - 45) / 140);
+      ctx.strokeStyle = '#e2574c';
+      ctx.lineWidth = 1.4;
+      const px = sx(t, shape.site[0]);
+      const py = sy(t, shape.site[1]);
+      const reach = view.camera.zoom * 1.6;
+      ctx.beginPath();
+      for (let i = -6; i <= 6; i++) {
+        ctx.moveTo(px - reach + i * 9, py - reach);
+        ctx.lineTo(px + i * 9, py + reach);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+
 /**
- * The waters, drawn as faint anchor points rather than painted areas. A zone
- * is where fleets are, not a shape with a boundary, and a ring at its centre
- * says that more honestly than a coloured blob would.
+ * A band of the owner's colour laid along the inside of every realm's
+ * frontier, coast included.
+ *
+ * This is what lets a player read who holds what at a glance without the
+ * whole province being painted over: the ground stays the ground, and the
+ * colour gathers where the question of ownership is actually being asked.
+ * Drawn by stroking the frontier edges with a fat line and clipping it to the
+ * province, so only the inner half survives.
  */
+function drawRealmBands(
+  ctx: CanvasRenderingContext2D,
+  state: CampaignState,
+  t: Transform,
+  zoom: number,
+): void {
+  for (const shape of provinceShapes()) {
+    const region = state.regions.get(shape.id);
+    if (!region || shape.cell.length < 3) continue;
+    // Proportional to the province, so a band never swallows a small one.
+    const width = Math.max(2, Math.min(zoom * 0.45, cellExtent(shape) * t.scale * 0.13));
+
+    let any = false;
+    ctx.save();
+    tracePath(ctx, shape.cell, t);
+    ctx.clip();
+    ctx.beginPath();
+    for (let i = 0; i < shape.cell.length; i++) {
+      const across = shape.edgeNeighbours[i];
+      const other = across ? state.regions.get(across) : undefined;
+      // An edge shared with a province of the same realm is internal and gets
+      // no band; anything else is a frontier, including the open sea.
+      if (other && other.owner === region.owner) continue;
+      const a = shape.cell[i]!;
+      const b = shape.cell[(i + 1) % shape.cell.length]!;
+      ctx.moveTo(sx(t, a[0]), sy(t, a[1]));
+      ctx.lineTo(sx(t, b[0]), sy(t, b[1]));
+      any = true;
+    }
+    if (any) {
+      ctx.globalAlpha = region.owner === INDEPENDENT_ID ? 0.42 : 0.72;
+      ctx.strokeStyle = ownerColours(region).fill;
+      ctx.lineWidth = width * 2;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+/**
+ * The marks that say what the ground is.
+ *
+ * Mountains, forest and marsh are scattered over the whole of a province, so
+ * that a mountainous province reads as a range rather than as one symbol in a
+ * polygon. High ground is shaded under its marks, which is most of what makes
+ * a map look like country rather than like a chart.
+ */
+function drawTerrain(
+  ctx: CanvasRenderingContext2D,
+  state: CampaignState,
+  view: MapView,
+  t: Transform,
+): void {
+  const zoom = view.camera.zoom;
+  if (zoom < DETAIL_ZOOM * 0.55) return;
+  const base = Math.min(8.5, Math.max(1.8, zoom * 0.105));
+  ctx.save();
+  for (const shape of provinceShapes()) {
+    const region = state.regions.get(shape.id);
+    if (!region) continue;
+    const px = sx(t, shape.site[0]);
+    const py = sy(t, shape.site[1]);
+    const reach = cellExtent(shape) * t.scale;
+    if (px < -reach - 60 || px > view.viewport.width + reach + 60) continue;
+    if (py < -reach - 60 || py > view.viewport.height + reach + 60) continue;
+
+    const terrain = getRegion(shape.id).terrain as Terrain;
+    const points = terrainScatter(shape);
+
+    // Relief under the symbols, so high ground sits above the plain.
+    if (terrain === 'mountains' || terrain === 'hills') {
+      ctx.globalAlpha = terrain === 'mountains' ? 0.3 : 0.17;
+      ctx.fillStyle = '#2f2a1d';
+      for (const point of points) {
+        const x = sx(t, point.x);
+        const y = sy(t, point.y);
+        ctx.beginPath();
+        ctx.ellipse(x, y + base * 0.3, base * 1.5, base * 0.75, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.globalAlpha = terrain === 'forest' ? 0.62 : 0.55;
+    for (const point of points) {
+      const x = sx(t, point.x);
+      const y = sy(t, point.y);
+      if (x < -20 || x > view.viewport.width + 20) continue;
+      if (y < -20 || y > view.viewport.height + 20) continue;
+      drawTerrainMark(ctx, terrain, x, y, base * (0.72 + point.seed * 0.55));
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawProvinceBorders(
+  ctx: CanvasRenderingContext2D,
+  state: CampaignState,
+  view: MapView,
+  t: Transform,
+): void {
+  ctx.save();
+  ctx.lineJoin = 'round';
+
+  // Province lines first, thin and everywhere.
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = Math.max(0.5, view.camera.zoom * 0.035);
+  for (const shape of provinceShapes()) {
+    if (!state.regions.has(shape.id) || shape.cell.length < 3) continue;
+    tracePath(ctx, shape.cell, t);
+    ctx.stroke();
+  }
+
+  // Then the borders between realms, heavily, because those are the lines a
+  // player is actually reading.
+  ctx.strokeStyle = INK_STRONG;
+  ctx.lineWidth = Math.max(1.2, view.camera.zoom * 0.1);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  for (const shape of provinceShapes()) {
+    const region = state.regions.get(shape.id);
+    if (!region) continue;
+    for (let i = 0; i < shape.cell.length; i++) {
+      const across = shape.edgeNeighbours[i];
+      if (!across) continue;
+      const other = state.regions.get(across);
+      if (!other || other.owner === region.owner) continue;
+      // Draw each shared edge once: the province whose id sorts first owns it.
+      if (shape.id > across) continue;
+      const a = shape.cell[i]!;
+      const b = shape.cell[(i + 1) % shape.cell.length]!;
+      ctx.moveTo(sx(t, a[0]), sy(t, a[1]));
+      ctx.lineTo(sx(t, b[0]), sy(t, b[1]));
+    }
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Lakes and the great rivers. */
+function drawWater(ctx: CanvasRenderingContext2D, t: Transform, zoom: number): void {
+  ctx.save();
+  ctx.fillStyle = SEA_SHALLOW;
+  for (const ring of LAKE_RINGS) {
+    const projected = toMercator(ring);
+    ctx.beginPath();
+    projected.forEach(([lon, mercY], index) => {
+      const x = sx(t, lon);
+      const y = sy(t, mercY);
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  if (zoom >= DETAIL_ZOOM * 0.8) {
+    ctx.strokeStyle = 'rgba(110, 160, 196, 0.72)';
+    ctx.lineWidth = Math.max(0.7, zoom * 0.045);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    for (const line of RIVER_LINES) {
+      const projected = toMercator(line);
+      ctx.beginPath();
+      projected.forEach(([lon, mercY], index) => {
+        const x = sx(t, lon);
+        const y = sy(t, mercY);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function drawCoast(ctx: CanvasRenderingContext2D, land: Path2D, zoom: number): void {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(22, 18, 14, 0.8)';
+  ctx.lineWidth = Math.max(0.8, zoom * 0.055);
+  ctx.lineJoin = 'round';
+  ctx.stroke(land);
+  ctx.restore();
+}
+
+/** The sea crossings an army can make, and which of them a fleet has closed. */
+function drawSeaBorders(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
+  ctx.save();
+  ctx.setLineDash([5, 6]);
+  for (const border of BORDERS) {
+    if (border.kind !== 'sea') continue;
+    const from = state.regions.get(border.a);
+    const to = state.regions.get(border.b);
+    if (!from || !to) continue;
+    const a = screenPositionOf(view, border.a);
+    const b = screenPositionOf(view, border.b);
+    if (offScreen(a, b, view.viewport)) continue;
+    const closed =
+      from.owner !== to.owner ? seaLaneClosed(state, from.owner, border.a, border.b) : false;
+    ctx.strokeStyle = closed ? 'rgba(226, 87, 76, 0.65)' : 'rgba(150, 196, 226, 0.3)';
+    ctx.lineWidth = closed ? 1.8 : 1;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawSeaZones(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
   const zoom = view.camera.zoom;
   const radius = zoneRadius(zoom);
@@ -218,150 +535,34 @@ function drawSeaZones(ctx: CanvasRenderingContext2D, state: CampaignState, view:
     const occupied = [...state.fleets.values()].some(
       (fleet) => fleet.location.kind === 'sea' && fleet.location.zone === zone.id,
     );
-    if (!reachable && !selected && !hovered && !occupied && zoom < 11) continue;
+    if (reachable || selected || hovered) {
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      ctx.setLineDash(reachable ? [4, 4] : []);
+      ctx.lineWidth = selected ? 2.4 : 2;
+      ctx.strokeStyle = selected
+        ? '#ffe28a'
+        : reachable
+          ? 'rgba(255, 226, 138, 0.8)'
+          : 'rgba(180, 220, 245, 0.7)';
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
-    ctx.setLineDash(reachable ? [4, 4] : [2, 5]);
-    ctx.lineWidth = selected ? 2.4 : reachable ? 2 : 1;
-    ctx.strokeStyle = selected
-      ? '#ffe28a'
-      : reachable
-        ? 'rgba(255, 226, 138, 0.8)'
-        : hovered
-          ? 'rgba(180, 220, 245, 0.7)'
-          : 'rgba(120, 176, 214, 0.3)';
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    if (zoom >= 13 || selected || hovered) {
-      ctx.font = '500 10px ui-sans-serif, system-ui, sans-serif';
+    if (zoom >= 13 || selected || hovered || occupied) {
+      ctx.font = 'italic 500 11px ui-serif, Georgia, serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(12, 16, 20, 0.85)';
+      ctx.strokeStyle = 'rgba(12, 20, 28, 0.8)';
       ctx.strokeText(zone.name, point.x, point.y);
-      ctx.fillStyle = 'rgba(176, 208, 232, 0.9)';
+      ctx.fillStyle = 'rgba(168, 202, 228, 0.78)';
       ctx.fillText(zone.name, point.x, point.y);
     }
   }
   ctx.restore();
 }
 
-/** Fleets, at anchor beside their harbour or on station in open water. */
-function drawFleets(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
-  const groups = new Map<string, { x: number; y: number; colour: string; hulls: number; cargo: boolean }[]>();
-  for (const fleet of state.fleets.values()) {
-    const colour = tryGetFaction(fleet.faction)?.colour ?? INDEPENDENT_COLOUR;
-    const anchor =
-      fleet.location.kind === 'port'
-        ? screenPositionOf(view, fleet.location.region)
-        : zonePosition(view, fleet.location.zone);
-    const key =
-      fleet.location.kind === 'port'
-        ? `port:${fleet.location.region}`
-        : `sea:${fleet.location.zone}`;
-    const list = groups.get(key) ?? [];
-    list.push({
-      x: anchor.x,
-      y: anchor.y,
-      colour,
-      hulls: fleet.ships.length,
-      cargo: fleet.cargo.length > 0,
-    });
-    groups.set(key, list);
-  }
-
-  for (const [key, fleets] of groups) {
-    const atSea = key.startsWith('sea:');
-    fleets.forEach((fleet, index) => {
-      // Fan several fleets apart so each one can be picked out and clicked.
-      const angle = Math.PI * 0.75 + index * 0.55;
-      const spread = atSea ? 0 : 14;
-      const x = fleet.x + Math.cos(angle) * spread + (atSea ? (index - (fleets.length - 1) / 2) * 13 : 0);
-      const y = fleet.y + Math.sin(angle) * spread;
-      drawHull(ctx, x, y, fleet.colour, fleet.hulls, fleet.cargo);
-    });
-  }
-}
-
-/** A small hull glyph: a boat is more legible here than a dot. */
-function drawHull(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  colour: string,
-  hulls: number,
-  laden: boolean,
-): void {
-  const size = 4 + Math.min(4, hulls * 0.5);
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(x - size, y);
-  ctx.quadraticCurveTo(x, y + size * 1.1, x + size, y);
-  ctx.closePath();
-  ctx.fillStyle = colour;
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(12, 18, 24, 0.9)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  // A mast, and a crossyard when the ship is carrying troops.
-  ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.lineTo(x, y - size * 1.4);
-  if (laden) {
-    ctx.moveTo(x - size * 0.6, y - size * 0.9);
-    ctx.lineTo(x + size * 0.6, y - size * 0.9);
-  }
-  ctx.strokeStyle = laden ? '#ffe28a' : 'rgba(236, 230, 214, 0.9)';
-  ctx.lineWidth = 1.2;
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawBorders(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
-  ctx.save();
-  for (const border of BORDERS) {
-    const from = state.regions.get(border.a);
-    const to = state.regions.get(border.b);
-    if (!from || !to) continue;
-    const a = screenPositionOf(view, border.a);
-    const b = screenPositionOf(view, border.b);
-    if (offScreen(a, b, view.viewport)) continue;
-
-    if (border.kind === 'sea') {
-      // A lane an enemy fleet has closed is drawn in warning colour, because
-      // an army that marches at it will simply be refused.
-      const closed =
-        from.owner !== to.owner
-          ? seaLaneClosed(state, from.owner, border.a, border.b)
-          : false;
-      ctx.strokeStyle = closed ? 'rgba(226, 87, 76, 0.65)' : 'rgba(120, 176, 214, 0.42)';
-      ctx.setLineDash([5, 6]);
-      ctx.lineWidth = closed ? 1.8 : 1;
-    } else {
-      // A border between two different owners is drawn more strongly: it is
-      // the line that matters to the player.
-      const contested = from.owner !== to.owner;
-      ctx.strokeStyle = contested ? 'rgba(236, 226, 200, 0.5)' : 'rgba(160, 170, 150, 0.25)';
-      ctx.setLineDash([]);
-      ctx.lineWidth = contested ? 1.6 : 1;
-    }
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-/**
- * The trade roads, drawn as thin gold threads along their paths.
- *
- * Every road at once would bury the map, so by default only the roads through
- * the selected province are drawn in full; the rest are a hint. `T` shows them
- * all.
- */
 function drawTradeRoutes(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
   const selected = view.selected;
   const highlighted = new Set(selected ? routesThrough(selected) : []);
@@ -378,255 +579,257 @@ function drawTradeRoutes(ctx: CanvasRenderingContext2D, state: CampaignState, vi
       if (index === 0) ctx.moveTo(point.x, point.y);
       else ctx.lineTo(point.x, point.y);
     });
-    ctx.setLineDash(strong ? [] : [2, 7]);
-    ctx.lineWidth = strong ? 2.4 : 1;
-    ctx.strokeStyle = strong ? 'rgba(217, 181, 95, 0.85)' : 'rgba(217, 181, 95, 0.3)';
+    ctx.setLineDash(strong ? [9, 5] : [2, 8]);
+    ctx.lineWidth = strong ? 2.2 : 1;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = strong ? 'rgba(226, 196, 112, 0.9)' : 'rgba(226, 196, 112, 0.35)';
     ctx.stroke();
+    ctx.setLineDash([]);
 
     if (strong && view.camera.zoom >= 12) {
       const middle = route.path[Math.floor(route.path.length / 2)]!;
       const point = screenPositionOf(view, middle);
-      ctx.setLineDash([]);
-      ctx.font = 'italic 500 11px ui-sans-serif, system-ui, sans-serif';
+      ctx.font = 'italic 600 11px ui-serif, Georgia, serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
       ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(12, 16, 20, 0.85)';
-      ctx.strokeText(route.name, point.x, point.y - 14);
-      ctx.fillStyle = '#d9b55f';
-      ctx.fillText(route.name, point.x, point.y - 14);
+      ctx.strokeStyle = 'rgba(16, 14, 10, 0.85)';
+      ctx.strokeText(route.name, point.x, point.y - 18);
+      ctx.fillStyle = '#e2c470';
+      ctx.fillText(route.name, point.x, point.y - 18);
     }
   }
   ctx.restore();
 }
 
-/** Caravans, as small laden marks beside the province they are passing through. */
-function drawCaravans(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
-  const byRegion = new Map<RegionId, { colour: string; value: number }[]>();
-  for (const caravan of state.caravans.values()) {
-    const where = caravanLocation(caravan);
-    if (!where) continue;
-    const list = byRegion.get(where) ?? [];
-    list.push({
-      colour: tryGetFaction(caravan.faction)?.colour ?? INDEPENDENT_COLOUR,
-      value: caravan.value,
-    });
-    byRegion.set(where, list);
-  }
-
-  for (const [region, caravans] of byRegion) {
-    const province = state.regions.get(region);
-    if (!province) continue;
-    const point = screenPositionOf(view, region);
-    const radius = radiusFor(province, view.camera.zoom);
-    caravans.forEach((caravan, index) => {
-      const angle = Math.PI * 1.25 - index * 0.5;
-      const x = point.x + Math.cos(angle) * (radius + 8);
-      const y = point.y + Math.sin(angle) * (radius + 8);
-      const size = 2.4 + Math.min(2.2, caravan.value / 400);
-      // A pack-load: a small square with a strap across it.
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(x - size, y - size * 0.8, size * 2, size * 1.6);
-      ctx.fillStyle = caravan.colour;
-      ctx.fill();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = 'rgba(14, 18, 22, 0.9)';
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(x - size, y);
-      ctx.lineTo(x + size, y);
-      ctx.strokeStyle = '#d9b55f';
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
-      ctx.restore();
-    });
-  }
-}
-
-function drawReachable(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
+function drawReachable(
+  ctx: CanvasRenderingContext2D,
+  state: CampaignState,
+  view: MapView,
+  t: Transform,
+): void {
   if (view.reachable.size === 0) return;
   ctx.save();
   for (const id of view.reachable) {
-    const region = state.regions.get(id);
-    if (!region) continue;
-    const point = screenPositionOf(view, id);
-    const radius = radiusFor(region, view.camera.zoom) + 7;
-    ctx.strokeStyle = 'rgba(255, 226, 138, 0.85)';
+    const shape = provinceShapes().find((candidate) => candidate.id === id);
+    if (!shape || !state.regions.has(id)) continue;
+    tracePath(ctx, shape.cell, t);
+    ctx.fillStyle = 'rgba(255, 226, 138, 0.2)';
+    ctx.fill();
+    ctx.strokeStyle = '#ffe28a';
     ctx.lineWidth = 2;
-    ctx.setLineDash([3, 3]);
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    ctx.setLineDash([5, 4]);
     ctx.stroke();
+    ctx.setLineDash([]);
   }
   ctx.restore();
 }
 
-function drawProvinces(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
+const WALL_ORDER = ['none', 'palisade', 'wooden', 'stone', 'large_stone', 'epic'];
+
+function drawSettlements(
+  ctx: CanvasRenderingContext2D,
+  state: CampaignState,
+  view: MapView,
+  t: Transform,
+): void {
+  const zoom = view.camera.zoom;
   for (const geography of REGIONS) {
     const region = state.regions.get(geography.id);
     if (!region) continue;
-    const point = project(view.camera, view.viewport, geography.lon, geography.lat);
-    const radius = radiusFor(region, view.camera.zoom);
-    if (point.x < -40 || point.x > view.viewport.width + 40) continue;
-    if (point.y < -40 || point.y > view.viewport.height + 40) continue;
+    const x = sx(t, geography.lon);
+    const y = sy(t, mercatorY(geography.lat));
+    if (x < -40 || x > view.viewport.width + 40) continue;
+    if (y < -40 || y > view.viewport.height + 40) continue;
 
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = colourOf(region);
-    ctx.fill();
-    ctx.lineWidth = 1.4;
-    ctx.strokeStyle = darkColourOf(region);
-    ctx.stroke();
+    const rank = SETTLEMENT_ORDER.indexOf(region.tier);
+    const scale = Math.max(3.2, Math.min(16, zoom * (0.2 + rank * 0.045)));
+    const colours = ownerColours(region);
+    drawSettlement(ctx, x, y, scale, {
+      rank,
+      walls: WALL_ORDER.indexOf(wallTier(region)),
+      colour: colours.fill,
+      colourDark: colours.dark,
+      port: geography.port,
+    });
 
-    // Walls: a ring whose weight shows how hard the place is to take.
-    const walls = wallTier(region);
-    if (walls !== 'none') {
-      const weight = ['none', 'palisade', 'wooden', 'stone', 'large_stone', 'epic'].indexOf(walls);
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, radius + 2.5, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(232, 228, 216, ${0.12 + weight * 0.11})`;
-      ctx.lineWidth = 1 + weight * 0.3;
-      ctx.stroke();
-    }
-
-    // A besieged province gets a red crescent, so a siege cannot be missed.
+    // A besieged place gets a ring of the besieger's intent.
     if (region.siege) {
+      ctx.save();
       ctx.beginPath();
-      ctx.arc(point.x, point.y, radius + 5, -0.6, 0.6);
+      ctx.arc(x, y, scale * 2.1, 0, Math.PI * 2);
       ctx.strokeStyle = '#e2574c';
-      ctx.lineWidth = 2.4;
+      ctx.lineWidth = 2.2;
+      ctx.setLineDash([4, 4]);
       ctx.stroke();
-    }
-
-    // Unrest shown as a sliver of warning colour on the disc itself.
-    if (region.unrest > 40) {
-      ctx.beginPath();
-      ctx.moveTo(point.x, point.y);
-      ctx.arc(point.x, point.y, radius, -Math.PI / 2, -Math.PI / 2 + (region.unrest / 100) * Math.PI * 2);
-      ctx.closePath();
-      ctx.fillStyle = 'rgba(226, 87, 76, 0.45)';
-      ctx.fill();
+      ctx.restore();
     }
   }
 }
 
-function drawArmies(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
-  // Armies in the same province are fanned out so each is clickable.
-  const byRegion = new Map<RegionId, { faction: string; soldiers: number }[]>();
+function drawForces(
+  ctx: CanvasRenderingContext2D,
+  state: CampaignState,
+  view: MapView,
+  t: Transform,
+): void {
+  const zoom = view.camera.zoom;
+  const size = Math.max(3.5, Math.min(13, zoom * 0.3));
+
+  // Armies, fanned out where several share a province.
+  const byRegion = new Map<RegionId, { colour: string; dark: string; men: number }[]>();
   for (const army of state.armies.values()) {
+    const faction = tryGetFaction(army.faction);
     const list = byRegion.get(army.location) ?? [];
     list.push({
-      faction: tryGetFaction(army.faction)?.colour ?? INDEPENDENT_COLOUR,
-      soldiers: strengthOf(army.regiments),
+      colour: faction?.colour ?? INDEPENDENT_COLOUR,
+      dark: faction?.colourDark ?? '#5c564d',
+      men: strengthOf(army.regiments),
     });
     byRegion.set(army.location, list);
   }
-
   for (const [id, armies] of byRegion) {
-    const region = state.regions.get(id);
-    if (!region) continue;
-    const point = screenPositionOf(view, id);
-    const radius = radiusFor(region, view.camera.zoom);
+    const geography = getRegion(id);
+    const x = sx(t, geography.lon);
+    const y = sy(t, mercatorY(geography.lat));
     armies.forEach((army, index) => {
-      const angle = -Math.PI / 4 + index * 0.7;
-      const x = point.x + Math.cos(angle) * (radius + 9);
-      const y = point.y + Math.sin(angle) * (radius + 9);
-      const size = 3.2 + Math.min(4, Math.sqrt(army.soldiers) / 11);
-      // A small shield shape rather than a dot, which reads as "troops".
-      ctx.beginPath();
-      ctx.moveTo(x - size, y - size);
-      ctx.lineTo(x + size, y - size);
-      ctx.lineTo(x + size, y + size * 0.3);
-      ctx.quadraticCurveTo(x, y + size * 1.6, x - size, y + size * 0.3);
-      ctx.closePath();
-      ctx.fillStyle = army.faction;
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(16, 20, 16, 0.85)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
+      const offset = (index - (armies.length - 1) / 2) * size * 1.9;
+      drawArmy(ctx, x + offset, y + size * 1.7, size, army.colour, army.dark, army.men);
+    });
+  }
+
+  // Fleets, at anchor beside their harbour or on station in open water.
+  const fleetGroups = new Map<string, { x: number; y: number; colour: string; dark: string; laden: boolean }[]>();
+  for (const fleet of state.fleets.values()) {
+    const faction = tryGetFaction(fleet.faction);
+    const anchor =
+      fleet.location.kind === 'port'
+        ? screenPositionOf(view, fleet.location.region)
+        : zonePosition(view, fleet.location.zone);
+    const key =
+      fleet.location.kind === 'port' ? `port:${fleet.location.region}` : `sea:${fleet.location.zone}`;
+    const list = fleetGroups.get(key) ?? [];
+    list.push({
+      x: anchor.x,
+      y: anchor.y,
+      colour: faction?.colour ?? INDEPENDENT_COLOUR,
+      dark: faction?.colourDark ?? '#5c564d',
+      laden: fleet.cargo.length > 0,
+    });
+    fleetGroups.set(key, list);
+  }
+  for (const [key, fleets] of fleetGroups) {
+    const atSea = key.startsWith('sea:');
+    fleets.forEach((fleet, index) => {
+      const offset = (index - (fleets.length - 1) / 2) * size * 2;
+      const x = fleet.x + (atSea ? offset : offset * 0.7 - size * 1.8);
+      const y = fleet.y + (atSea ? 0 : size * 1.1);
+      drawShip(ctx, x, y, size * 0.85, fleet.colour, fleet.dark, fleet.laden);
     });
   }
 }
 
-function drawLabels(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
-  const zoom = view.camera.zoom;
-  if (!view.alwaysLabel && zoom < 11) return;
-  ctx.save();
-  ctx.font = '500 11px ui-sans-serif, system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  for (const geography of REGIONS) {
-    const region = state.regions.get(geography.id);
-    if (!region) continue;
-    // At low zoom only the important places are named, so labels never collide.
-    const rank = SETTLEMENT_ORDER.indexOf(region.tier);
-    const threshold = zoom < 16 ? 3 : zoom < 24 ? 2 : zoom < 36 ? 1 : 0;
-    if (!view.alwaysLabel && rank < threshold) continue;
-    const point = project(view.camera, view.viewport, geography.lon, geography.lat);
-    if (point.x < 0 || point.x > view.viewport.width) continue;
-    if (point.y < 0 || point.y > view.viewport.height) continue;
-    const label = geography.settlement;
-    const offset = radiusFor(region, zoom) + 3;
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(12, 16, 20, 0.85)';
-    ctx.strokeText(label, point.x, point.y + offset);
-    ctx.fillStyle = '#ece6d6';
-    ctx.fillText(label, point.x, point.y + offset);
+function drawCaravans(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
+  if (view.camera.zoom < DETAIL_ZOOM) return;
+  const size = Math.max(2.4, Math.min(7, view.camera.zoom * 0.17));
+  const byRegion = new Map<RegionId, string[]>();
+  for (const caravan of state.caravans.values()) {
+    const where = caravanLocation(caravan);
+    if (!where) continue;
+    const colour = tryGetFaction(caravan.faction)?.colour ?? INDEPENDENT_COLOUR;
+    byRegion.set(where, [...(byRegion.get(where) ?? []), colour]);
   }
-  ctx.restore();
+  for (const [id, colours] of byRegion) {
+    const point = screenPositionOf(view, id);
+    colours.forEach((colour, index) => {
+      drawCaravan(ctx, point.x - size * 2.6, point.y - size * (2.2 + index * 1.4), size, colour);
+    });
+  }
 }
 
-/**
- * The place a holy war is being preached for, ringed so that it cannot be
- * missed. A crusade that the player has to go hunting for in a log is not a
- * crusade.
- */
 function drawHolyWar(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
   const war = state.faith.holyWar;
   if (!war) return;
   const province = state.regions.get(war.target);
   if (!province) return;
   const point = screenPositionOf(view, war.target);
-  const radius = radiusFor(province, view.camera.zoom) + 9;
+  const radius = Math.max(14, view.camera.zoom * 0.55);
 
   ctx.save();
   ctx.beginPath();
   ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
-  ctx.strokeStyle = war.faith === 'christian' ? 'rgba(236, 226, 200, 0.9)' : 'rgba(126, 200, 160, 0.9)';
-  ctx.lineWidth = 2.2;
-  ctx.setLineDash([6, 4]);
+  ctx.strokeStyle = war.faith === 'christian' ? 'rgba(244, 238, 216, 0.95)' : 'rgba(126, 210, 166, 0.95)';
+  ctx.lineWidth = 2.4;
+  ctx.setLineDash([7, 5]);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // A cross for a crusade, a crescent for a jihad.
-  ctx.strokeStyle = war.faith === 'christian' ? '#ece2c8' : '#7ec8a0';
-  ctx.lineWidth = 2;
-  const mark = radius + 7;
+  ctx.strokeStyle = war.faith === 'christian' ? '#f4eed8' : '#7ed2a6';
+  ctx.lineWidth = 2.4;
+  const mark = radius + 10;
   ctx.beginPath();
   if (war.faith === 'christian') {
-    ctx.moveTo(point.x, point.y - mark - 5);
-    ctx.lineTo(point.x, point.y - mark + 5);
-    ctx.moveTo(point.x - 4, point.y - mark - 1);
-    ctx.lineTo(point.x + 4, point.y - mark - 1);
+    ctx.moveTo(point.x, point.y - mark - 6);
+    ctx.lineTo(point.x, point.y - mark + 6);
+    ctx.moveTo(point.x - 5, point.y - mark - 1);
+    ctx.lineTo(point.x + 5, point.y - mark - 1);
   } else {
-    ctx.arc(point.x, point.y - mark, 5, Math.PI * 0.35, Math.PI * 1.65);
+    ctx.arc(point.x, point.y - mark, 6, Math.PI * 0.35, Math.PI * 1.65);
   }
   ctx.stroke();
   ctx.restore();
 }
 
-function drawSelection(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
+function drawLabels(
+  ctx: CanvasRenderingContext2D,
+  state: CampaignState,
+  view: MapView,
+  t: Transform,
+): void {
+  const zoom = view.camera.zoom;
+  if (!view.alwaysLabel && zoom < 9) return;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (const geography of REGIONS) {
+    const region = state.regions.get(geography.id);
+    if (!region) continue;
+    const rank = SETTLEMENT_ORDER.indexOf(region.tier);
+    const threshold = zoom < 14 ? 3 : zoom < 22 ? 2 : zoom < 34 ? 1 : 0;
+    if (!view.alwaysLabel && rank < threshold) continue;
+    const x = sx(t, geography.lon);
+    const y = sy(t, mercatorY(geography.lat));
+    if (x < 0 || x > view.viewport.width) continue;
+    if (y < 0 || y > view.viewport.height) continue;
+
+    const scale = Math.max(3.2, Math.min(16, zoom * (0.2 + rank * 0.045)));
+    const fontSize = Math.max(9, Math.min(15, 8 + rank * 1.1 + zoom * 0.05));
+    ctx.font = `${rank >= 4 ? '600' : '500'} ${fontSize}px ui-serif, Georgia, serif`;
+    const label = geography.settlement;
+    const offset = scale * 0.9;
+    ctx.lineWidth = 3.4;
+    ctx.strokeStyle = 'rgba(14, 16, 12, 0.88)';
+    ctx.strokeText(label, x, y + offset);
+    ctx.fillStyle = rank >= 4 ? '#f3ecd8' : '#e2dcc6';
+    ctx.fillText(label, x, y + offset);
+  }
+  ctx.restore();
+}
+
+function drawSelection(
+  ctx: CanvasRenderingContext2D,
+  state: CampaignState,
+  view: MapView,
+  t: Transform,
+): void {
   for (const [id, colour, weight] of [
-    [view.hovered, 'rgba(255,255,255,0.55)', 1.5] as const,
-    [view.selected, '#ffe28a', 2.6] as const,
+    [view.hovered, 'rgba(255,255,255,0.45)', 1.6] as const,
+    [view.selected, '#ffe28a', 2.8] as const,
   ]) {
     if (!id) continue;
-    const region = state.regions.get(id);
-    if (!region) continue;
-    const point = screenPositionOf(view, id);
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, radiusFor(region, view.camera.zoom) + 4, 0, Math.PI * 2);
+    const shape = provinceShapes().find((candidate) => candidate.id === id);
+    if (!shape || !state.regions.has(id)) continue;
+    tracePath(ctx, shape.cell, t);
     ctx.strokeStyle = colour;
     ctx.lineWidth = weight;
     ctx.setLineDash([]);
@@ -636,14 +839,10 @@ function drawSelection(ctx: CanvasRenderingContext2D, state: CampaignState, view
 
 function offScreen(a: Point, b: Point, viewport: Viewport): boolean {
   const margin = 60;
-  const minX = Math.min(a.x, b.x);
-  const maxX = Math.max(a.x, b.x);
-  const minY = Math.min(a.y, b.y);
-  const maxY = Math.max(a.y, b.y);
   return (
-    maxX < -margin ||
-    minX > viewport.width + margin ||
-    maxY < -margin ||
-    minY > viewport.height + margin
+    Math.max(a.x, b.x) < -margin ||
+    Math.min(a.x, b.x) > viewport.width + margin ||
+    Math.max(a.y, b.y) < -margin ||
+    Math.min(a.y, b.y) > viewport.height + margin
   );
 }

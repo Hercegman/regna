@@ -16,7 +16,16 @@ import { createBattle, stepBattle } from '../core/battle/sim';
 import type { BattleResult, BattleUnit, Side } from '../core/battle/types';
 import { BATTLE_TIME_LIMIT, TICK } from '../core/battle/types';
 import type { BattleView } from '../render/battle';
-import { drawBattle, screenToField, unitAt } from '../render/battle';
+import {
+  clampBattleCamera,
+  drawBattle,
+  fitBattleCamera,
+  frameBattleCamera,
+  panBattleCamera,
+  screenToField,
+  unitAt,
+  zoomBattleCamera,
+} from '../render/battle';
 import { bar, clear, count, el, pretty, row } from './dom';
 
 const SPEEDS = [1, 2, 4, 8] as const;
@@ -70,7 +79,15 @@ export class BattleScreen {
     if (!context) throw new Error('This browser has no 2D canvas context.');
     this.ctx = context;
 
-    this.view = { width: 100, height: 100, selected: undefined, hovered: undefined };
+    this.view = {
+      width: 100,
+      height: 100,
+      selected: undefined,
+      hovered: undefined,
+      zoom: 1,
+      centre: { x: 0, y: 0 },
+      touched: false,
+    };
     this.attachInput();
     this.resize();
     // The header changes height when the battle ends and its controls go away,
@@ -104,10 +121,60 @@ export class BattleScreen {
     this.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     this.view.width = width;
     this.view.height = height;
+    // A camera the player has not touched keeps the whole field in view; one
+    // they have is left where they put it.
+    if (this.view.touched) clampBattleCamera(this.view);
+    else frameBattleCamera(this.view, this.battle.units);
   }
 
   private attachInput(): void {
+    // Dragging with the right button moves the camera, which leaves the left
+    // button free to mean "orders" and nothing else.
+    let dragging = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    this.canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+
+    this.canvas.addEventListener('mousedown', (event) => {
+      if (event.button !== 2 && event.button !== 1) return;
+      event.preventDefault();
+      dragging = true;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      this.canvas.style.cursor = 'grabbing';
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      this.canvas.style.cursor = 'default';
+    });
+
+    this.canvas.addEventListener(
+      'wheel',
+      (event) => {
+        event.preventDefault();
+        const rect = this.canvas.getBoundingClientRect();
+        zoomBattleCamera(
+          this.view,
+          Math.pow(0.9988, event.deltaY),
+          event.clientX - rect.left,
+          event.clientY - rect.top,
+        );
+        this.draw();
+      },
+      { passive: false },
+    );
+
     this.canvas.addEventListener('mousemove', (event) => {
+      if (dragging) {
+        panBattleCamera(this.view, event.clientX - lastX, event.clientY - lastY);
+        lastX = event.clientX;
+        lastY = event.clientY;
+        this.draw();
+        return;
+      }
       const rect = this.canvas.getBoundingClientRect();
       const hovered = unitAt(this.battle, this.view, event.clientX - rect.left, event.clientY - rect.top);
       if (hovered !== this.view.hovered) {
@@ -157,8 +224,29 @@ export class BattleScreen {
       if (event.key === ' ') {
         event.preventDefault();
         this.toggle();
+        return;
+      }
+      const rect = this.canvas.getBoundingClientRect();
+      if (event.key === '+' || event.key === '=') {
+        zoomBattleCamera(this.view, 1.25, rect.width / 2, rect.height / 2);
+        this.draw();
+      } else if (event.key === '-' || event.key === '_') {
+        zoomBattleCamera(this.view, 0.8, rect.width / 2, rect.height / 2);
+        this.draw();
+      } else if (event.key === 'Home') {
+        fitBattleCamera(this.view);
+        this.view.touched = false;
+        this.draw();
       }
     });
+  }
+
+  /** Development aid: look at the field at a given number of pixels per metre. */
+  setZoom(zoom: number): void {
+    this.view.zoom = zoom;
+    this.view.touched = true;
+    clampBattleCamera(this.view);
+    this.draw();
   }
 
   private selectedUnit(): BattleUnit | undefined {

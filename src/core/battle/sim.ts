@@ -6,7 +6,7 @@
  * the simulation reproducible, and every random draw comes from the battle's
  * own generator so that two runs of the same battle are identical.
  */
-import type { Point } from '../types';
+import type { Point, UnitTypeId } from '../types';
 import { clamp, distance, UNIT_ROLE } from '../types';
 import { Rng } from '../rng';
 import { getUnitType } from '../data/units';
@@ -77,10 +77,19 @@ function has(unit: BattleUnit, ability: string): boolean {
 
 /** Frontage the unit occupies, from its surviving strength. */
 export function frontage(unit: BattleUnit): number {
-  const type = getUnitType(unit.type);
-  const perMan = type.mounted ? 1.6 : 0.9;
-  const ranks = type.unitClass === 'pikemen' || type.unitClass === 'spearmen' ? 4 : 3;
-  return Math.max(6, (unit.soldiers / ranks) * perMan);
+  return frontageOf(unit.type, unit.soldiers);
+}
+
+/**
+ * The ground a given number of men of a given type covers, in metres. Kept
+ * separate from `frontage` so that deployment can measure a regiment before
+ * there is a regiment to measure.
+ */
+export function frontageOf(type: UnitTypeId, soldiers: number): number {
+  const unit = getUnitType(type);
+  const perMan = unit.mounted ? 1.6 : 0.9;
+  const ranks = unit.unitClass === 'pikemen' || unit.unitClass === 'spearmen' ? 4 : 3;
+  return Math.max(6, (soldiers / ranks) * perMan);
 }
 
 /** Effective melee attack after experience, fatigue, ground and charge. */
