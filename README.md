@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-d9b55f?style=flat-square&labelColor=12161a)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white&labelColor=12161a)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-6-646cff?style=flat-square&logo=vite&logoColor=white&labelColor=12161a)](https://vite.dev)
-[![Tests](https://img.shields.io/badge/tests-332%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
+[![Tests](https://img.shields.io/badge/tests-345%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
 [![Runtime deps](https://img.shields.io/badge/runtime%20dependencies-none-8b91a0?style=flat-square&labelColor=12161a)](#architecture)
 
 [Why](#why-regna) · [The world](#the-world) · [Features](#features) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Playing](#playing) · [Architecture](#architecture) · [Roadmap](#roadmap)
@@ -211,6 +211,11 @@ npm run dev          # http://localhost:5173
 
 ## Playing
 
+A short guide opens with your first campaign: eight things a ruler has to be
+able to do, each marked off the moment you do it rather than when you read
+about it, in whatever order you like. The **Guide** button puts it away and
+brings it back.
+
 Choose a faction, then:
 
 | Action | How |
@@ -272,7 +277,7 @@ Both are offered again on the faction select screen.
 | `src/render/` | The Mercator projection and camera, the province geometry, the vector art, the campaign map, the battlefield. |
 | `src/ui/` | Screens, panels, persistence. Plain DOM, no framework. |
 | `tools/` | `build-geography.py`, which turns Natural Earth's vectors into the checked-in coastline. |
-| `tests/` | 332 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
+| `tests/` | 345 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
 
 Nothing in `src/core/` touches the DOM or calls `Math.random`. Randomness comes
 from a xoshiro128\*\* generator whose state is saved with the campaign, which is
@@ -317,7 +322,7 @@ URL parameters open a known state without a sequence of clicks:
 - [x] Agents — spies, envoys, priests and merchants
 - [x] Dynasties: marriage, legitimacy, and a succession that follows the line
 - [ ] Civil war: a disputed succession that produces a rival claimant with an army
-- [ ] An opening tutorial, because the interface is dense and says nothing
+- [x] An opening guide, because the interface is dense and used to say nothing
 - [ ] Mercenary politics: companies that change sides, or take a city instead of a contract
 
 ## Not a reimplementation

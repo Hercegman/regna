@@ -368,6 +368,24 @@ model is not doing.
 wide do not share a scale. Untouched, the camera frames the two armies; the
 player zooms and pans from there.
 
+## Teaching it
+
+The interface has eight panels and nine systems behind them and used to say
+nothing at all about how any of it is played.
+
+The guide is not a scripted sequence that takes the game away from the player.
+It is a list of the things a ruler has to be able to do, in any order, each one
+judged by a pure function. Most are answered by the campaign itself — a
+building under construction, a caravan on the road, a man in the field — so a
+step is complete because the thing happened rather than because a button was
+pressed, and the guide can never disagree with the game.
+
+Three of them cannot be answered that way, and say so: nothing in the state
+records that a panel was opened or that an army was ordered to march. Two more
+accept the interface's record as well as the state, because a project finishes
+and a muster completes, and a step that un-ticks itself the moment the player
+succeeds would be a poor teacher.
+
 ## What is deliberately simple
 
 - **No mercenary politics.** Companies serve or leave; they do not change

@@ -115,6 +115,13 @@ import {
   marriedTo,
   proposeMarriage,
 } from '../core/campaign/dynasty';
+import {
+  GUIDE_STEPS,
+  dismissGuide,
+  guideDismissed,
+  guideProgress,
+  restoreGuide,
+} from './tutorial';
 import { Rng } from '../core/rng';
 import { commitRng, rngFor } from '../core/campaign';
 import { getBuildingType } from '../core/data/buildings';
@@ -158,6 +165,11 @@ export class CampaignScreen {
   private selectedAgent: AgentId | undefined;
   private moveMode = false;
   private travelMode = false;
+  /** The opening guide, until the player puts it away. */
+  private guideOpen = !guideDismissed();
+  private guideBox: HTMLElement;
+  /** What the player has opened and ordered, for the guide to read. */
+  private readonly seen = new Set<string>();
   private sailMode = false;
   private busy = false;
 
@@ -171,12 +183,13 @@ export class CampaignScreen {
     this.canvas = el('canvas', { class: 'map-canvas' });
     this.panel = el('aside', { class: 'side-panel' });
     this.logBox = el('div', { class: 'log-box' });
+    this.guideBox = el('div', { class: 'guide-box' });
 
     host.appendChild(
       el('div', { class: 'campaign-screen' },
         this.topBar,
         el('div', { class: 'campaign-body' },
-          el('div', { class: 'map-holder' }, this.canvas, this.logBox),
+          el('div', { class: 'map-holder' }, this.canvas, this.guideBox, this.logBox),
           this.panel,
         ),
       ),
@@ -229,6 +242,7 @@ export class CampaignScreen {
     ];
     if ((known as readonly string[]).includes(tab)) {
       this.tab = tab as PanelTab;
+      this.seen.add(`tab:${tab}`);
       this.renderPanel();
     }
   }
@@ -408,6 +422,7 @@ export class CampaignScreen {
   }
 
   private selectProvince(id: RegionId | undefined): void {
+    if (id) this.seen.add('province');
     this.view.selected = id;
     this.view.selectedZone = undefined;
     this.clearMovementHighlights();
@@ -475,8 +490,71 @@ export class CampaignScreen {
   private renderAll(): void {
     this.renderTopBar();
     this.renderPanel();
+    this.renderGuide();
     this.renderLog();
     this.draw();
+  }
+
+  /**
+   * The opening guide: what a ruler has to be able to do, in any order, each
+   * marked off the moment the player does it rather than when he reads about
+   * it. It puts itself away once everything on it is done.
+   */
+  private renderGuide(): void {
+    clear(this.guideBox);
+    if (!this.guideOpen) {
+      this.guideBox.className = 'guide-box hidden';
+      return;
+    }
+    const ctx = { state: this.state, me: this.state.player, seen: this.seen };
+    const progress = guideProgress(ctx);
+    if (!progress.next) {
+      // Nothing left to teach. Say so once and get out of the way.
+      this.guideBox.className = 'guide-box';
+      this.guideBox.appendChild(el('div', { class: 'guide-head' },
+        el('strong', {}, 'You have the run of it'),
+        el('button', {
+          class: 'tiny',
+          onClick: () => {
+            this.guideOpen = false;
+            dismissGuide();
+            this.renderAll();
+          },
+        }, 'Close'),
+      ));
+      this.guideBox.appendChild(el('p', { class: 'guide-why' },
+        'Every part of the game has been used at least once. The guide is off the screen ' +
+        'from here; the Guide button brings it back.',
+      ));
+      return;
+    }
+
+    this.guideBox.className = 'guide-box';
+    this.guideBox.appendChild(el('div', { class: 'guide-head' },
+      el('strong', {}, `Guide · ${progress.done} of ${progress.total}`),
+      el('button', {
+        class: 'tiny',
+        title: 'Put the guide away',
+        onClick: () => {
+          this.guideOpen = false;
+          dismissGuide();
+          this.renderAll();
+        },
+      }, 'Close'),
+    ));
+
+    for (const step of GUIDE_STEPS) {
+      const done = step.done(ctx);
+      const current = step.id === progress.next.id;
+      const entry = el('div', { class: `guide-step${done ? ' done' : current ? ' current' : ''}` },
+        el('span', { class: 'guide-mark' }, done ? '✓' : current ? '→' : '·'),
+        el('span', { class: 'guide-title' }, step.title),
+      );
+      this.guideBox.appendChild(entry);
+      if (!current || done) continue;
+      this.guideBox.appendChild(el('p', { class: 'guide-why' }, step.why));
+      this.guideBox.appendChild(el('p', { class: 'guide-where' }, step.where));
+    }
   }
 
   private draw(): void {
@@ -523,6 +601,16 @@ export class CampaignScreen {
           title: 'Download the campaign as a file',
           onClick: () => downloadSave(this.state),
         }, 'Export'),
+        el('button', {
+          class: 'small',
+          title: this.guideOpen ? 'Put the guide away' : 'Show the opening guide',
+          onClick: () => {
+            this.guideOpen = !this.guideOpen;
+            if (this.guideOpen) restoreGuide();
+            else dismissGuide();
+            this.renderAll();
+          },
+        }, 'Guide'),
         el('button', {
           class: 'primary',
           disabled: this.busy,
@@ -639,7 +727,8 @@ export class CampaignScreen {
         disabled: !enabled,
         onClick: () => {
           this.tab = tab;
-          this.renderPanel();
+          this.seen.add(`tab:${tab}`);
+          this.renderAll();
         },
       }, label);
     return el('nav', { class: 'tab-bar' },
@@ -964,6 +1053,7 @@ export class CampaignScreen {
           disabled: !affordable || region.shipyardQueue.length >= 2,
           onClick: () => {
             const result = startShipbuilding(this.state, region.id, id);
+            if (result.ok) this.seen.add('recruit');
             if (!result.ok) this.flash(result.reason);
             this.renderAll();
           },
@@ -1306,6 +1396,7 @@ export class CampaignScreen {
             disabled: !affordable,
             onClick: () => {
               startConstruction(this.state, region.id, id);
+              this.seen.add('build');
               this.tab = 'province';
               this.renderAll();
             },
@@ -1349,6 +1440,7 @@ export class CampaignScreen {
           disabled: !affordable || region.recruitQueue.length >= 3,
           onClick: () => {
             startRecruitment(this.state, region.id, id);
+            this.seen.add('recruit');
             this.renderAll();
           },
         }, affordable ? 'Raise' : 'Too costly'),
@@ -1906,6 +1998,7 @@ export class CampaignScreen {
     const army = this.state.armies.get(id);
     if (!army) return;
     const result = moveArmy(this.state, id, to);
+    this.seen.add('march');
     this.moveMode = false;
     this.view.reachable.clear();
 

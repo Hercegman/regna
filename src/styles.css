@@ -153,6 +153,42 @@ select.select {
 .campaign-body { display: grid; grid-template-columns: minmax(0, 1fr) 23rem; flex: 1; min-height: 0; }
 .map-holder { position: relative; min-height: 0; overflow: hidden; }
 .map-canvas { display: block; cursor: grab; }
+/* The opening guide, sitting opposite the log so the two never collide. */
+.guide-box {
+  position: absolute;
+  right: 0.75rem;
+  top: 0.75rem;
+  width: min(21rem, 42%);
+  background: rgba(10, 14, 18, 0.9);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.55rem 0.75rem 0.7rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.guide-box.hidden { display: none; }
+.guide-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+}
+.guide-step {
+  display: flex;
+  gap: 0.5em;
+  align-items: baseline;
+  color: var(--text-muted);
+}
+.guide-step.done .guide-title { text-decoration: line-through; opacity: 0.65; }
+.guide-step.done .guide-mark { color: var(--good); }
+.guide-step.current { color: var(--text); }
+.guide-step.current .guide-mark { color: var(--accent); }
+.guide-step.current .guide-title { font-weight: 600; }
+.guide-mark { width: 1em; text-align: center; }
+.guide-why { margin: 0.35rem 0 0.2rem 1.5em; }
+.guide-where { margin: 0 0 0.3rem 1.5em; color: var(--accent); }
+
 .log-box {
   position: absolute;
   left: 0.75rem;
