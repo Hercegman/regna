@@ -59,6 +59,7 @@ import {
 } from './naval';
 import type { SeaZoneId } from '../data/seas';
 import { SEA_ZONE_IDS, getSeaZone, zonesOffPort, zoneServesPort } from '../data/seas';
+import { canHire, hireMercenary, isMercenary, offersAt } from './mercenaries';
 import type { TradeRoute } from '../data/trade';
 import {
   activeRoutesThrough,
@@ -76,6 +77,55 @@ export function takeAiTurn(state: CampaignState, id: FactionId, rng: Rng): void 
   manageDiplomacy(state, id, rng);
   manageArmies(state, id, rng);
   manageNavy(state, id, rng);
+  manageMercenaries(state, id, rng);
+}
+
+// ---------------------------------------------------------------------------
+// Hired companies
+// ---------------------------------------------------------------------------
+
+/**
+ * Mercenaries are what a realm buys when it needs soldiers now and cannot wait
+ * four turns for a muster, or when it has money and no men. The AI hires under
+ * exactly those conditions and not otherwise, because a company costs nearly
+ * twice a levy to keep.
+ */
+function manageMercenaries(state: CampaignState, id: FactionId, rng: Rng): void {
+  const wars = countWars(state, id);
+  if (wars === 0) return;
+
+  const faction = factionState(state, id);
+  const reserve = Math.max(600, annualNet(state, id) * 2);
+  let headroom = spendingPower(state, id, reserve);
+  if (headroom <= 0) return;
+
+  // Where we need them: a threatened province of ours, or an army in the field.
+  const places: RegionId[] = [];
+  for (const province of provincesOf(state, id)) {
+    if (isThreatened(state, province)) places.push(province.id);
+  }
+  for (const army of state.armies.values()) {
+    if (army.faction === id && !places.includes(army.location)) places.push(army.location);
+  }
+
+  let hired = 0;
+  for (const region of places) {
+    if (hired >= 2) break;
+    const offers = offersAt(state, region)
+      .filter((offer) => canHire(state, region, offer.pool.id, id).ok)
+      .sort((a, b) => getUnitType(b.unit).tier - getUnitType(a.unit).tier);
+    for (const offer of offers) {
+      if (hired >= 2) break;
+      if (faction.treasury - offer.cost < reserve) continue;
+      if (headroom - offer.upkeep <= 0) continue;
+      // A company is a stopgap, not a standing establishment.
+      if (!rng.chance(0.5)) continue;
+      if (hireMercenary(state, region, offer.pool.id, id).ok) {
+        headroom -= offer.upkeep;
+        hired += 1;
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -202,9 +252,10 @@ function retrench(state: CampaignState, id: FactionId): void {
       if (province.garrison.length <= 2) return;
       candidates.push({
         upkeep: getUnitType(regiment.type).upkeep,
-        // Quiet provinces give up their troops first; a threatened one only
-        // when there is nothing else left to cut.
-        priority: exposed ? 2 : 0,
+        // Hired companies are paid off before anything of our own, and a
+        // threatened province gives up its troops only when nothing else is
+        // left to cut.
+        priority: isMercenary(regiment) ? -1 : exposed ? 2 : 0,
         disband: () => disbandRegiment(state, province.id, index),
       });
     });
@@ -219,7 +270,7 @@ function retrench(state: CampaignState, id: FactionId): void {
       if (type.unitClass === 'general') return;
       candidates.push({
         upkeep: type.upkeep,
-        priority: 3,
+        priority: isMercenary(regiment) ? 1 : 3,
         disband: () => {
           army.regiments.splice(index, 1);
         },

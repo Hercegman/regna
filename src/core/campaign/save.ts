@@ -50,14 +50,17 @@ import type { TradeRouteId } from '../data/trade';
 /**
  * Bumped whenever the saved shape changes. Version 2 added fleets, the ships
  * building at a harbour, and the cargo a fleet is carrying. Version 3 added
- * the caravans on the trade roads.
+ * the caravans on the trade roads, and version 4 the mercenary pools and which
+ * regiments are hired companies.
  */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 interface SavedRegiment {
   readonly t: string;
   readonly s: number;
   readonly e: number;
+  /** Present and true only for a hired company. */
+  readonly m?: boolean;
 }
 
 interface SavedCharacter {
@@ -151,6 +154,7 @@ export interface SavedCampaign {
   readonly armies: readonly SavedArmy[];
   readonly fleets: readonly SavedFleet[];
   readonly caravans: readonly SavedCaravan[];
+  readonly mercenaries: readonly [string, { available: number; countdown: number }][];
   readonly log: readonly {
     readonly turn: number;
     readonly year: number;
@@ -163,12 +167,14 @@ const saveRegiment = (regiment: Regiment): SavedRegiment => ({
   t: regiment.type as string,
   s: regiment.soldiers,
   e: regiment.experience,
+  ...(regiment.mercenary ? { m: true } : {}),
 });
 
 const loadRegiment = (saved: SavedRegiment): Regiment => ({
   type: toUnitTypeId(saved.t) as UnitTypeId,
   soldiers: saved.s,
   experience: saved.e,
+  ...(saved.m ? { mercenary: true } : {}),
 });
 
 const saveCharacter = (character: Character): SavedCharacter => ({
@@ -278,6 +284,7 @@ export function serialiseCampaign(state: CampaignState): SavedCampaign {
       value: caravan.value,
       stalled: caravan.stalled,
     })),
+    mercenaries: [...state.mercenaries.entries()].map(([id, pool]) => [id, { ...pool }]),
     log: state.log.map((entry) => ({
       turn: entry.turn,
       year: entry.year,
@@ -401,6 +408,10 @@ export function deserialiseCampaign(saved: SavedCampaign): CampaignState {
     });
   }
 
+  const mercenaries = new Map<string, { available: number; countdown: number }>(
+    (saved.mercenaries ?? []).map(([id, pool]) => [id, { ...pool }]),
+  );
+
   const log: LogEntry[] = saved.log.map((entry) => ({
     turn: entry.turn,
     year: entry.year,
@@ -419,6 +430,7 @@ export function deserialiseCampaign(saved: SavedCampaign): CampaignState {
     armies,
     fleets,
     caravans,
+    mercenaries,
     nextArmySerial: saved.nextArmySerial,
     nextFleetSerial: saved.nextFleetSerial ?? 0,
     nextCaravanSerial: saved.nextCaravanSerial ?? 0,

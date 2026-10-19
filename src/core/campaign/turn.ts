@@ -24,6 +24,7 @@ import {
 import { factionFinances, growthRate, publicOrder, tierThreshold } from './economy';
 import { commissionShip, fleetMovementBudget, isBlockaded } from './naval';
 import { advanceCaravans } from './caravans';
+import { desertUnpaid, replenishMercenaries } from './mercenaries';
 import { getBuildingType } from '../data/buildings';
 import { getUnitType } from '../data/units';
 import { getRegion } from '../data/regions';
@@ -69,6 +70,7 @@ export function endTurn(state: CampaignState): TurnReport {
 
   weatherFleets(state, rng);
   advanceCaravans(state, rng);
+  replenishMercenaries(state);
 
   // 4. Money, after the provinces have been updated.
   settleFinances(state);
@@ -365,6 +367,11 @@ function settleFinances(state: CampaignState): void {
 
 function disbandForDebt(state: CampaignState, id: FactionId): void {
   const faction = factionState(state, id);
+  // The hired men go first, as they did: their contract is with the pay.
+  if (faction.treasury < 0) {
+    faction.treasury += desertUnpaid(state, id, -faction.treasury / 4);
+  }
+  if (faction.treasury >= 0) return;
   const candidates: { upkeep: number; disband: () => void }[] = [];
   for (const army of state.armies.values()) {
     if (army.faction !== id) continue;

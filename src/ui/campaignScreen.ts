@@ -68,6 +68,11 @@ import {
   caravansOf,
   dispatchCaravan,
   expectedReturn,
+  canHire,
+  hireMercenary,
+  isMercenary,
+  mercenaryCompanies,
+  offersAt,
   shipBuildTurns,
   shipCost,
   startShipbuilding,
@@ -923,7 +928,10 @@ export class CampaignScreen {
     region.garrison.forEach((regiment, index) => {
       const type = getUnitType(regiment.type);
       garrison.appendChild(el('div', { class: 'unit-row', title: type.description },
-        el('span', { class: 'unit-name' }, type.name),
+        el('span', { class: 'unit-name' },
+          type.name,
+          isMercenary(regiment) && el('span', { class: 'merc', title: 'A hired company' }, ' ƒ'),
+        ),
         el('span', { class: 'unit-strength' }, `${count(regiment.soldiers)}/${type.soldiers}`),
         mine && el('button', {
           class: 'tiny',
@@ -958,6 +966,7 @@ export class CampaignScreen {
       ));
     }
 
+    this.renderHireSection(body, region);
     this.renderArmySection(body, region);
     this.renderFleetSection(body, region);
 
@@ -989,6 +998,48 @@ export class CampaignScreen {
     }
   }
 
+  /** Companies standing about here that we could take into service. */
+  private renderHireSection(body: HTMLElement, region: RegionState): void {
+    const offers = offersAt(this.state, region.id);
+    if (offers.length === 0) return;
+    const treasury = factionState(this.state, this.state.player).treasury;
+
+    body.appendChild(el('h3', {}, 'Companies for hire'));
+    body.appendChild(el('p', { class: 'muted' },
+      'A hired company joins at once, with no muster to wait for, and costs ' +
+        'nearly twice a levy to keep. They are the first to leave when the pay stops.',
+    ));
+    for (const offer of offers) {
+      const type = getUnitType(offer.unit);
+      const allowed = canHire(this.state, region.id, offer.pool.id, this.state.player);
+      body.appendChild(el('div', { class: 'offer' },
+        el('div', { class: 'offer-main' },
+          el('strong', {}, offer.pool.name),
+          el('p', { class: 'offer-text' }, offer.pool.description),
+          el('p', { class: 'offer-meta' },
+            `${type.name} · ${type.soldiers} men · ${offer.available} free · ` +
+              `${count(offer.cost)} florins · ${offer.upkeep}/turn`,
+          ),
+        ),
+        el('button', {
+          class: 'small',
+          disabled: !allowed.ok || treasury < offer.cost,
+          title: allowed.ok ? 'Take this company into service' : allowed.reason,
+          onClick: () => {
+            const result = hireMercenary(
+              this.state,
+              region.id,
+              offer.pool.id,
+              this.state.player,
+            );
+            if (!result.ok) this.flash(result.reason);
+            this.renderAll();
+          },
+        }, 'Hire'),
+      ));
+    }
+  }
+
   private renderArmySection(body: HTMLElement, region: RegionState): void {
     const armies = [...this.state.armies.values()].filter((army) => army.location === region.id);
     if (armies.length === 0) return;
@@ -1016,7 +1067,10 @@ export class CampaignScreen {
         for (const regiment of army.regiments) {
           const type = getUnitType(regiment.type);
           list.appendChild(el('div', { class: 'unit-row', title: type.description },
-            el('span', { class: 'unit-name' }, type.name),
+            el('span', { class: 'unit-name' },
+              type.name,
+              isMercenary(regiment) && el('span', { class: 'merc', title: 'A hired company' }, ' ƒ'),
+            ),
             el('span', { class: 'unit-strength' }, `${count(regiment.soldiers)}/${type.soldiers}`),
             el('span', { class: 'unit-exp', title: 'Experience' }, '★'.repeat(Math.round(regiment.experience / 3))),
           ));
@@ -1261,6 +1315,8 @@ export class CampaignScreen {
       finances.hoarding > 0 && row('Hoarding', `-${count(finances.hoarding)}`,
         'Idle treasure lost to display, officials and debasement'),
       finances.stipend > 0 && row('Stipend', money(finances.stipend)),
+      mercenaryCompanies(this.state, me) > 0 &&
+        row('Hired companies', String(mercenaryCompanies(this.state, me))),
       row('Balance', money(finances.net), 'emphasis'),
     ));
 

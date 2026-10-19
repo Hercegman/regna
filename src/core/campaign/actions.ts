@@ -97,6 +97,8 @@ export function recruitableUnits(state: CampaignState, id: RegionId): readonly U
       if (unit.unitClass === 'general') return false;
       // Ships are built at a harbour, not mustered on a drill square.
       if (isShip(unit)) return false;
+      // Companies that exist only for hire are found, not raised.
+      if (unit.mercenary) return false;
       if (unit.minSettlement && SETTLEMENT_ORDER.indexOf(unit.minSettlement) > tierIndex) {
         return false;
       }

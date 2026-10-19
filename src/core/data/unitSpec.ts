@@ -34,6 +34,7 @@ export type UnitSpec = {
   requires?: string;
   capacity?: number;
   waters?: 'river' | 'sea' | 'any';
+  mercenary?: boolean;
   pools: readonly string[];
   factions?: readonly string[];
   fromYear?: number;
@@ -81,6 +82,7 @@ export function defineUnit(spec: UnitSpec): UnitType {
     ...(spec.requires ? { requires: buildingId(spec.requires) } : {}),
     ...(spec.capacity !== undefined ? { capacity: spec.capacity } : {}),
     ...(spec.waters ? { waters: spec.waters } : {}),
+    ...(spec.mercenary ? { mercenary: true } : {}),
     ...(spec.factions ? { factions: spec.factions.map(factionId) } : {}),
     ...(spec.fromYear !== undefined ? { fromYear: spec.fromYear } : {}),
     ...(spec.untilYear !== undefined ? { untilYear: spec.untilYear } : {}),

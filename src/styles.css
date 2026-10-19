@@ -186,6 +186,7 @@ select.select {
 .unit-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .unit-strength { font-variant-numeric: tabular-nums; color: var(--text-muted); }
 .unit-exp { color: var(--accent); font-size: 0.75rem; }
+.merc { color: var(--accent); font-weight: 600; }
 
 .army-header { display: flex; align-items: center; gap: 0.5em; padding: 0.35em 0.4em; border: 1px solid var(--line); border-radius: 3px; margin: 0.35em 0 0.2em; cursor: pointer; font-size: 0.88rem; }
 .army-header.selected { border-color: var(--accent); }

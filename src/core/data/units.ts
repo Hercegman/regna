@@ -18,6 +18,7 @@
 import type { UnitType } from '../types';
 import { defineUnit } from './unitSpec';
 import { SHIP_TYPES } from './ships';
+import { MERCENARY_UNITS } from './mercenaries';
 
 const u = defineUnit;
 
@@ -973,8 +974,12 @@ const LAND_UNITS: readonly UnitType[] = [
   }),
 ];
 
-/** Everything that can fight, afloat or ashore. */
-export const UNIT_TYPES: readonly UnitType[] = [...LAND_UNITS, ...SHIP_TYPES];
+/** Everything that can fight, afloat or ashore, raised or hired. */
+export const UNIT_TYPES: readonly UnitType[] = [
+  ...LAND_UNITS,
+  ...SHIP_TYPES,
+  ...MERCENARY_UNITS,
+];
 
 const BY_ID = new Map(UNIT_TYPES.map((unit) => [unit.id, unit]));
 

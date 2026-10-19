@@ -32,6 +32,7 @@ import { REGIONS } from '../data/regions';
 import { getBuildingType } from '../data/buildings';
 import { generalUnitFor, navalRosterFor } from '../data/roster';
 import { getUnitType } from '../data/units';
+import { MERCENARY_POOLS } from '../data/mercenaries';
 
 export const CAMPAIGN_START_YEAR = 1080;
 export const CAMPAIGN_END_YEAR = 1530;
@@ -46,6 +47,13 @@ export interface Regiment {
   soldiers: number;
   /** 0-9; raises attack and defence and steadies morale. */
   experience: number;
+  /**
+   * A company serving for pay. The same troops can be raised at home by the
+   * country that breeds them and hired abroad by anyone else, so this belongs
+   * to the regiment rather than to the unit type. A hired company costs more
+   * to keep and is the first to leave when the money runs short.
+   */
+  mercenary?: boolean;
 }
 
 export interface Character {
@@ -200,12 +208,32 @@ export interface CampaignState {
   armies: Map<ArmyId, Army>;
   fleets: Map<FleetId, Fleet>;
   caravans: Map<CaravanId, Caravan>;
+  /**
+   * How many companies are standing about in each mercenary pool. Keyed by
+   * pool id, and part of the state because hiring one denies it to everybody
+   * else until the country furnishes another.
+   */
+  mercenaries: Map<string, { available: number; countdown: number }>;
   nextArmySerial: number;
   nextFleetSerial: number;
   nextCaravanSerial: number;
   nextCharacterSerial: number;
   player: FactionId;
   log: LogEntry[];
+}
+
+/**
+ * Every pool starts with its full complement standing about.
+ *
+ * Defined here rather than imported from `mercenaries.ts` so that the state
+ * module stays free of the rule modules that import it.
+ */
+function initialMercenaryPools(): Map<string, { available: number; countdown: number }> {
+  const map = new Map<string, { available: number; countdown: number }>();
+  for (const pool of MERCENARY_POOLS) {
+    map.set(pool.id, { available: pool.capacity, countdown: pool.replenish });
+  }
+  return map;
 }
 
 /** The faith a faction imposes, used for conversion pressure. */
@@ -453,6 +481,7 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
     armies: new Map(),
     fleets: new Map(),
     caravans: new Map(),
+    mercenaries: initialMercenaryPools(),
     nextArmySerial: 0,
     nextFleetSerial: 0,
     nextCaravanSerial: 0,

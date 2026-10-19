@@ -264,6 +264,12 @@ export interface UnitType {
    * and a carrack cannot be floated down the Tigris.
    */
   readonly waters?: 'river' | 'sea' | 'any';
+  /**
+   * A company that serves for pay rather than for land or duty. Mercenaries
+   * are hired where they happen to be, not raised at home, and they are the
+   * first to leave when the money runs out.
+   */
+  readonly mercenary?: boolean;
   /** Historical note shown in the unit card. */
   readonly description: string;
 }
