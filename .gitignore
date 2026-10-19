@@ -5,3 +5,6 @@ dist/
 
 # Natural Earth sources, downloaded on demand by tools/build-geography.py
 tools/ne_50m_*.json
+
+# Blender, kept outside the repo in ~/.local/opt
+tools/blender/
