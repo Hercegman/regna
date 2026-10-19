@@ -15,81 +15,13 @@
  *   speed              m/s    (1.2 foot, 1.45 light foot, 3.5-5.5 mounted)
  *   range              m      (javelin 30, bow 150, longbow 190, handgun 90)
  */
-import type { UnitAbility, UnitClass, UnitType } from '../types';
-import { unitTypeId, factionId } from '../types';
+import type { UnitType } from '../types';
+import { defineUnit } from './unitSpec';
+import { SHIP_TYPES } from './ships';
 
-type UnitSpec = {
-  id: string;
-  name: string;
-  unitClass: UnitClass;
-  tier: 1 | 2 | 3 | 4 | 5;
-  soldiers?: number;
-  attack: number;
-  charge?: number;
-  defence: number;
-  armour: number;
-  shield?: number;
-  morale: number;
-  discipline?: number;
-  speed?: number;
-  range?: number;
-  missileAttack?: number;
-  ammunition?: number;
-  mounted?: boolean;
-  abilities?: readonly UnitAbility[];
-  cost: number;
-  upkeep?: number;
-  minSettlement?: UnitType['minSettlement'];
-  pools: readonly string[];
-  factions?: readonly string[];
-  fromYear?: number;
-  untilYear?: number;
-  description: string;
-};
+const u = defineUnit;
 
-/**
- * Fills in the derived and defaulted fields. Upkeep defaults to a fixed
- * fraction of cost so that the economy stays predictable when units are added.
- */
-function u(spec: UnitSpec): UnitType {
-  const mounted = spec.mounted ?? false;
-  const soldiers = spec.soldiers ?? (mounted ? 40 : 120);
-  const base: UnitType = {
-    id: unitTypeId(spec.id),
-    name: spec.name,
-    unitClass: spec.unitClass,
-    tier: spec.tier,
-    soldiers,
-    attack: spec.attack,
-    charge: spec.charge ?? (mounted ? 6 : 2),
-    defence: spec.defence,
-    armour: spec.armour,
-    shield: spec.shield ?? 0,
-    morale: spec.morale,
-    discipline: spec.discipline ?? 10,
-    speed: spec.speed ?? (mounted ? 4.2 : 1.3),
-    range: spec.range ?? 0,
-    missileAttack: spec.missileAttack ?? 0,
-    ammunition: spec.ammunition ?? 0,
-    mounted,
-    abilities: spec.abilities ?? [],
-    cost: spec.cost,
-    upkeep: spec.upkeep ?? Math.round(spec.cost / 9),
-    pools: spec.pools,
-    description: spec.description,
-  };
-  // Optional properties are attached conditionally: exactOptionalPropertyTypes
-  // forbids assigning an explicit undefined.
-  return {
-    ...base,
-    ...(spec.minSettlement ? { minSettlement: spec.minSettlement } : {}),
-    ...(spec.factions ? { factions: spec.factions.map(factionId) } : {}),
-    ...(spec.fromYear !== undefined ? { fromYear: spec.fromYear } : {}),
-    ...(spec.untilYear !== undefined ? { untilYear: spec.untilYear } : {}),
-  };
-}
-
-export const UNIT_TYPES: readonly UnitType[] = [
+const LAND_UNITS: readonly UnitType[] = [
   // =========================================================================
   // Universal levies - every settled culture can raise these
   // =========================================================================
@@ -1040,6 +972,9 @@ export const UNIT_TYPES: readonly UnitType[] = [
       'Eastern generals are expected to shoot as well as lead.',
   }),
 ];
+
+/** Everything that can fight, afloat or ashore. */
+export const UNIT_TYPES: readonly UnitType[] = [...LAND_UNITS, ...SHIP_TYPES];
 
 const BY_ID = new Map(UNIT_TYPES.map((unit) => [unit.id, unit]));
 

@@ -37,6 +37,11 @@ function inEra(unit: UnitType, year: number): boolean {
   return true;
 }
 
+/** Is this a hull rather than a regiment? */
+export function isShip(unit: UnitType): boolean {
+  return unit.unitClass === 'warship' || unit.unitClass === 'transport';
+}
+
 /** Every unit type the faction could ever recruit, ignoring the year. */
 export function fullRoster(faction: Faction): readonly UnitType[] {
   const pools = poolsFor(faction);
@@ -49,6 +54,16 @@ export function fullRoster(faction: Faction): readonly UnitType[] {
 /** The units the faction may recruit in the given campaign year. */
 export function rosterFor(faction: Faction, year: number): readonly UnitType[] {
   return fullRoster(faction).filter((unit) => inEra(unit, year));
+}
+
+/** The land regiments the faction may raise in the given year. */
+export function landRosterFor(faction: Faction, year: number): readonly UnitType[] {
+  return rosterFor(faction, year).filter((unit) => !isShip(unit));
+}
+
+/** The ships the faction may build in the given year. */
+export function navalRosterFor(faction: Faction, year: number): readonly UnitType[] {
+  return rosterFor(faction, year).filter(isShip);
 }
 
 /** The faction's general bodyguard unit. */
@@ -71,7 +86,9 @@ export function rosterByRole(
     siege: [],
   };
   for (const unit of units) {
-    if (unit.unitClass === 'general') continue;
+    // Generals are not a line of battle, and ships are not an army at all:
+    // counting a galley as melee would hide a faction with no infantry.
+    if (unit.unitClass === 'general' || isShip(unit)) continue;
     groups[UNIT_ROLE[unit.unitClass]].push(unit);
   }
   return groups;

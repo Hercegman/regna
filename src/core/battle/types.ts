@@ -35,10 +35,10 @@ export interface BattleUnit {
   readonly side: Side;
   readonly faction: FactionId;
   readonly type: UnitTypeId;
-  /** Index of the originating regiment in its army, for applying losses back. */
+  /** Where the regiment came from, so losses are written back to it. */
+  readonly source: 'army' | 'garrison' | 'fleet';
+  /** Index of the regiment within that source's own ordering. */
   readonly sourceIndex: number;
-  /** True when the regiment came from a settlement garrison. */
-  readonly fromGarrison: boolean;
 
   soldiers: number;
   readonly startingSoldiers: number;

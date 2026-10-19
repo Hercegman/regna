@@ -9,12 +9,12 @@
 import type { BuildingId, FactionId, RegionId } from '../types';
 import { SETTLEMENT_ORDER, UNIT_ROLE } from '../types';
 import type { Army, CampaignState, RegionState } from './state';
-import { factionState, provincesOf, strengthOf } from './state';
+import type { Fleet } from './state';
+import { factionState, fleetCapacity, fleetsInZone, fleetsOf, isAtWar, provincesOf, strengthOf } from './state';
 import {
   availableBuildings,
   mergeArmies,
   sortieFromGarrison,
-  isAtWar,
   militaryStrength,
   moveArmy,
   recruitCost,
@@ -42,15 +42,31 @@ import {
   proposeAlliance,
   proposeTrade,
   relation,
+  shareBorder,
   warDesire,
 } from './diplomacy';
-import { applyBattleResult, autoResolve, planBattle, assaultOdds } from './resolve';
+import { applyBattleResult, autoResolve, planBattle, planNavalBattle, assaultOdds } from './resolve';
+import {
+  buildableShips,
+  disembark,
+  embark,
+  moveFleet,
+  nextLegTowards,
+  reachableWaters,
+  routeOverSea,
+  shipCost,
+  startShipbuilding,
+} from './naval';
+import type { SeaZoneId } from '../data/seas';
+import { SEA_ZONE_IDS, getSeaZone, zonesOffPort, zoneServesPort } from '../data/seas';
+import { getRegion } from '../data/regions';
 import type { Rng } from '../rng';
 
 export function takeAiTurn(state: CampaignState, id: FactionId, rng: Rng): void {
   manageEconomy(state, id, rng);
   manageDiplomacy(state, id, rng);
   manageArmies(state, id, rng);
+  manageNavy(state, id, rng);
 }
 
 // ---------------------------------------------------------------------------
@@ -281,6 +297,197 @@ function recruitWhereNeeded(
 }
 
 // ---------------------------------------------------------------------------
+// The navy
+// ---------------------------------------------------------------------------
+
+/**
+ * How many hulls a realm wants, given how much coast it has to defend and how
+ * much of its living comes from the sea. A landlocked duchy wants none; Venice
+ * wants as many as it can pay for.
+ */
+function desiredHulls(state: CampaignState, id: FactionId): number {
+  const harbours = provincesOf(state, id).filter((province) => getRegion(province.id).port);
+  if (harbours.length === 0) return 0;
+  const traits = tryGetFaction(id)?.traits ?? {};
+  const maritime = (traits.trade ?? 0) >= 0.25;
+  const base = Math.min(10, 1 + Math.floor(harbours.length / 2));
+  return maritime ? base + 4 : base;
+}
+
+function manageNavy(state: CampaignState, id: FactionId, rng: Rng): void {
+  buildShips(state, id, rng);
+  for (const fleet of fleetsOf(state, id)) {
+    if (!state.fleets.has(fleet.id)) continue;
+    if (fleet.ships.length === 0) continue;
+    sailFleet(state, fleet, rng);
+  }
+}
+
+function buildShips(state: CampaignState, id: FactionId, rng: Rng): void {
+  const want = desiredHulls(state, id);
+  if (want === 0) return;
+  let have = 0;
+  for (const fleet of fleetsOf(state, id)) have += fleet.ships.length;
+  for (const province of provincesOf(state, id)) have += province.shipyardQueue.length;
+  if (have >= want) return;
+
+  const faction = factionState(state, id);
+  let headroom = annualNet(state, id);
+  const harbours = provincesOf(state, id)
+    .filter((province) => getRegion(province.id).port && !province.siege)
+    .sort((a, b) => b.population - a.population);
+
+  for (const province of harbours) {
+    if (have >= want) return;
+    const options = buildableShips(state, province.id);
+    if (options.length === 0) continue;
+    // The best hull the yard and the budget allow, with a little variation.
+    const affordable = options.filter((ship) => {
+      if (faction.treasury - shipCost(id, ship) < 400) return false;
+      return headroom - getUnitType(ship).upkeep > 0;
+    });
+    if (affordable.length === 0) continue;
+    const pick = rng.weighted(affordable, (ship) => Math.pow(getUnitType(ship).tier, 2));
+    if (startShipbuilding(state, province.id, pick).ok) {
+      headroom -= getUnitType(pick).upkeep;
+      have += 1;
+    }
+  }
+}
+
+/**
+ * Fleet doctrine: fight a weaker enemy squadron, close an enemy harbour if the
+ * water is otherwise empty, carry an army to a hostile shore, and otherwise
+ * come home. In winter it comes home regardless unless it is blockading, which
+ * is what medieval fleets actually did.
+ */
+function sailFleet(state: CampaignState, fleet: Fleet, rng: Rng): void {
+  if (fleet.movement <= 0) return;
+  const hulls = strengthOf(fleet.ships);
+  const options = reachableWaters(state, fleet);
+
+  // 1. An enemy squadron we can beat.
+  for (const zone of options.zones) {
+    const enemies = fleetsInZone(state, zone).filter((other) =>
+      isAtWar(state, fleet.faction, other.faction),
+    );
+    if (enemies.length === 0) continue;
+    const theirs = enemies.reduce((sum, other) => sum + strengthOf(other.ships), 0);
+    // Do not take a loaded transport fleet into a sea fight.
+    if (fleet.cargo.length > 0) continue;
+    if (hulls < theirs * 1.25) continue;
+    const result = moveFleet(state, fleet.id, { kind: 'sea', zone });
+    if (result.kind === 'battle') {
+      const defenders = result.fleets
+        .map((other) => state.fleets.get(other))
+        .filter((other): other is Fleet => other !== undefined);
+      const plan = planNavalBattle(state, zone, [fleet], defenders);
+      applyBattleResult(state, plan, autoResolve(plan));
+    }
+    return;
+  }
+
+  // 2. Put an army ashore, if one is waiting at this harbour and there is a
+  // hostile coast within reach.
+  if (fleet.location.kind === 'port' && fleet.cargo.length === 0) {
+    const home = fleet.location.region;
+    const waiting = [...state.armies.values()].find(
+      (army) => army.faction === fleet.faction && army.location === home && army.regiments.length > 1,
+    );
+    const room = fleetCapacity(fleet);
+    if (waiting && room > 0 && countWars(state, fleet.faction) > 0) {
+      const take = Math.min(room, waiting.regiments.length - 1);
+      if (take > 0 && rng.chance(0.75)) {
+        const indices = Array.from({ length: take }, (_, index) => index);
+        if (embark(state, fleet.id, waiting.id, indices).ok) return;
+      }
+    }
+  }
+  if (fleet.cargo.length > 0) {
+    // An invasion is worth crossing a sea for, so the fleet navigates towards
+    // the objective rather than only looking at the water it is already in.
+    const target = landingTarget(state, fleet);
+    if (target) {
+      if (fleet.location.kind === 'sea' && zoneServesPort(fleet.location.zone, target)) {
+        disembark(state, fleet.id, target);
+        return;
+      }
+      const leg = nextLegTowards(state, fleet, (zone) => zoneServesPort(zone, target));
+      if (leg) {
+        moveFleet(state, fleet.id, { kind: 'sea', zone: leg });
+        return;
+      }
+    } else {
+      // Nothing to invade: put the men back ashore at home rather than keeping
+      // them at sea for ever.
+      const home =
+        fleet.location.kind === 'port'
+          ? fleet.location.region
+          : options.ports.find((port) => state.regions.get(port)?.owner === fleet.faction);
+      if (home) disembark(state, fleet.id, home);
+      return;
+    }
+  }
+
+  // 3. Close an enemy harbour, sailing to reach one if necessary.
+  if (countWars(state, fleet.faction) > 0 && fleet.cargo.length === 0) {
+    const enemyWater = (zone: SeaZoneId): boolean =>
+      getSeaZone(zone).ports.some((port) => {
+        const province = state.regions.get(port);
+        return province !== undefined && isAtWar(state, fleet.faction, province.owner);
+      });
+    if (state.season === 'summer' || rng.chance(0.4)) {
+      // Already on station: stay there and keep the blockade.
+      if (fleet.location.kind === 'sea' && enemyWater(fleet.location.zone)) return;
+      const leg = nextLegTowards(state, fleet, enemyWater);
+      if (leg) {
+        moveFleet(state, fleet.id, { kind: 'sea', zone: leg });
+        return;
+      }
+    }
+  }
+
+  // 4. Otherwise make for home, especially before the winter gales.
+  if (fleet.location.kind === 'sea') {
+    const refuge = options.ports.find((port) => state.regions.get(port)?.owner === fleet.faction);
+    if (refuge && (state.season === 'winter' || countWars(state, fleet.faction) === 0)) {
+      moveFleet(state, fleet.id, { kind: 'port', region: refuge });
+    }
+  }
+}
+
+/**
+ * The shore this invasion is for: the weakest hostile harbour the fleet can
+ * navigate to, preferring one the cargo can actually take.
+ */
+function landingTarget(state: CampaignState, fleet: Fleet): RegionId | undefined {
+  const troops = strengthOf(fleet.cargo);
+  let best: { port: RegionId; score: number } | undefined;
+  for (const zone of SEA_ZONE_IDS) {
+    if (!routeExists(fleet, zone)) continue;
+    for (const port of getSeaZone(zone).ports) {
+      const province = state.regions.get(port);
+      if (!province || province.owner === fleet.faction) continue;
+      if (!isAtWar(state, fleet.faction, province.owner)) continue;
+      const defenders = strengthOf(province.garrison);
+      if (defenders > troops * 2) continue;
+      const score = troops / Math.max(1, defenders) + province.population / 10;
+      if (!best || score > best.score) best = { port, score };
+    }
+  }
+  return best?.port;
+}
+
+/** Can this fleet get to that water at all within a few turns' sailing? */
+function routeExists(fleet: Fleet, zone: SeaZoneId): boolean {
+  if (fleet.location.kind === 'sea' && fleet.location.zone === zone) return true;
+  if (fleet.location.kind === 'port' && zonesOffPort(fleet.location.region).includes(zone)) {
+    return true;
+  }
+  return routeOverSea(fleet, (candidate) => candidate === zone) !== undefined;
+}
+
+// ---------------------------------------------------------------------------
 // Diplomacy
 // ---------------------------------------------------------------------------
 
@@ -425,6 +632,19 @@ function actWithArmy(state: CampaignState, army: Army, rng: Rng): void {
     return;
   }
 
+  // 0.5. An enemy across water is reached only by taking ship. If a fleet with
+  // room is waiting in one of our harbours and there is no land route to the
+  // war, march to the quayside.
+  const quay = embarkationPort(state, army);
+  if (quay) {
+    if (quay === army.location) return; // wait here to be taken aboard
+    const leg = stepTowardsProvince(state, army, quay);
+    if (leg) {
+      attemptMove(state, army, leg, rng);
+      return;
+    }
+  }
+
   // 1. Relieve a besieged province of our own, if one is next door.
   const besieged = [...state.regions.values()].find(
     (province) =>
@@ -476,6 +696,23 @@ function stepTowardsEnemy(state: CampaignState, army: Army): RegionId | undefine
     if (!province || province.owner === army.faction) return false;
     return province.owner === INDEPENDENT_ID || isAtWar(state, army.faction, province.owner);
   };
+  return stepTowards(state, army, hostile);
+}
+
+/** The first province on the shortest route to a province we already hold. */
+function stepTowardsProvince(
+  state: CampaignState,
+  army: Army,
+  target: RegionId,
+): RegionId | undefined {
+  return stepTowards(state, army, (id) => id === target);
+}
+
+function stepTowards(
+  state: CampaignState,
+  army: Army,
+  isGoal: (id: RegionId) => boolean,
+): RegionId | undefined {
   const seen = new Set<RegionId>([army.location]);
   // Each entry remembers the first step that led to it.
   let frontier: { id: RegionId; first: RegionId }[] = landNeighbours(army.location).map((id) => ({
@@ -486,7 +723,7 @@ function stepTowardsEnemy(state: CampaignState, army: Army): RegionId | undefine
 
   for (let depth = 0; depth < 8 && frontier.length > 0; depth++) {
     for (const entry of frontier) {
-      if (hostile(entry.id)) return entry.first;
+      if (isGoal(entry.id)) return entry.first;
     }
     const next: { id: RegionId; first: RegionId }[] = [];
     for (const entry of frontier) {
@@ -502,6 +739,29 @@ function stepTowardsEnemy(state: CampaignState, army: Army): RegionId | undefine
     frontier = next;
   }
   return undefined;
+}
+
+/**
+ * The harbour this army should march to in order to be shipped to the war, or
+ * undefined if the war can be walked to.
+ */
+function embarkationPort(state: CampaignState, army: Army): RegionId | undefined {
+  const enemies = enemiesOf(state, army.faction);
+  if (enemies.length === 0) return undefined;
+  // If any enemy can be reached by land, the army has no business at sea.
+  const overseasOnly = enemies.every((enemy) => !shareBorder(state, army.faction, enemy));
+  if (!overseasOnly) return undefined;
+
+  let best: { port: RegionId; room: number } | undefined;
+  for (const fleet of fleetsOf(state, army.faction)) {
+    if (fleet.location.kind !== 'port') continue;
+    const room = fleetCapacity(fleet) - fleet.cargo.length;
+    if (room < 1) continue;
+    const province = state.regions.get(fleet.location.region);
+    if (!province || province.owner !== army.faction) continue;
+    if (!best || room > best.room) best = { port: fleet.location.region, room };
+  }
+  return best?.port;
 }
 
 function candidateTargets(state: CampaignState, army: Army): RegionId[] {

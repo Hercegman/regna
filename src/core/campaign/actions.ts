@@ -8,6 +8,8 @@ import { SETTLEMENT_ORDER } from '../types';
 import type { Army, CampaignState, Regiment, RegionState } from './state';
 import {
   factionState,
+  hasPort,
+  isAtWar,
   logEvent,
   newArmyId,
   regionState,
@@ -18,8 +20,10 @@ import { getRegion } from '../data/regions';
 import { borderBetween, landNeighbours, seaNeighbours } from '../data/adjacency';
 import { getUnitType } from '../data/units';
 import { getFaction, tryGetFaction, INDEPENDENT_ID } from '../data/factions';
-import { rosterFor } from '../data/roster';
-import { hasPort } from './economy';
+export { isAtWar } from './state';
+import { seaLaneClosed } from './naval';
+import { isShip, rosterFor } from '../data/roster';
+
 
 export type Outcome = { ok: true } | { ok: false; reason: string };
 
@@ -91,6 +95,8 @@ export function recruitableUnits(state: CampaignState, id: RegionId): readonly U
   return rosterFor(faction, state.year)
     .filter((unit) => {
       if (unit.unitClass === 'general') return false;
+      // Ships are built at a harbour, not mustered on a drill square.
+      if (isShip(unit)) return false;
       if (unit.minSettlement && SETTLEMENT_ORDER.indexOf(unit.minSettlement) > tierIndex) {
         return false;
       }
@@ -248,6 +254,9 @@ export function moveArmy(state: CampaignState, id: ArmyId, to: RegionId): MoveRe
     const target = state.regions.get(to);
     if (!from || !hasPort(from)) return { kind: 'blocked', reason: 'No harbour to sail from.' };
     if (!target || !hasPort(target)) return { kind: 'blocked', reason: 'No harbour to land at.' };
+    if (seaLaneClosed(state, army.faction, army.location, to)) {
+      return { kind: 'blocked', reason: 'An enemy fleet holds the water in between.' };
+    }
   }
 
   const target = regionState(state, to);
@@ -457,13 +466,6 @@ export function setGovernor(state: CampaignState, id: RegionId, character: strin
 // ---------------------------------------------------------------------------
 // Diplomacy helpers used by the order layer
 // ---------------------------------------------------------------------------
-
-export function isAtWar(state: CampaignState, a: FactionId, b: FactionId): boolean {
-  if (a === b) return false;
-  if (a === INDEPENDENT_ID || b === INDEPENDENT_ID) return true;
-  const faction = state.factions.get(a);
-  return faction?.relations.get(b)?.stance === 'war';
-}
 
 /** Total soldiers a faction has under arms, in the field and in garrison. */
 export function militaryStrength(state: CampaignState, id: FactionId): number {

@@ -9,7 +9,7 @@
 import type { FactionId, Terrain, UnitTypeId, WallTier } from '../types';
 import { UNIT_ROLE } from '../types';
 import { getUnitType } from '../data/units';
-import type { Army, Regiment } from '../campaign/state';
+import type { Army, Fleet, Regiment } from '../campaign/state';
 import type { BattleSetup, BattleUnit, Side } from './types';
 import { FIELD_DEPTH, FIELD_WIDTH } from './types';
 
@@ -17,9 +17,11 @@ export interface SideComposition {
   readonly faction: FactionId;
   /** Field armies taking part, in order. */
   readonly armies: readonly Army[];
+  /** Fleets taking part. Their hulls fight; their cargo does not. */
+  readonly fleets: readonly Fleet[];
   /** Garrison regiments taking part, for an assault on a settlement. */
   readonly garrison: readonly Regiment[];
-  /** Command rating of the general present, 0 when none is. */
+  /** Command rating of the general or admiral present, 0 when none is. */
   readonly command: number;
 }
 
@@ -39,25 +41,33 @@ const ATTACKER_LINE = FIELD_DEPTH * 0.78;
 
 export interface Slot {
   readonly regiment: Regiment;
+  readonly source: 'army' | 'garrison' | 'fleet';
   readonly sourceIndex: number;
-  readonly fromGarrison: boolean;
 }
 
 /** The regiments of a side, in the exact order deployment indexes them. */
 export function flattenSide(side: SideComposition): Slot[] {
   const slots: Slot[] = [];
-  let index = 0;
+  let armyIndex = 0;
   for (const army of side.armies) {
     for (const regiment of army.regiments) {
       if (regiment.soldiers <= 0) continue;
-      slots.push({ regiment, sourceIndex: index, fromGarrison: false });
-      index += 1;
+      slots.push({ regiment, source: 'army', sourceIndex: armyIndex });
+      armyIndex += 1;
+    }
+  }
+  let fleetIndex = 0;
+  for (const fleet of side.fleets) {
+    for (const ship of fleet.ships) {
+      if (ship.soldiers <= 0) continue;
+      slots.push({ regiment: ship, source: 'fleet', sourceIndex: fleetIndex });
+      fleetIndex += 1;
     }
   }
   let garrisonIndex = 0;
   for (const regiment of side.garrison) {
     if (regiment.soldiers <= 0) continue;
-    slots.push({ regiment, sourceIndex: garrisonIndex, fromGarrison: true });
+    slots.push({ regiment, source: 'garrison', sourceIndex: garrisonIndex });
     garrisonIndex += 1;
   }
   return slots;
@@ -68,11 +78,19 @@ type Lane = 'centre' | 'rear' | 'left' | 'right' | 'reserve';
 function laneFor(type: UnitTypeId, ordinal: number): Lane {
   const unit = getUnitType(type);
   if (unit.unitClass === 'general') return 'reserve';
+  // At sea the fighting hulls form the line and the carriers stay behind it.
+  if (unit.unitClass === 'warship') return 'centre';
+  if (unit.unitClass === 'transport') return 'rear';
   const role = UNIT_ROLE[unit.unitClass];
   if (role === 'siege') return 'rear';
   if (role === 'missile') return 'rear';
   if (role === 'cavalry') return ordinal % 2 === 0 ? 'left' : 'right';
   return 'centre';
+}
+
+function isAfloat(type: UnitTypeId): boolean {
+  const unit = getUnitType(type);
+  return unit.unitClass === 'warship' || unit.unitClass === 'transport';
 }
 
 function deploySide(side: SideComposition, which: Side): BattleUnit[] {
@@ -103,8 +121,8 @@ function deploySide(side: SideComposition, which: Side): BattleUnit[] {
       side: which,
       faction: side.faction,
       type: slot.regiment.type,
+      source: slot.source,
       sourceIndex: slot.sourceIndex,
-      fromGarrison: slot.fromGarrison,
       soldiers: slot.regiment.soldiers,
       startingSoldiers: slot.regiment.soldiers,
       experience: slot.regiment.experience,
@@ -126,10 +144,14 @@ function deploySide(side: SideComposition, which: Side): BattleUnit[] {
     });
   };
 
+  // A fleet forms line abreast across most of the water, because there is no
+  // flank to refuse and no ground worth holding: sea room is the whole of it.
+  const afloat = slots.length > 0 && slots.every((slot) => isAfloat(slot.regiment.type));
+  const centreFrom = afloat ? FIELD_WIDTH * 0.12 : FIELD_WIDTH * 0.32;
+  const centreTo = afloat ? FIELD_WIDTH * 0.88 : FIELD_WIDTH * 0.68;
+
   // Centre: an even line across the middle third of the field.
-  spread(lanes.centre, FIELD_WIDTH * 0.32, FIELD_WIDTH * 0.68, (slot, x) =>
-    place(slot, x, frontY),
-  );
+  spread(lanes.centre, centreFrom, centreTo, (slot, x) => place(slot, x, frontY));
   // Second line: missiles and engines behind the centre.
   spread(lanes.rear, FIELD_WIDTH * 0.34, FIELD_WIDTH * 0.66, (slot, x) =>
     place(slot, x, frontY + depthSign * 70),

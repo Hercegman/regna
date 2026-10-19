@@ -29,6 +29,7 @@ function digest(state: CampaignState): string {
         region.religion,
         [...region.buildings].sort().join(','),
         region.garrison.map((r) => `${r.type}:${r.soldiers}`).join(','),
+        region.shipyardQueue.map((q) => `${q.unit}:${q.turnsLeft}`).join(','),
         region.siege ? `${region.siege.besieger}@${region.siege.turns}` : '-',
         region.governor?.id ?? '-',
       ].join('/'),
@@ -60,6 +61,19 @@ function digest(state: CampaignState): string {
     )
     .sort()
     .join('|');
+  const fleets = [...state.fleets.values()]
+    .map((fleet) =>
+      [
+        fleet.id,
+        fleet.faction,
+        fleet.location.kind === 'port' ? `port:${fleet.location.region}` : `sea:${fleet.location.zone}`,
+        fleet.admiral?.id ?? '-',
+        fleet.ships.map((ship) => `${ship.type}:${ship.soldiers}`).join(','),
+        fleet.cargo.map((unit) => `${unit.type}:${unit.soldiers}`).join(','),
+      ].join('/'),
+    )
+    .sort()
+    .join('|');
   return [
     state.turn,
     state.year,
@@ -68,6 +82,7 @@ function digest(state: CampaignState): string {
     regions,
     factions,
     armies,
+    fleets,
   ].join('\n');
 }
 
@@ -98,6 +113,21 @@ describe('saving a campaign', () => {
     }
     expect(digest(restored)).toBe(digest(original));
   }, 60_000);
+
+  it('carries fleets, their cargo and their station through a save', () => {
+    const state = newCampaign({ seed: 'save-fleets', player: CROATIA });
+    expect(state.fleets.size, 'nobody starts with a fleet').toBeGreaterThan(0);
+    const restored = deserialiseCampaign(serialiseCampaign(state));
+    expect(restored.fleets.size).toBe(state.fleets.size);
+    for (const [id, fleet] of state.fleets) {
+      const copy = restored.fleets.get(id)!;
+      expect(copy, `fleet ${id} was lost`).toBeDefined();
+      expect(copy.location).toEqual(fleet.location);
+      expect(copy.ships.length).toBe(fleet.ships.length);
+      expect(copy.cargo.length).toBe(fleet.cargo.length);
+      expect(copy.faction).toBe(fleet.faction);
+    }
+  });
 
   it('keeps shared characters shared rather than copied', () => {
     const state = newCampaign({ seed: 'save-characters', player: CROATIA });

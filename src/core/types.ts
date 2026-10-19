@@ -14,6 +14,7 @@ export type RegionId = Branded<string, 'RegionId'>;
 export type UnitTypeId = Branded<string, 'UnitTypeId'>;
 export type BuildingId = Branded<string, 'BuildingId'>;
 export type ArmyId = Branded<string, 'ArmyId'>;
+export type FleetId = Branded<string, 'FleetId'>;
 export type CharacterId = Branded<string, 'CharacterId'>;
 
 export const factionId = (value: string): FactionId => value as FactionId;
@@ -21,6 +22,7 @@ export const regionId = (value: string): RegionId => value as RegionId;
 export const unitTypeId = (value: string): UnitTypeId => value as UnitTypeId;
 export const buildingId = (value: string): BuildingId => value as BuildingId;
 export const armyId = (value: string): ArmyId => value as ArmyId;
+export const fleetId = (value: string): FleetId => value as FleetId;
 export const characterId = (value: string): CharacterId => value as CharacterId;
 
 // ---------------------------------------------------------------------------
@@ -152,7 +154,9 @@ export type UnitClass =
   | 'horse_archers'
   | 'camel_cavalry'
   | 'siege_engine'
-  | 'general';
+  | 'general'
+  | 'warship'
+  | 'transport';
 
 /** Broad behaviour buckets used by battle AI and by the recruitment planner. */
 export const UNIT_ROLE: Record<UnitClass, 'melee' | 'missile' | 'cavalry' | 'siege'> = {
@@ -170,6 +174,11 @@ export const UNIT_ROLE: Record<UnitClass, 'melee' | 'missile' | 'cavalry' | 'sie
   camel_cavalry: 'cavalry',
   siege_engine: 'siege',
   general: 'cavalry',
+  // A sea fight is decided by closing and boarding, so a warship behaves like
+  // heavy foot that happens to float. Ships that carry archers or engines
+  // still shoot, because that is driven by their range rather than their role.
+  warship: 'melee',
+  transport: 'melee',
 };
 
 export type UnitAbility =
@@ -188,7 +197,13 @@ export type UnitAbility =
   | 'ladder_carrier'   // can scale walls without engines
   | 'mountaineer'      // no penalty in mountains
   | 'desert_hardy'     // no heat fatigue penalty
-  | 'forest_fighter';  // no penalty in forest
+  | 'forest_fighter'   // no penalty in forest
+  // At sea
+  | 'ram'              // can hole an enemy hull on impact
+  | 'greek_fire'       // short-ranged incendiary, decisive against wooden hulls
+  | 'tall_sided'       // a high hull is hard to board from a low one
+  | 'seaworthy'        // can keep station in open water and in winter
+  | 'oared';           // not becalmed, and can manoeuvre in a flat sea
 
 export interface UnitType {
   readonly id: UnitTypeId;
@@ -240,6 +255,8 @@ export interface UnitType {
   readonly fromYear?: number;
   /** Year after which the unit is obsolete and can no longer be recruited. */
   readonly untilYear?: number;
+  /** Land regiments a ship of this type can carry. Zero for everything else. */
+  readonly capacity?: number;
   /** Historical note shown in the unit card. */
   readonly description: string;
 }

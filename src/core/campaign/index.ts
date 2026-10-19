@@ -9,6 +9,7 @@ import type { CampaignOptions, CampaignState } from './state';
 import { createCampaign } from './state';
 import { initialiseRelations } from './diplomacy';
 import { movementBudget } from './actions';
+import { fleetMovementBudget } from './naval';
 
 export function newCampaign(options: CampaignOptions = {}): CampaignState {
   const state = createCampaign(options);
@@ -17,6 +18,7 @@ export function newCampaign(options: CampaignOptions = {}): CampaignState {
   // their first movement allowance is granted here. Without it the opening
   // turn would be the only one in the campaign in which nobody could march.
   for (const army of state.armies.values()) army.movement = movementBudget(state, army);
+  for (const fleet of state.fleets.values()) fleet.movement = fleetMovementBudget(state, fleet);
   return state;
 }
 
@@ -27,5 +29,6 @@ export * from './diplomacy';
 export * from './resolve';
 export * from './emergence';
 export * from './turn';
+export * from './naval';
 export * from './save';
 export { takeAiTurn } from './ai';

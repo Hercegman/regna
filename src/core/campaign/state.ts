@@ -7,6 +7,7 @@
  */
 import type {
   ArmyId,
+  FleetId,
   BuildingId,
   CharacterId,
   FactionId,
@@ -17,15 +18,17 @@ import type {
   UnitTypeId,
   WallTier,
 } from '../types';
-import { armyId, characterId } from '../types';
+import { armyId, fleetId, characterId } from '../types';
 import { SETTLEMENT_ORDER } from '../types';
 import type { RngState } from '../rng';
 import { Rng } from '../rng';
 import { FACTIONS, INDEPENDENT_ID, getFaction, tryGetFaction } from '../data/factions';
 import type { Region } from '../data/regions';
+import type { SeaZoneId } from '../data/seas';
+import { zonesOffPort } from '../data/seas';
 import { REGIONS } from '../data/regions';
 import { getBuildingType } from '../data/buildings';
-import { generalUnitFor } from '../data/roster';
+import { generalUnitFor, navalRosterFor } from '../data/roster';
 import { getUnitType } from '../data/units';
 
 export const CAMPAIGN_START_YEAR = 1080;
@@ -73,6 +76,28 @@ export interface Army {
   embarked: boolean;
 }
 
+/**
+ * Where a fleet is. A fleet is either at anchor in one of its own or a
+ * friendly harbour, or at sea in a zone. Only a fleet at sea can blockade or
+ * be intercepted; only a fleet at anchor can take on cargo or be repaired.
+ */
+export type FleetLocation =
+  | { readonly kind: 'port'; readonly region: RegionId }
+  | { readonly kind: 'sea'; readonly zone: SeaZoneId };
+
+export interface Fleet {
+  readonly id: FleetId;
+  readonly faction: FactionId;
+  location: FleetLocation;
+  /** The hulls. A fleet with none of these is gone. */
+  ships: Regiment[];
+  /** Land regiments being carried. Bounded by the fleet's total capacity. */
+  cargo: Regiment[];
+  admiral: Character | undefined;
+  /** Movement points left this turn, counted in sea zones. */
+  movement: number;
+}
+
 export interface Construction {
   readonly building: BuildingId;
   turnsLeft: number;
@@ -98,6 +123,8 @@ export interface RegionState {
   buildings: Set<BuildingId>;
   construction: Construction | undefined;
   recruitQueue: Recruitment[];
+  /** Ships being built at the harbour, which join a fleet when finished. */
+  shipyardQueue: Recruitment[];
   /** Regiments stationed in the settlement. */
   garrison: Regiment[];
   /** 0 (content) to 100 (open revolt). */
@@ -145,7 +172,9 @@ export interface CampaignState {
   factions: Map<FactionId, FactionState>;
   regions: Map<RegionId, RegionState>;
   armies: Map<ArmyId, Army>;
+  fleets: Map<FleetId, Fleet>;
   nextArmySerial: number;
+  nextFleetSerial: number;
   nextCharacterSerial: number;
   player: FactionId;
   log: LogEntry[];
@@ -321,6 +350,12 @@ export function newArmyId(state: CampaignState): ArmyId {
   return armyId(`army-${state.nextArmySerial}`);
 }
 
+/** Allocates a fresh fleet id. */
+export function newFleetId(state: CampaignState): FleetId {
+  state.nextFleetSerial += 1;
+  return fleetId(`fleet-${state.nextFleetSerial}`);
+}
+
 function startingBuildings(tier: SettlementTier): BuildingId[] {
   // Every settlement starts with what its size implies it must already have:
   // somewhere to muster, somewhere to trade, somewhere to pray, and walls
@@ -379,7 +414,9 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
     factions: new Map(),
     regions: new Map(),
     armies: new Map(),
+    fleets: new Map(),
     nextArmySerial: 0,
+    nextFleetSerial: 0,
     nextCharacterSerial: 0,
     player: options.player ?? (getFaction('croatia' as FactionId).id),
     log: [],
@@ -395,6 +432,7 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
       buildings: new Set(startingBuildings(region.tier)),
       construction: undefined,
       recruitQueue: [],
+      shipyardQueue: [],
       garrison: startingGarrison(region, rng),
       unrest: 0,
       religion: startingReligion(region),
@@ -466,6 +504,42 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
     }
   }
 
+  // --- a squadron for every power with a coast
+  for (const [id, faction] of state.factions) {
+    if (!faction.alive || id === INDEPENDENT_ID) continue;
+    const definition = tryGetFaction(id);
+    if (!definition) continue;
+    const harbours = REGIONS.filter(
+      (region) => region.owner === id && region.port,
+    );
+    if (harbours.length === 0) continue;
+
+    const hulls = navalRosterFor(definition, CAMPAIGN_START_YEAR).filter(
+      // Only what a harbour alone can produce: nobody starts with an arsenal.
+      (ship) => !ship.requires || ship.requires === ('harbour' as BuildingId),
+    );
+    if (hulls.length === 0) continue;
+
+    const maritime = definition.rosterTags.includes('maritime');
+    const count = maritime ? 3 : 1;
+    const home = harbours[0]!;
+    const ships: Regiment[] = [];
+    for (let i = 0; i < count; i++) {
+      const type = rng.pick(hulls);
+      ships.push({ type: type.id, soldiers: type.soldiers, experience: maritime ? 1 : 0 });
+    }
+    const fleet: Fleet = {
+      id: newFleetId(state),
+      faction: id,
+      location: { kind: 'port', region: home.id },
+      ships,
+      cargo: [],
+      admiral: undefined,
+      movement: 0,
+    };
+    state.fleets.set(fleet.id, fleet);
+  }
+
   state.rngState = rng.save();
   logEvent(state, undefined, `The year is ${CAMPAIGN_START_YEAR}.`);
   return state;
@@ -512,6 +586,44 @@ export function armiesOf(state: CampaignState, id: FactionId): Army[] {
   return result;
 }
 
+export function fleetsOf(state: CampaignState, id: FactionId): Fleet[] {
+  const result: Fleet[] = [];
+  for (const fleet of state.fleets.values()) if (fleet.faction === id) result.push(fleet);
+  return result;
+}
+
+/** Land regiments the fleet's hulls can carry between them. */
+export function fleetCapacity(fleet: Fleet): number {
+  let total = 0;
+  for (const ship of fleet.ships) {
+    const type = getUnitType(ship.type);
+    // A half-wrecked hull carries proportionally less.
+    const share = ship.soldiers / Math.max(1, type.soldiers);
+    total += (type.capacity ?? 0) * share;
+  }
+  return Math.floor(total);
+}
+
+/** The zone a fleet is in, counting a fleet at anchor as being in its harbour's water. */
+export function fleetZones(fleet: Fleet): readonly SeaZoneId[] {
+  return fleet.location.kind === 'sea' ? [fleet.location.zone] : zonesOffPort(fleet.location.region);
+}
+
+/** Every fleet of the given faction that is at sea in the given zone. */
+export function fleetsInZone(
+  state: CampaignState,
+  zone: SeaZoneId,
+  faction?: FactionId,
+): Fleet[] {
+  const result: Fleet[] = [];
+  for (const fleet of state.fleets.values()) {
+    if (fleet.location.kind !== 'sea' || fleet.location.zone !== zone) continue;
+    if (faction !== undefined && fleet.faction !== faction) continue;
+    result.push(fleet);
+  }
+  return result;
+}
+
 /** Highest wall tier granted by the province's buildings. */
 export function wallTier(region: RegionState): WallTier {
   let best: WallTier = 'none';
@@ -526,6 +638,31 @@ export function wallTier(region: RegionState): WallTier {
     }
   }
   return best;
+}
+
+/**
+ * Are these two factions at war?
+ *
+ * The independents are at war with everyone by default: unclaimed towns defend
+ * themselves and nobody negotiates with them.
+ */
+export function isAtWar(state: CampaignState, a: FactionId, b: FactionId): boolean {
+  if (a === b) return false;
+  if (a === INDEPENDENT_ID || b === INDEPENDENT_ID) return true;
+  const faction = state.factions.get(a);
+  return faction?.relations.get(b)?.stance === 'war';
+}
+
+/**
+ * Does the province have a working harbour?
+ *
+ * Geography decides whether there is anywhere to put a ship; buildings decide
+ * how good it is. A natural anchorage trades before a quay is built, just less.
+ */
+export function hasPort(region: RegionState): boolean {
+  const geography = REGIONS.find((candidate) => candidate.id === region.id);
+  if (!geography?.port) return false;
+  return true;
 }
 
 /** Total soldiers in a list of regiments. */

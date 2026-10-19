@@ -16,11 +16,13 @@ import {
   commitRng,
   factionState,
   logEvent,
+  fleetCapacity,
   provincesOf,
   rngFor,
   strengthOf,
 } from './state';
 import { factionFinances, growthRate, publicOrder, tierThreshold } from './economy';
+import { commissionShip, fleetMovementBudget, isBlockaded } from './naval';
 import { getBuildingType } from '../data/buildings';
 import { getUnitType } from '../data/units';
 import { getRegion } from '../data/regions';
@@ -58,10 +60,13 @@ export function endTurn(state: CampaignState): TurnReport {
   for (const region of state.regions.values()) {
     progressConstruction(state, region);
     progressRecruitment(state, region);
+    progressShipbuilding(state, region);
     progressPopulation(state, region);
     progressReligion(state, region);
     progressOrder(state, region, rng);
   }
+
+  weatherFleets(state, rng);
 
   // 4. Money, after the provinces have been updated.
   settleFinances(state);
@@ -75,10 +80,13 @@ export function endTurn(state: CampaignState): TurnReport {
   driftRelations(state, rng);
   ageCharacters(state, rng);
 
-  // 7. Give every army its movement back.
+  // 7. Give every army and fleet its movement back.
   for (const army of state.armies.values()) {
     army.movement = movementBudget(state, army);
     army.embarked = false;
+  }
+  for (const fleet of state.fleets.values()) {
+    fleet.movement = fleetMovementBudget(state, fleet);
   }
 
   commitRng(state, rng);
@@ -137,6 +145,54 @@ function progressRecruitment(state: CampaignState, region: RegionState): void {
     region.owner,
     `${type.name} muster at ${getRegion(region.id).settlement}.`,
   );
+}
+
+/**
+ * Hulls on the slipway. A blockaded harbour cannot launch: the yard is within
+ * bowshot of the enemy and the timber convoys do not arrive.
+ */
+function progressShipbuilding(state: CampaignState, region: RegionState): void {
+  if (region.shipyardQueue.length === 0) return;
+  if (region.siege || isBlockaded(state, region.id)) return;
+  const head = region.shipyardQueue[0]!;
+  head.turnsLeft -= 1;
+  if (head.turnsLeft > 0) return;
+  region.shipyardQueue.shift();
+  commissionShip(state, region.id, head.unit);
+}
+
+/**
+ * Attrition at sea. A fleet kept at sea through the winter loses hulls to
+ * weather, which is why medieval fleets were laid up and why a blockade was so
+ * hard to maintain.
+ */
+function weatherFleets(state: CampaignState, rng: Rng): void {
+  if (state.season !== 'winter') return;
+  for (const [id, fleet] of [...state.fleets]) {
+    if (fleet.location.kind !== 'sea') continue;
+    for (const ship of fleet.ships) {
+      const seaworthy = getUnitType(ship.type).abilities.includes('seaworthy');
+      const risk = seaworthy ? 0.03 : 0.09;
+      if (!rng.chance(risk)) continue;
+      ship.soldiers = Math.max(0, Math.round(ship.soldiers * rng.float(0.6, 0.9)));
+    }
+    const before = fleet.ships.length;
+    fleet.ships = fleet.ships.filter((ship) => ship.soldiers > 0);
+    if (fleet.ships.length < before) {
+      logEvent(
+        state,
+        fleet.faction,
+        `Winter gales scatter ${before - fleet.ships.length} ships of the ` +
+          `${getFaction(fleet.faction).adjective} fleet.`,
+      );
+    }
+    if (fleet.ships.length === 0) {
+      state.fleets.delete(id);
+    } else {
+      const room = fleetCapacity(fleet);
+      if (fleet.cargo.length > room) fleet.cargo = fleet.cargo.slice(0, Math.max(0, room));
+    }
+  }
 }
 
 function progressPopulation(state: CampaignState, region: RegionState): void {

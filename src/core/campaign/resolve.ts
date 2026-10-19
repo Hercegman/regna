@@ -7,15 +7,18 @@
  */
 import type { FactionId, RegionId } from '../types';
 import { SETTLEMENT_ORDER } from '../types';
-import type { Army, CampaignState, Regiment } from './state';
+import type { Army, CampaignState, Fleet, Regiment } from './state';
 import {
   factionState,
+  fleetCapacity,
   logEvent,
   regionState,
   strengthOf,
   wallTier,
 } from './state';
 import { getRegion } from '../data/regions';
+import type { SeaZoneId } from '../data/seas';
+import { getSeaZone } from '../data/seas';
 import { getFaction, tryGetFaction } from '../data/factions';
 import { getUnitType } from '../data/units';
 import type { BattleResult, BattleSetup } from '../battle/types';
@@ -28,8 +31,12 @@ export interface BattlePlan {
   readonly setup: BattleSetup;
   readonly attacker: SideComposition;
   readonly defender: SideComposition;
-  readonly region: RegionId;
+  /** The province a land battle is fought over. */
+  readonly region: RegionId | undefined;
+  /** The water a sea battle is fought in. */
+  readonly zone: SeaZoneId | undefined;
   readonly isAssault: boolean;
+  readonly naval: boolean;
 }
 
 /** Collects the forces present and draws them up, without fighting yet. */
@@ -50,12 +57,14 @@ export function planBattle(
   const attacker: SideComposition = {
     faction: attackerFaction,
     armies: attackerArmies,
+    fleets: [],
     garrison: [],
     command: commandOf(attackerArmies),
   };
   const defender: SideComposition = {
     faction: defenderFaction,
     armies: defenderArmies,
+    fleets: [],
     // The garrison turns out only when its own settlement is assaulted.
     garrison: isAssault && province.owner === defenderFaction ? province.garrison : [],
     command: commandOf(defenderArmies),
@@ -70,7 +79,57 @@ export function planBattle(
     ...(isAssault ? { walls: wallTier(province) } : {}),
   });
 
-  return { setup, attacker, defender, region, isAssault };
+  return { setup, attacker, defender, region, zone: undefined, isAssault, naval: false };
+}
+
+/**
+ * Draws up a sea battle. Both sides fight with their hulls; the land regiments
+ * a fleet is carrying take no part, which is why a loaded invasion fleet is
+ * such a poor thing to be intercepted with.
+ */
+export function planNavalBattle(
+  state: CampaignState,
+  zone: SeaZoneId,
+  attackerFleets: readonly Fleet[],
+  defenderFleets: readonly Fleet[],
+): BattlePlan {
+  const attackerFaction = attackerFleets[0]?.faction;
+  const defenderFaction = defenderFleets[0]?.faction;
+  if (!attackerFaction || !defenderFaction) {
+    throw new Error('A sea battle needs a fleet on each side');
+  }
+
+  const attacker: SideComposition = {
+    faction: attackerFaction,
+    armies: [],
+    fleets: attackerFleets,
+    garrison: [],
+    command: admiralOf(attackerFleets),
+  };
+  const defender: SideComposition = {
+    faction: defenderFaction,
+    armies: [],
+    fleets: defenderFleets,
+    garrison: [],
+    command: admiralOf(defenderFleets),
+  };
+
+  const setup = buildBattle({
+    seed: `${state.seed}:${state.turn}:sea:${zone}`,
+    // Open water: flat, with no cover and nowhere to run but the horizon.
+    terrain: 'coastal',
+    isWinter: state.season === 'winter',
+    attacker,
+    defender,
+  });
+
+  return { setup, attacker, defender, region: undefined, zone, isAssault: false, naval: true };
+}
+
+function admiralOf(fleets: readonly Fleet[]): number {
+  let best = 0;
+  for (const fleet of fleets) if (fleet.admiral) best = Math.max(best, fleet.admiral.command);
+  return best;
 }
 
 function commandOf(armies: readonly Army[]): number {
@@ -101,12 +160,37 @@ export function applyBattleResult(
     army.regiments = army.regiments.filter((regiment) => regiment.soldiers > 0);
     if (army.regiments.length === 0) state.armies.delete(army.id);
   }
-  const province = regionState(state, plan.region);
+  // A fleet that loses its hulls takes its cargo to the bottom with it.
+  for (const fleet of [...plan.attacker.fleets, ...plan.defender.fleets]) {
+    fleet.ships = fleet.ships.filter((ship) => ship.soldiers > 0);
+    if (fleet.ships.length === 0) {
+      if (fleet.cargo.length > 0) {
+        logEvent(
+          state,
+          fleet.faction,
+          `${fleet.cargo.length} regiments are lost with the fleet.`,
+        );
+      }
+      state.fleets.delete(fleet.id);
+      continue;
+    }
+    // Survivors crowd onto what is left afloat; anything beyond capacity drowns.
+    const room = fleetCapacity(fleet);
+    if (fleet.cargo.length > room) {
+      fleet.cargo = fleet.cargo.slice(0, Math.max(0, room));
+    }
+  }
+  if (plan.naval) {
+    applyNavalOutcome(state, plan, result);
+    return;
+  }
+  const province = regionState(state, plan.region!);
   province.garrison = province.garrison.filter((regiment) => regiment.soldiers > 0);
 
   const attackerName = nameOf(plan.attacker.faction);
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const defenderName = nameOf(plan.defender.faction);
-  const place = getRegion(plan.region).settlement;
+  const place = getRegion(plan.region!).settlement;
 
   if (result.outcome === 'attacker') {
     logEvent(
@@ -117,7 +201,7 @@ export function applyBattleResult(
     );
     if (plan.isAssault || strengthOf(province.garrison) === 0) {
       if (province.owner !== plan.attacker.faction) {
-        sackOrOccupy(state, plan.region, plan.attacker.faction);
+        sackOrOccupy(state, plan.region!, plan.attacker.faction);
       }
     }
   } else if (result.outcome === 'defender') {
@@ -152,7 +236,7 @@ function applySide(
     if (unit.side !== which) continue;
     const slot = slots.find(
       (candidate) =>
-        candidate.fromGarrison === unit.fromGarrison && candidate.sourceIndex === unit.sourceIndex,
+        candidate.source === unit.source && candidate.sourceIndex === unit.sourceIndex,
     );
     if (!slot) continue;
     const regiment = slot.regiment;
@@ -189,6 +273,46 @@ function applySide(
       }
     }
   }
+}
+
+/** Records the result of a sea battle and sends the loser home. */
+function applyNavalOutcome(
+  state: CampaignState,
+  plan: BattlePlan,
+  result: BattleResult,
+): void {
+  const water = plan.zone ? getSeaZone(plan.zone).name : 'open water';
+  const winner = result.outcome === 'attacker' ? plan.attacker : result.outcome === 'defender' ? plan.defender : undefined;
+  const loser = winner === plan.attacker ? plan.defender : winner === plan.defender ? plan.attacker : undefined;
+
+  if (!winner || !loser) {
+    logEvent(state, undefined, `The fleets break off in the ${water} without a decision.`);
+    return;
+  }
+  logEvent(
+    state,
+    winner.faction,
+    `${nameOf(winner.faction)} defeats ${nameOf(loser.faction)} in the ${water}. ` +
+      `Hulls lost: ${Math.round(result.defenderLosses)} against ${Math.round(result.attackerLosses)}.`,
+  );
+  // A beaten fleet that is still afloat runs for the nearest friendly harbour.
+  for (const fleet of loser.fleets) {
+    if (!state.fleets.has(fleet.id)) continue;
+    const refuge = nearestFriendlyPort(state, fleet);
+    if (refuge) fleet.location = { kind: 'port', region: refuge };
+    fleet.movement = 0;
+  }
+}
+
+/** The closest harbour of our own that a fleet in this zone can run to. */
+function nearestFriendlyPort(state: CampaignState, fleet: Fleet): RegionId | undefined {
+  if (fleet.location.kind !== 'sea') return undefined;
+  const zone = getSeaZone(fleet.location.zone);
+  for (const port of zone.ports) {
+    const province = state.regions.get(port);
+    if (province && province.owner === fleet.faction) return port;
+  }
+  return undefined;
 }
 
 function nameOf(id: FactionId): string {

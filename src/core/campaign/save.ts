@@ -10,6 +10,7 @@
  */
 import type {
   ArmyId,
+  FleetId,
   BuildingId,
   CharacterId,
   DiplomaticStance,
@@ -21,6 +22,7 @@ import type {
 } from '../types';
 import {
   armyId as toArmyId,
+  fleetId as toFleetId,
   buildingId as toBuildingId,
   characterId as toCharacterId,
   factionId as toFactionId,
@@ -30,6 +32,7 @@ import {
 import type {
   Army,
   CampaignState,
+  Fleet,
   Character,
   FactionState,
   LogEntry,
@@ -38,8 +41,13 @@ import type {
   Season,
 } from './state';
 import type { RngState } from '../rng';
+import type { SeaZoneId } from '../data/seas';
 
-export const SAVE_VERSION = 1;
+/**
+ * Bumped whenever the saved shape changes. Version 2 added fleets, the ships
+ * building at a harbour, and the cargo a fleet is carrying.
+ */
+export const SAVE_VERSION = 2;
 
 interface SavedRegiment {
   readonly t: string;
@@ -66,6 +74,7 @@ interface SavedRegion {
   readonly buildings: readonly string[];
   readonly construction: { readonly building: string; readonly turnsLeft: number } | null;
   readonly recruitQueue: readonly { readonly unit: string; readonly turnsLeft: number }[];
+  readonly shipyardQueue: readonly { readonly unit: string; readonly turnsLeft: number }[];
   readonly garrison: readonly SavedRegiment[];
   readonly unrest: number;
   readonly religion: string;
@@ -87,6 +96,18 @@ interface SavedFaction {
   readonly destroyedOn: number | null;
 }
 
+interface SavedFleet {
+  readonly id: string;
+  readonly faction: string;
+  /** Either a harbour province or a sea zone; exactly one is set. */
+  readonly port: string | null;
+  readonly zone: string | null;
+  readonly ships: readonly SavedRegiment[];
+  readonly cargo: readonly SavedRegiment[];
+  readonly admiral: string | null;
+  readonly movement: number;
+}
+
 interface SavedArmy {
   readonly id: string;
   readonly faction: string;
@@ -106,10 +127,12 @@ export interface SavedCampaign {
   readonly season: string;
   readonly player: string;
   readonly nextArmySerial: number;
+  readonly nextFleetSerial: number;
   readonly nextCharacterSerial: number;
   readonly factions: readonly SavedFaction[];
   readonly regions: readonly SavedRegion[];
   readonly armies: readonly SavedArmy[];
+  readonly fleets: readonly SavedFleet[];
   readonly log: readonly {
     readonly turn: number;
     readonly year: number;
@@ -162,6 +185,7 @@ export function serialiseCampaign(state: CampaignState): SavedCampaign {
     season: state.season,
     player: state.player as string,
     nextArmySerial: state.nextArmySerial,
+    nextFleetSerial: state.nextFleetSerial,
     nextCharacterSerial: state.nextCharacterSerial,
     factions: [...state.factions.values()].map((faction) => ({
       id: faction.id as string,
@@ -192,6 +216,10 @@ export function serialiseCampaign(state: CampaignState): SavedCampaign {
         unit: entry.unit as string,
         turnsLeft: entry.turnsLeft,
       })),
+      shipyardQueue: region.shipyardQueue.map((entry) => ({
+        unit: entry.unit as string,
+        turnsLeft: entry.turnsLeft,
+      })),
       garrison: region.garrison.map(saveRegiment),
       unrest: region.unrest,
       religion: region.religion,
@@ -210,6 +238,16 @@ export function serialiseCampaign(state: CampaignState): SavedCampaign {
       general: (army.general?.id as string | undefined) ?? null,
       movement: army.movement,
       embarked: army.embarked,
+    })),
+    fleets: [...state.fleets.values()].map((fleet) => ({
+      id: fleet.id as string,
+      faction: fleet.faction as string,
+      port: fleet.location.kind === 'port' ? (fleet.location.region as string) : null,
+      zone: fleet.location.kind === 'sea' ? (fleet.location.zone as string) : null,
+      ships: fleet.ships.map(saveRegiment),
+      cargo: fleet.cargo.map(saveRegiment),
+      admiral: (fleet.admiral?.id as string | undefined) ?? null,
+      movement: fleet.movement,
     })),
     log: state.log.map((entry) => ({
       turn: entry.turn,
@@ -274,6 +312,10 @@ export function deserialiseCampaign(saved: SavedCampaign): CampaignState {
         unit: toUnitTypeId(queued.unit) as UnitTypeId,
         turnsLeft: queued.turnsLeft,
       })),
+      shipyardQueue: (entry.shipyardQueue ?? []).map((queued) => ({
+        unit: toUnitTypeId(queued.unit) as UnitTypeId,
+        turnsLeft: queued.turnsLeft,
+      })),
       garrison: entry.garrison.map(loadRegiment),
       unrest: entry.unrest,
       religion: entry.religion as Religion,
@@ -299,6 +341,23 @@ export function deserialiseCampaign(saved: SavedCampaign): CampaignState {
     });
   }
 
+  const fleets = new Map<FleetId, Fleet>();
+  for (const entry of saved.fleets ?? []) {
+    const location: Fleet['location'] =
+      entry.zone !== null
+        ? { kind: 'sea', zone: entry.zone as SeaZoneId }
+        : { kind: 'port', region: toRegionId(entry.port ?? '') as RegionId };
+    fleets.set(toFleetId(entry.id) as FleetId, {
+      id: toFleetId(entry.id) as FleetId,
+      faction: toFactionId(entry.faction) as FactionId,
+      location,
+      ships: entry.ships.map(loadRegiment),
+      cargo: entry.cargo.map(loadRegiment),
+      admiral: entry.admiral ? characters.get(entry.admiral) : undefined,
+      movement: entry.movement,
+    });
+  }
+
   const log: LogEntry[] = saved.log.map((entry) => ({
     turn: entry.turn,
     year: entry.year,
@@ -315,7 +374,9 @@ export function deserialiseCampaign(saved: SavedCampaign): CampaignState {
     factions,
     regions,
     armies,
+    fleets,
     nextArmySerial: saved.nextArmySerial,
+    nextFleetSerial: saved.nextFleetSerial ?? 0,
     nextCharacterSerial: saved.nextCharacterSerial,
     player: toFactionId(saved.player) as FactionId,
     log,

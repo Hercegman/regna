@@ -8,13 +8,14 @@
 import type { FactionId, RegionId } from '../types';
 import { clamp, SETTLEMENT_ORDER } from '../types';
 import type { CampaignState, RegionState, Season } from './state';
-import { factionState, provincesOf, strengthOf, wallTier } from './state';
+import { factionState, hasPort, provincesOf, strengthOf, wallTier } from './state';
 import { getBuildingType } from '../data/buildings';
 import { getRegion } from '../data/regions';
 import { landNeighbours, seaNeighbours } from '../data/adjacency';
 import { getUnitType } from '../data/units';
 import { tryGetFaction } from '../data/factions';
 import { INDEPENDENT_ID } from '../data/factions';
+import { seaLaneClosed } from './naval';
 
 /** Tax yield per thousand inhabitants, by settlement rank. */
 const TAX_PER_THOUSAND: Readonly<Record<string, number>> = {
@@ -77,14 +78,6 @@ function buildingEffectSum(
   return total;
 }
 
-/** Does the province have a working harbour, from geography and buildings? */
-export function hasPort(region: RegionState): boolean {
-  if (!getRegion(region.id).port) return false;
-  for (const id of region.buildings) if (getBuildingType(id).effects.port) return true;
-  // A natural harbour trades even before a quay is built, just less.
-  return true;
-}
-
 /**
  * Trade routes: adjacent provinces that are actually open for trade, which
  * means owned by us, by a trade partner or by an ally, and not at war. Sea
@@ -110,7 +103,14 @@ export function tradeRoutes(state: CampaignState, region: RegionState): number {
     routes += stance === 'trade' || stance === 'alliance' ? weight * 1.5 : weight;
   };
   for (const other of landNeighbours(region.id)) openTo(other, 1);
-  if (hasPort(region)) for (const other of seaNeighbours(region.id)) openTo(other, 2);
+  if (hasPort(region)) {
+    for (const other of seaNeighbours(region.id)) {
+      // A hostile fleet standing on the water between two harbours closes the
+      // trade along it. One squadron in the Channel is worth a campaign.
+      if (seaLaneClosed(state, owner, region.id, other)) continue;
+      openTo(other, 2);
+    }
+  }
   return routes;
 }
 

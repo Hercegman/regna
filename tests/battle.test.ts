@@ -27,7 +27,7 @@ function army(faction: string, regiments: Regiment[]): Army {
 }
 
 function side(faction: string, regiments: Regiment[], command = 0): SideComposition {
-  return { faction: factionId(faction), armies: [army(faction, regiments)], garrison: [], command };
+  return { faction: factionId(faction), armies: [army(faction, regiments)], fleets: [], garrison: [], command };
 }
 
 function battle(
