@@ -34,7 +34,7 @@ import {
   settleLegitimacy,
   succeed,
 } from './dynasty';
-import { desertUnpaid, replenishMercenaries } from './mercenaries';
+import { desertUnpaid, mutiny, replenishMercenaries } from './mercenaries';
 import { considerHolyWar, driftStanding, notePiety, progressHolyWar } from './faith';
 import { getBuildingType } from '../data/buildings';
 import { getUnitType } from '../data/units';
@@ -87,8 +87,10 @@ export function endTurn(state: CampaignState): TurnReport {
   considerHolyWar(state, rng);
   driftStanding(state);
 
-  // 4. Money, after the provinces have been updated.
+  // 4. Money, after the provinces have been updated, and what the men who
+  // were not paid decide to do about it.
   settleFinances(state);
+  mutiny(state, rng);
 
   // 5. Advance the clock.
   advanceClock(state);
@@ -380,6 +382,20 @@ function settleFinances(state: CampaignState): void {
     if (!faction.alive || id === INDEPENDENT_ID) continue;
     const finances = factionFinances(state, id);
     faction.treasury += finances.net;
+
+    // Whether the hired men are being paid on time.
+    //
+    // An empty treasury is far too late to notice: by then the realm has
+    // already disbanded its way back to solvency and nobody has gone unpaid
+    // at all. What a company watches is whether the money is visibly running
+    // out — the realm losing money with less than two seasons' wages in hand
+    // — which is when the pay actually started arriving late.
+    const wages = finances.armyUpkeep + finances.garrisonUpkeep;
+    const late = finances.net < 0 && faction.treasury < wages * 2;
+    // Arrears are forgiven slowly. One good season does not settle a debt the
+    // men have been carrying for a year.
+    faction.arrears = late ? faction.arrears + 1 : Math.max(0, faction.arrears - 1);
+
     if (faction.treasury >= 0) continue;
     // Bankruptcy disbands the most expensive regiments until the books balance.
     disbandForDebt(state, id);

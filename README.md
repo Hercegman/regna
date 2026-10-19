@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-d9b55f?style=flat-square&labelColor=12161a)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white&labelColor=12161a)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-6-646cff?style=flat-square&logo=vite&logoColor=white&labelColor=12161a)](https://vite.dev)
-[![Tests](https://img.shields.io/badge/tests-345%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
+[![Tests](https://img.shields.io/badge/tests-361%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
 [![Runtime deps](https://img.shields.io/badge/runtime%20dependencies-none-8b91a0?style=flat-square&labelColor=12161a)](#architecture)
 
 [Why](#why-regna) · [The world](#the-world) · [Features](#features) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Playing](#playing) · [Architecture](#architecture) · [Roadmap](#roadmap)
@@ -149,6 +149,12 @@ play in the year it actually rose, at the place it rose from.
   once, costs nearly twice a levy to keep, and is the first thing to leave when
   the pay stops.
 
+  And a company whose pay has stopped does more than leave. One season behind
+  and anyone at war with its employer can buy it out from under him; two
+  seasons behind and a company holding a town may simply keep the town. A
+  paid company keeps its contract, so an enemy's bankruptcy is the one thing
+  that puts his soldiers on the market.
+
 - **An economy that behaves like a medieval one.** Population grows logistically
   towards what the land can feed. A realm pays for its buildings, its soldiers,
   its administration, and its hoard, because money in a vault was spent on
@@ -277,7 +283,7 @@ Both are offered again on the faction select screen.
 | `src/render/` | The Mercator projection and camera, the province geometry, the vector art, the campaign map, the battlefield. |
 | `src/ui/` | Screens, panels, persistence. Plain DOM, no framework. |
 | `tools/` | `build-geography.py`, which turns Natural Earth's vectors into the checked-in coastline. |
-| `tests/` | 345 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
+| `tests/` | 361 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
 
 Nothing in `src/core/` touches the DOM or calls `Math.random`. Randomness comes
 from a xoshiro128\*\* generator whose state is saved with the campaign, which is
@@ -321,9 +327,10 @@ URL parameters open a known state without a sequence of clicks:
 
 - [x] Agents — spies, envoys, priests and merchants
 - [x] Dynasties: marriage, legitimacy, and a succession that follows the line
-- [ ] Civil war: a disputed succession that produces a rival claimant with an army
+- [x] Mercenary politics: companies that change sides, or take a city instead of a contract
 - [x] An opening guide, because the interface is dense and used to say nothing
-- [ ] Mercenary politics: companies that change sides, or take a city instead of a contract
+- [ ] Civil war: a disputed succession that produces a rival claimant with an army
+- [ ] Fog of war, which would give a spy something to sell besides sabotage
 
 ## Not a reimplementation
 

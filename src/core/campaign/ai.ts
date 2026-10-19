@@ -63,7 +63,17 @@ import {
 } from './naval';
 import type { SeaZoneId } from '../data/seas';
 import { SEA_ZONE_IDS, getSeaZone, zonesOffPort, zoneServesPort } from '../data/seas';
-import { canHire, hireMercenary, isMercenary, offersAt } from './mercenaries';
+import {
+  canHire,
+  canPoach,
+  hireMercenary,
+  isMercenary,
+  mercenaryUpkeep,
+  offersAt,
+  poachCompany,
+  poachable,
+} from './mercenaries';
+import type { Poach } from './mercenaries';
 import {
   canMarry,
   marriageOdds,
@@ -116,6 +126,7 @@ export function takeAiTurn(state: CampaignState, id: FactionId, rng: Rng): void 
   manageArmies(state, id, rng);
   manageNavy(state, id, rng);
   manageMercenaries(state, id, rng);
+  poachCompanies(state, id, rng);
   manageFaith(state, id, rng);
   manageCourt(state, id);
   manageMarriages(state, id, rng);
@@ -539,6 +550,53 @@ function manageFaith(state: CampaignState, id: FactionId, rng: Rng): void {
  * exactly those conditions and not otherwise, because a company costs nearly
  * twice a levy to keep.
  */
+/**
+ * Buying somebody else's soldiers out from under him.
+ *
+ * Only possible against a realm that has stopped paying, which is the whole
+ * point: it turns an enemy's bankruptcy into an immediate military loss and
+ * gives a solvent realm something to spend its money on besides more of its
+ * own troops. Worth most when the company is standing somewhere we are
+ * fighting.
+ */
+function poachCompanies(state: CampaignState, id: FactionId, rng: Rng): void {
+  const faction = factionState(state, id);
+  const offers = poachable(state, id)
+    .filter((offer) => canPoach(state, id, offer).ok)
+    .sort((a, b) => value(state, id, b) - value(state, id, a));
+  // Judged as a purchase with a wage after it, not against the reserve an
+  // army is planned from: a company bought out is bought today and paid for
+  // from here on, and running it through the standing-charge test meant no
+  // realm ever bought one.
+  const revenue = annualNet(state, id);
+  let bought = 0;
+  for (const offer of offers) {
+    if (bought >= 2) break;
+    if (faction.treasury < offer.cost + 400) continue;
+    if (revenue - mercenaryUpkeep(offer.regiment.type) < -40) continue;
+    // Not every season and not every company: a realm that took every offer
+    // the moment it appeared would strip a bankrupt enemy bare in one turn,
+    // which is neither interesting nor what happened.
+    if (!rng.chance(0.4)) continue;
+    if (!poachCompany(state, id, offer).ok) continue;
+    bought += 1;
+  }
+}
+
+/** What a company is worth to us where it is standing. */
+function value(state: CampaignState, id: FactionId, offer: Poach): number {
+  const type = getUnitType(offer.regiment.type);
+  let worth = type.cost + type.tier * 60;
+  // A company standing in or beside something of ours is worth most, because
+  // taking it away is also taking it off our frontier.
+  const here = state.regions.get(offer.where);
+  if (here?.owner === id) worth += 200;
+  else if (landNeighbours(offer.where).some((next) => state.regions.get(next)?.owner === id)) {
+    worth += 100;
+  }
+  return worth;
+}
+
 function manageMercenaries(state: CampaignState, id: FactionId, rng: Rng): void {
   const wars = countWars(state, id);
   if (wars === 0) return;

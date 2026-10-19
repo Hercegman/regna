@@ -122,6 +122,12 @@ import {
   guideProgress,
   restoreGuide,
 } from './tutorial';
+import {
+  canPoach,
+  mercenaryUpkeep,
+  poachCompany,
+  poachable,
+} from '../core/campaign/mercenaries';
 import { Rng } from '../core/rng';
 import { commitRng, rngFor } from '../core/campaign';
 import { getBuildingType } from '../core/data/buildings';
@@ -1171,6 +1177,7 @@ export class CampaignScreen {
     }
 
     this.renderHireSection(body, region);
+    this.renderPoachSection(body, region);
     this.renderArmySection(body, region);
     this.renderFleetSection(body, region);
 
@@ -1199,6 +1206,55 @@ export class CampaignScreen {
         this.renderAll();
       });
       body.appendChild(select);
+    }
+  }
+
+  /**
+   * Companies standing here in somebody else's pay whose pay has stopped.
+   *
+   * Only ever from a realm in arrears and only ever one we are at war with.
+   * Buying one is an act of war carried out with money: it is an immediate
+   * loss to the enemy and an immediate gain to us, and it is the one use for
+   * a treasury that an enemy's bankruptcy creates.
+   */
+  private renderPoachSection(body: HTMLElement, region: RegionState): void {
+    const me = this.state.player;
+    const offers = poachable(this.state, me).filter((offer) => offer.where === region.id);
+    if (offers.length === 0) return;
+    const treasury = factionState(this.state, me).treasury;
+
+    body.appendChild(el('h3', {}, 'Companies that can be bought'));
+    body.appendChild(el('p', { class: 'muted' },
+      'Their employer has not paid them. A company whose wages have stopped listens to ' +
+      'other offers, and a paid one does not.',
+    ));
+    for (const offer of offers) {
+      const type = getUnitType(offer.regiment.type);
+      const allowed = canPoach(this.state, me, offer);
+      body.appendChild(el('div', { class: 'offer' },
+        el('div', { class: 'offer-main' },
+          el('strong', {}, type.name),
+          el('p', { class: 'offer-text' },
+            `In the pay of ${factionName(offer.employer)}, ` +
+            `who are ${this.state.factions.get(offer.employer)?.arrears ?? 0} seasons behind.`,
+          ),
+          el('p', { class: 'offer-meta' },
+            `${count(offer.regiment.soldiers)} men · ${count(offer.cost)} florins · ` +
+              `${mercenaryUpkeep(offer.regiment.type)}/turn to keep`,
+          ),
+          !allowed.ok && el('p', { class: 'offer-meta' }, allowed.reason),
+        ),
+        el('button', {
+          class: 'small',
+          disabled: !allowed.ok || treasury < offer.cost,
+          title: allowed.ok ? 'Buy them out of his service' : allowed.reason,
+          onClick: () => {
+            const result = poachCompany(this.state, me, offer);
+            if (!result.ok) this.flash(result.reason);
+            this.renderAll();
+          },
+        }, 'Buy them'),
+      ));
     }
   }
 

@@ -59,9 +59,9 @@ import type { TradeRouteId } from '../data/trade';
  * the authority of his faith, who is under censure, and the holy war being
  * preached, version 6 the agents in the field, and version 7 the dynasties:
  * each character's sex, father and spouse, and each realm's legitimacy and
- * line of rulers.
+ * line of rulers, and version 8 what each realm owes its soldiers.
  */
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 
 interface SavedRegiment {
   readonly t: string;
@@ -114,6 +114,7 @@ interface SavedFaction {
   readonly characters: readonly SavedCharacter[];
   readonly legitimacy: number;
   readonly rulers: readonly string[];
+  readonly arrears: number;
   readonly joinedOn: number;
   readonly destroyedOn: number | null;
 }
@@ -274,6 +275,7 @@ export function serialiseCampaign(state: CampaignState): SavedCampaign {
       characters: faction.characters.map(saveCharacter),
       legitimacy: faction.legitimacy,
       rulers: [...faction.rulers],
+      arrears: faction.arrears,
       joinedOn: faction.joinedOn,
       destroyedOn: faction.destroyedOn ?? null,
     })),
@@ -405,6 +407,7 @@ export function deserialiseCampaign(saved: SavedCampaign): CampaignState {
       characters: own,
       legitimacy: entry.legitimacy ?? 100,
       rulers: [...(entry.rulers ?? [])],
+      arrears: entry.arrears ?? 0,
       joinedOn: entry.joinedOn,
       destroyedOn: entry.destroyedOn ?? undefined,
     });

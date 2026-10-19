@@ -12,11 +12,12 @@
  * more than a levy to keep, and it is the first thing to walk away when the
  * money runs short.
  */
-import type { FactionId, RegionId, UnitTypeId } from '../types';
+import type { ArmyId, FactionId, RegionId, UnitTypeId } from '../types';
 import type { CampaignState, Regiment } from './state';
-import { factionState, logEvent, regionState } from './state';
+import { factionState, isAtWar, logEvent, regionState } from './state';
 import type { MercenaryPool } from '../data/mercenaries';
 import { MERCENARY_POOLS, getMercenaryPool, poolsAt } from '../data/mercenaries';
+import type { Rng } from '../rng';
 import { getUnitType } from '../data/units';
 import { getRegion } from '../data/regions';
 import { tryGetFaction, INDEPENDENT_ID } from '../data/factions';
@@ -266,4 +267,193 @@ export function desertUnpaid(state: CampaignState, faction: FactionId, needed: n
     }
   }
   return recovered;
+}
+
+// ---------------------------------------------------------------------------
+// What a company does when the money stops
+// ---------------------------------------------------------------------------
+
+/**
+ * How long the pay has to be late before a company acts, by how drastic the
+ * act is.
+ *
+ * One missed season and it is listening to other people's offers, which is
+ * all a condottiere ever needed. Taking the town it was hired to garrison is
+ * a different matter, and wants a year of being owed.
+ */
+export const ARREARS_BEFORE_POACHING = 1;
+export const ARREARS_BEFORE_MUTINY = 2;
+
+/** What it costs to buy a company out of somebody else's service. */
+export function poachCost(regiment: Regiment): number {
+  // More than hiring one off the street, because he is already somewhere and
+  // has to be persuaded to break a contract to come.
+  return Math.round(getUnitType(regiment.type).cost * 1.6);
+}
+
+export interface Poach {
+  readonly employer: FactionId;
+  readonly army: ArmyId;
+  readonly index: number;
+  readonly regiment: Regiment;
+  readonly cost: number;
+  /** Where the company is standing, which is where it would change sides. */
+  readonly where: RegionId;
+}
+
+/**
+ * Companies that could be bought out from under their employer.
+ *
+ * Only from a realm in arrears. A company whose pay has arrived has a
+ * contract and keeps it; one whose pay has not is listening to offers, and
+ * everybody in Italy knew it. The buyer must be at war with the employer —
+ * this is an act of war carried out with money, not a labour market.
+ */
+export function poachable(state: CampaignState, buyer: FactionId): Poach[] {
+  const offers: Poach[] = [];
+  for (const army of state.armies.values()) {
+    if (army.faction === buyer) continue;
+    const employer = state.factions.get(army.faction);
+    if (!employer?.alive) continue;
+    if (employer.arrears < ARREARS_BEFORE_POACHING) continue;
+    if (!isAtWar(state, buyer, army.faction)) continue;
+    army.regiments.forEach((regiment, index) => {
+      if (!isMercenary(regiment)) return;
+      offers.push({
+        employer: army.faction,
+        army: army.id,
+        index,
+        regiment,
+        cost: poachCost(regiment),
+        where: army.location,
+      });
+    });
+  }
+  return offers;
+}
+
+export function canPoach(state: CampaignState, buyer: FactionId, offer: Poach): Outcome {
+  const army = state.armies.get(offer.army);
+  if (!army) return no('That company is no longer there.');
+  const regiment = army.regiments[offer.index];
+  if (!regiment || !isMercenary(regiment)) return no('That company is no longer there.');
+  const employer = state.factions.get(army.faction);
+  if (!employer || employer.arrears < ARREARS_BEFORE_POACHING) {
+    return no('They are being paid, and a paid company keeps its contract.');
+  }
+  if (!isAtWar(state, buyer, army.faction)) return no('We are not at war with their employer.');
+  if (factionState(state, buyer).treasury < offer.cost) return no('Not enough money.');
+  return ok;
+}
+
+/**
+ * Buys a company out of an enemy's army.
+ *
+ * It does not change sides on the field — it walks away from the man who is
+ * not paying it and turns up in the nearest force of the man who is. If the
+ * buyer has nothing standing nearby, the company marches to his capital, and
+ * if he has nowhere at all to put it, the money buys nothing but the enemy's
+ * loss, which was often the point.
+ */
+export function poachCompany(state: CampaignState, buyer: FactionId, offer: Poach): Outcome {
+  const allowed = canPoach(state, buyer, offer);
+  if (!allowed.ok) return allowed;
+  const army = state.armies.get(offer.army)!;
+  const [company] = army.regiments.splice(offer.index, 1);
+  if (!company) return no('That company is no longer there.');
+  factionState(state, buyer).treasury -= offer.cost;
+
+  // An army with nobody left in it is not an army.
+  if (army.regiments.length === 0) state.armies.delete(army.id);
+
+  const taken = placeCompany(state, buyer, company, offer.where);
+  logEvent(
+    state,
+    buyer,
+    taken
+      ? `${getUnitType(company.type).name} changes sides at ${getRegion(offer.where).settlement}.`
+      : `${getUnitType(company.type).name} is bought out of ${tryGetFaction(offer.employer)?.name ?? 'enemy'} service and disperses.`,
+  );
+  logEvent(
+    state,
+    offer.employer,
+    `${getUnitType(company.type).name} takes another man's money and leaves ${getRegion(offer.where).settlement}.`,
+  );
+  return ok;
+}
+
+/** Finds somewhere for a bought company to stand; false if there is nowhere. */
+function placeCompany(
+  state: CampaignState,
+  buyer: FactionId,
+  company: Regiment,
+  near: RegionId,
+): boolean {
+  const ours = [...state.armies.values()].filter(
+    (army) => army.faction === buyer && army.regiments.length < MAX_ARMY_REGIMENTS,
+  );
+  ours.sort((a, b) => distanceApart(a.location, near) - distanceApart(b.location, near));
+  const nearest = ours[0];
+  if (nearest) {
+    nearest.regiments.push(company);
+    return true;
+  }
+  const seat = state.factions.get(buyer)?.capital;
+  const home = seat ? state.regions.get(seat) : undefined;
+  if (home && home.owner === buyer && home.garrison.length < MAX_GARRISON_REGIMENTS) {
+    home.garrison.push(company);
+    return true;
+  }
+  return false;
+}
+
+function distanceApart(a: RegionId, b: RegionId): number {
+  const from = getRegion(a);
+  const to = getRegion(b);
+  const scale = Math.cos(((from.lat + to.lat) / 2) * (Math.PI / 180));
+  return Math.hypot((from.lon - to.lon) * scale, from.lat - to.lat);
+}
+
+/**
+ * A company that has not been paid takes the town it was garrisoning.
+ *
+ * This is the thing the hiring model was missing. A company left unpaid in
+ * somebody's city did not simply walk home: more than once it kept the city.
+ * The province goes to nobody — the company holds it for itself — and every
+ * soldier in it who was not a mercenary is gone.
+ */
+export function mutiny(state: CampaignState, rng: Rng): void {
+  for (const [id, faction] of state.factions) {
+    if (!faction.alive || id === INDEPENDENT_ID) continue;
+    if (faction.arrears < ARREARS_BEFORE_MUTINY) continue;
+
+    for (const province of state.regions.values()) {
+      if (province.owner !== id) continue;
+      const hired = province.garrison.filter(isMercenary);
+      // They can only take the place if they are at least half of what is
+      // holding it. One company among six militia is in no position to keep
+      // anything, whatever it is owed.
+      if (hired.length === 0) continue;
+      if (hired.length * 2 < province.garrison.length) continue;
+
+      const chance = 0.1 + (faction.arrears - ARREARS_BEFORE_MUTINY) * 0.06;
+      if (!rng.chance(Math.min(0.45, chance))) continue;
+
+      province.garrison = hired;
+      province.siege = undefined;
+      province.construction = undefined;
+      province.recruitQueue = [];
+      province.governor = undefined;
+      province.unrest = Math.min(100, province.unrest + 30);
+      province.owner = INDEPENDENT_ID;
+      province.ownedSince = state.turn;
+      logEvent(
+        state,
+        id,
+        `The unpaid companies in ${getRegion(province.id).settlement} take the town for themselves.`,
+      );
+      // One town a season is enough of a disaster.
+      break;
+    }
+  }
 }

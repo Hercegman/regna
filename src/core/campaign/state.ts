@@ -232,6 +232,12 @@ export interface FactionState {
    * third Stjepan is actually the third.
    */
   rulers: string[];
+  /**
+   * Turns in a row the realm has failed to pay its soldiers. Hired companies
+   * watch this number more closely than anyone: the first season's arrears
+   * sends them home, the second makes them consider what else is on offer.
+   */
+  arrears: number;
   /** Turn the faction entered play. */
   joinedOn: number;
   /** Set when the faction has lost every province. */
@@ -749,6 +755,7 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
       characters: [],
       legitimacy: 100,
       rulers: [],
+      arrears: 0,
       joinedOn: present ? 0 : -1,
       destroyedOn: undefined,
     });
@@ -763,6 +770,7 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
     characters: [],
     legitimacy: 100,
     rulers: [],
+    arrears: 0,
     joinedOn: 0,
     destroyedOn: undefined,
   });

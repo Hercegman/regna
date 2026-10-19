@@ -262,6 +262,26 @@ Companies leave when the pay does. When a realm cannot meet its bills the hired
 men go first, before anything of its own, which is both what happened and a
 reason to think twice before building an army out of other people's soldiers.
 
+### When the money stops
+
+Arrears are counted when the pay is late, not when the vault is empty. By the
+time a treasury hits zero the realm has already disbanded its way back to
+solvency and nobody has gone unpaid at all, so what a company watches is
+whether the money is visibly running out: the realm losing money with less
+than two seasons' wages in hand. Arrears are forgiven one season at a time —
+one good harvest does not settle a debt the men have been carrying for a year.
+
+One season behind and a company is listening to other offers. Any realm at war
+with its employer can buy it out for rather more than it cost to hire: it does
+not change sides on the field, it walks away from the man who is not paying
+and turns up in the nearest force of the man who is. A paid company keeps its
+contract, so this is a use for money that only an enemy's bankruptcy creates.
+
+Two seasons behind, and a company garrisoning a town — if it is at least half
+of what holds the place — may simply keep it. The province goes to nobody: the
+company holds it for itself, and every soldier in it who was not a mercenary
+is gone. This was rare and it is rare here: about one town a century.
+
 ## Where the money goes
 
 A realm pays for its buildings, its soldiers, its administration, and its
@@ -388,9 +408,9 @@ succeeds would be a poor teacher.
 
 ## What is deliberately simple
 
-- **No mercenary politics.** Companies serve or leave; they do not change
-  sides mid-battle, besiege the employer who shorted them, or carve out
-  states of their own, all of which happened.
+- **Mercenaries do not change sides mid-battle.** They take another prince's
+  money between seasons and they keep towns they are owed for, but once a
+  battle has begun the order of battle is fixed.
 - **No fog of war.** Every province, army, fleet and agent is visible to
   everyone. A spy therefore sells sabotage and murder rather than information,
   which is the honest way to price him in a game where nothing is hidden.
