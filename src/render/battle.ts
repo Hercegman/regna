@@ -73,19 +73,35 @@ export function drawBattle(
  * see what the uphill and downhill modifiers refer to.
  */
 function drawGround(ctx: CanvasRenderingContext2D, state: BattleState, view: BattleView): void {
-  const base = groundColour(state.setup.terrain);
+  const base = state.setup.naval ? '#1d3346' : groundColour(state.setup.terrain);
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, view.width, view.height);
 
-  const step = 22;
-  for (let y = 0; y < view.height; y += step) {
-    for (let x = 0; x < view.width; x += step) {
-      const field = screenToField(view, x + step / 2, y + step / 2);
-      const height = state.terrainHeight(field);
-      const shade = Math.max(-0.22, Math.min(0.22, height / 150));
-      ctx.fillStyle =
-        shade >= 0 ? `rgba(255,255,255,${shade})` : `rgba(0,0,0,${-shade})`;
-      ctx.fillRect(x, y, step, step);
+  if (state.setup.naval) {
+    // Swell rather than contours: there is no ground to read at sea, only the
+    // set of the water.
+    ctx.strokeStyle = 'rgba(140, 186, 220, 0.10)';
+    ctx.lineWidth = 1;
+    for (let y = 18; y < view.height; y += 26) {
+      ctx.beginPath();
+      for (let x = 0; x <= view.width; x += 18) {
+        const lift = Math.sin((x / 90) + y / 55) * 3;
+        if (x === 0) ctx.moveTo(x, y + lift);
+        else ctx.lineTo(x, y + lift);
+      }
+      ctx.stroke();
+    }
+  } else {
+    const step = 22;
+    for (let y = 0; y < view.height; y += step) {
+      for (let x = 0; x < view.width; x += step) {
+        const field = screenToField(view, x + step / 2, y + step / 2);
+        const height = state.terrainHeight(field);
+        const shade = Math.max(-0.22, Math.min(0.22, height / 150));
+        ctx.fillStyle =
+          shade >= 0 ? `rgba(255,255,255,${shade})` : `rgba(0,0,0,${-shade})`;
+        ctx.fillRect(x, y, step, step);
+      }
     }
   }
 
@@ -167,7 +183,19 @@ function drawUnit(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const glyph =
-    type.unitClass === 'general' ? '*' : role === 'cavalry' ? 'C' : role === 'missile' ? 'M' : role === 'siege' ? 'S' : 'I';
+    type.unitClass === 'general'
+      ? '*'
+      : type.unitClass === 'warship'
+        ? 'W'
+        : type.unitClass === 'transport'
+          ? 'T'
+          : role === 'cavalry'
+            ? 'C'
+            : role === 'missile'
+              ? 'M'
+              : role === 'siege'
+                ? 'S'
+                : 'I';
   ctx.fillText(glyph, centre.x, centre.y);
 
   // Morale bar above anything that is wavering.

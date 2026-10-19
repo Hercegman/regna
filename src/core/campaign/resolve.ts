@@ -121,6 +121,7 @@ export function planNavalBattle(
     isWinter: state.season === 'winter',
     attacker,
     defender,
+    naval: true,
   });
 
   return { setup, attacker, defender, region: undefined, zone, isAssault: false, naval: true };

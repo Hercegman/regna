@@ -50,8 +50,21 @@ export function buildableShips(state: CampaignState, id: RegionId): readonly Uni
   if (region.siege) return [];
   const faction = tryGetFaction(region.owner);
   if (!faction) return [];
+  // What the harbour opens onto decides what can be built there: a river
+  // galley is useless on the open sea, and a carrack cannot be floated down
+  // the Tigris.
+  const waters = zonesOffPort(id);
+  const onRiver = waters.some((zone) => getSeaZone(zone).river);
+  const onSea = waters.some((zone) => !getSeaZone(zone).river);
+
   return navalRosterFor(faction, state.year)
     .filter((ship) => !ship.requires || region.buildings.has(ship.requires))
+    .filter((ship) => {
+      const needs = ship.waters ?? 'any';
+      if (needs === 'river') return onRiver;
+      if (needs === 'sea') return onSea;
+      return onRiver || onSea;
+    })
     .map((ship) => ship.id);
 }
 

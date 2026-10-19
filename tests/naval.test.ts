@@ -320,6 +320,7 @@ describe('a naval campaign', () => {
     const state = newCampaign({ seed: 'naval-invariants' });
     for (let turn = 0; turn < 120; turn++) {
       endTurn(state);
+
       for (const fleet of state.fleets.values()) {
         expect(fleet.ships.length, 'an empty fleet was kept').toBeGreaterThan(0);
         expect(fleet.cargo.length).toBeLessThanOrEqual(fleetCapacity(fleet));
@@ -336,6 +337,41 @@ describe('a naval campaign', () => {
           expect(harbour?.port, 'a fleet is moored where there is no harbour').toBe(true);
         }
       }
+
+      // A hull belongs in a fleet and nowhere else: not in a marching army and
+      // not standing on a town wall.
+      for (const army of state.armies.values()) {
+        for (const regiment of army.regiments) {
+          expect(isShip(getUnitType(regiment.type)), `${regiment.type} is in an army`).toBe(false);
+        }
+      }
+      for (const region of state.regions.values()) {
+        for (const regiment of region.garrison) {
+          expect(isShip(getUnitType(regiment.type)), `${regiment.type} is in a garrison`)
+            .toBe(false);
+        }
+      }
     }
   }, 150_000);
+});
+
+describe('hulls and the water they are built for', () => {
+  it('builds sea-going ships at a sea port and river craft on a river', () => {
+    const state = newCampaign({ seed: 'waters' });
+    const venetian = buildableShips(state, regionId('venice')).map((id) => getUnitType(id).name);
+    expect(venetian, 'Venice should build sea-going hulls').toContain('War Galley');
+    expect(venetian, 'Venice is not on a river').not.toContain('River Galley');
+
+    const baghdad = buildableShips(state, regionId('baghdad')).map((id) => getUnitType(id).name);
+    expect(baghdad, 'Baghdad is on the Tigris').toContain('River Galley');
+    expect(baghdad, 'a sea-going hull cannot be floated down the Tigris')
+      .not.toContain('War Galley');
+  });
+
+  it('declares a water for every hull', () => {
+    for (const id of ['longship', 'war_galley', 'cog', 'carrack', 'river_galley']) {
+      const ship = getUnitType(unitTypeId(id));
+      expect(['river', 'sea', 'any'], ship.name).toContain(ship.waters ?? 'any');
+    }
+  });
 });

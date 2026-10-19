@@ -25,7 +25,7 @@ import { Rng } from '../rng';
 import { FACTIONS, INDEPENDENT_ID, getFaction, tryGetFaction } from '../data/factions';
 import type { Region } from '../data/regions';
 import type { SeaZoneId } from '../data/seas';
-import { zonesOffPort } from '../data/seas';
+import { getSeaZone, zonesOffPort } from '../data/seas';
 import { REGIONS } from '../data/regions';
 import { getBuildingType } from '../data/buildings';
 import { generalUnitFor, navalRosterFor } from '../data/roster';
@@ -356,12 +356,15 @@ export function newFleetId(state: CampaignState): FleetId {
   return fleetId(`fleet-${state.nextFleetSerial}`);
 }
 
-function startingBuildings(tier: SettlementTier): BuildingId[] {
+function startingBuildings(tier: SettlementTier, port: boolean): BuildingId[] {
   // Every settlement starts with what its size implies it must already have:
   // somewhere to muster, somewhere to trade, somewhere to pray, and walls
-  // proportional to its importance.
+  // proportional to its importance. A place the map calls a harbour already
+  // has a quay: without one no hull could be laid down anywhere in 1080.
   const index = SETTLEMENT_ORDER.indexOf(tier);
   const ids: string[] = ['muster_field', 'chapel', 'market', 'palisade', 'land_clearance'];
+  if (port) ids.push('harbour');
+  if (port && index >= 3) ids.push('shipyard');
   if (index >= 1) ids.push('wooden_wall', 'governors_house', 'dirt_roads');
   if (index >= 2) ids.push('stone_wall', 'church', 'barracks', 'crop_rotation');
   if (index >= 3) ids.push('large_stone_wall', 'governors_villa', 'merchants_guild');
@@ -429,7 +432,7 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
       owner: region.owner,
       population: region.population,
       tier: region.tier,
-      buildings: new Set(startingBuildings(region.tier)),
+      buildings: new Set(startingBuildings(region.tier, region.port)),
       construction: undefined,
       recruitQueue: [],
       shipyardQueue: [],
@@ -514,15 +517,24 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
     );
     if (harbours.length === 0) continue;
 
-    const hulls = navalRosterFor(definition, CAMPAIGN_START_YEAR).filter(
+    const home = harbours[0]!;
+    const waters = zonesOffPort(home.id);
+    const onRiver = waters.some((zone) => getSeaZone(zone).river);
+    const onSea = waters.some((zone) => !getSeaZone(zone).river);
+    const hulls = navalRosterFor(definition, CAMPAIGN_START_YEAR)
       // Only what a harbour alone can produce: nobody starts with an arsenal.
-      (ship) => !ship.requires || ship.requires === ('harbour' as BuildingId),
-    );
+      .filter((ship) => !ship.requires || ship.requires === ('harbour' as BuildingId))
+      // And only hulls suited to the water the harbour actually opens onto.
+      .filter((ship) => {
+        const needs = ship.waters ?? 'any';
+        if (needs === 'river') return onRiver;
+        if (needs === 'sea') return onSea;
+        return true;
+      });
     if (hulls.length === 0) continue;
 
     const maritime = definition.rosterTags.includes('maritime');
     const count = maritime ? 3 : 1;
-    const home = harbours[0]!;
     const ships: Regiment[] = [];
     for (let i = 0; i < count; i++) {
       const type = rng.pick(hulls);

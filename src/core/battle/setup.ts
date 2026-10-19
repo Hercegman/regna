@@ -33,6 +33,8 @@ export interface BattleParams {
   readonly defender: SideComposition;
   /** Set for an assault on a walled settlement. */
   readonly walls?: WallTier;
+  /** True when this is a fight between fleets. */
+  readonly naval?: boolean;
 }
 
 /** The front line each side forms up on. */
@@ -207,5 +209,6 @@ export function buildBattle(params: BattleParams): BattleSetup {
     attackerCommand: params.attacker.command,
     defenderCommand: params.defender.command,
     isWinter: params.isWinter,
+    naval: params.naval ?? false,
   };
 }

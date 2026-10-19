@@ -9,6 +9,7 @@
 import { UNIT_ROLE } from '../core/types';
 import { getUnitType } from '../core/data/units';
 import { factionName, tryGetFaction } from '../core/data/factions';
+import { getSeaZone } from '../core/data/seas';
 import type { BattlePlan } from '../core/campaign';
 import type { BattleState } from '../core/battle/sim';
 import { createBattle, stepBattle } from '../core/battle/sim';
@@ -262,14 +263,18 @@ export class BattleScreen {
     this.header.appendChild(
       el('div', { class: 'battle-sides' },
         this.sideSummary('attacker'),
-        el('span', { class: 'versus' }, this.plan.isAssault ? 'assaults' : 'meets'),
+        el('span', { class: 'versus' },
+          this.plan.naval ? 'engages at sea' : this.plan.isAssault ? 'assaults' : 'meets',
+        ),
         this.sideSummary('defender'),
       ),
     );
     this.header.appendChild(
       el('div', { class: 'battle-clock' },
         el('span', {}, `${minutes}:${seconds.toString().padStart(2, '0')}`),
-        el('span', { class: 'muted' }, pretty(setup.terrain)),
+        el('span', { class: 'muted' },
+          this.plan.zone ? getSeaZone(this.plan.zone).name : pretty(setup.terrain),
+        ),
         setup.isWinter && el('span', { class: 'muted' }, 'winter'),
       ),
     );
@@ -433,8 +438,14 @@ export class BattleScreen {
       el('div', { class: 'result-card' },
         el('h2', {}, title),
         el('section', {},
-          row('Our losses', count(this.playerSide === 'defender' ? result.defenderLosses : result.attackerLosses)),
-          row('Their losses', count(this.playerSide === 'defender' ? result.attackerLosses : result.defenderLosses)),
+          row(
+            this.plan.naval ? 'Our crews lost' : 'Our losses',
+            count(this.playerSide === 'defender' ? result.defenderLosses : result.attackerLosses),
+          ),
+          row(
+            this.plan.naval ? 'Their crews lost' : 'Their losses',
+            count(this.playerSide === 'defender' ? result.attackerLosses : result.defenderLosses),
+          ),
           row('Duration', `${Math.round(result.duration / 60)} minutes`),
         ),
         el('button', {

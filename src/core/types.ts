@@ -257,6 +257,11 @@ export interface UnitType {
   readonly untilYear?: number;
   /** Land regiments a ship of this type can carry. Zero for everything else. */
   readonly capacity?: number;
+  /**
+   * The water a hull is built for. A river galley is useless on the open sea
+   * and a carrack cannot be floated down the Tigris.
+   */
+  readonly waters?: 'river' | 'sea' | 'any';
   /** Historical note shown in the unit card. */
   readonly description: string;
 }

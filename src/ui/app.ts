@@ -4,8 +4,10 @@
  */
 import type { FactionId } from '../core/types';
 import type { BattlePlan, CampaignState } from '../core/campaign';
-import { newCampaign, planBattle, CAMPAIGN_START_YEAR } from '../core/campaign';
+import { newCampaign, planBattle, planNavalBattle, CAMPAIGN_START_YEAR } from '../core/campaign';
 import { getUnitType } from '../core/data/units';
+import { getRegion } from '../core/data/regions';
+import { getSeaZone } from '../core/data/seas';
 import { unitTypeId } from '../core/types';
 import { FACTIONS, factionName } from '../core/data/factions';
 import { CampaignScreen } from './campaignScreen';
@@ -27,8 +29,13 @@ export class App {
       : undefined;
     // `?demo=battle` opens a sample field battle. It is a development aid for
     // looking at the battle screen without first fighting a campaign to one.
-    if (new URLSearchParams(window.location.search).get('demo') === 'battle') {
+    const demo = new URLSearchParams(window.location.search).get('demo');
+    if (demo === 'battle') {
       this.openDemoBattle();
+      return;
+    }
+    if (demo === 'sea') {
+      this.openDemoSeaBattle();
       return;
     }
     if (known && known.appearsIn <= CAMPAIGN_START_YEAR) {
@@ -102,14 +109,23 @@ export class App {
     const state = campaign.getState();
     const dialog = el('div', { class: 'modal' },
       el('div', { class: 'modal-card' },
-        el('h2', {}, plan.isAssault ? 'Storm the walls?' : 'Battle is offered'),
+        el('h2', {},
+          plan.naval ? 'The fleets are in sight' : plan.isAssault ? 'Storm the walls?' : 'Battle is offered',
+        ),
         el('p', {},
-          `${factionName(plan.setup.attacker)} against ${factionName(plan.setup.defender)}` +
-            ` at ${plan.region}.`,
+          `${factionName(plan.setup.attacker)} against ${factionName(plan.setup.defender)} ` +
+            (plan.zone
+              ? `in the ${getSeaZone(plan.zone).name}.`
+              : plan.region
+                ? `at ${getRegion(plan.region).settlement}.`
+                : '.'),
         ),
         el('p', { class: 'muted' },
-          `${count(sideStrength(plan, 'attacker'))} attacking against ` +
-            `${count(sideStrength(plan, 'defender'))} defending.`,
+          plan.naval
+            ? `${count(sideStrength(plan, 'attacker'))} crew against ` +
+              `${count(sideStrength(plan, 'defender'))}.`
+            : `${count(sideStrength(plan, 'attacker'))} attacking against ` +
+              `${count(sideStrength(plan, 'defender'))} defending.`,
         ),
         el('div', { class: 'modal-actions' },
           el('button', {
@@ -176,6 +192,31 @@ export class App {
     const plan = planBattle(state, attacker.location, [attacker], [defender]);
     this.state = state;
     const screen = new BattleScreen(this.host, plan, 'france', () => this.showFactionSelect());
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('play') === '1') screen.start();
+    if (params.get('resolve') === '1') screen.resolveNow();
+  }
+
+  /** A set-piece sea fight, for looking at the naval battle on its own. */
+  private openDemoSeaBattle(): void {
+    const state = newCampaign({ seed: 'demo-sea', player: 'venice' as FactionId });
+    const venetian = [...state.fleets.values()].find((f) => f.faction === ('venice' as FactionId));
+    const genoese = [...state.fleets.values()].find((f) => f.faction === ('genoa' as FactionId));
+    if (!venetian || !genoese) {
+      this.showFactionSelect();
+      return;
+    }
+    const stock = (fleet: typeof venetian, types: readonly string[]): void => {
+      for (const id of types) {
+        const type = getUnitType(unitTypeId(id));
+        fleet.ships.push({ type: type.id, soldiers: type.soldiers, experience: 1 });
+      }
+    };
+    stock(venetian, ['war_galley', 'war_galley', 'war_galley', 'great_galley', 'hulk']);
+    stock(genoese, ['war_galley', 'war_galley', 'great_galley', 'great_galley', 'nef']);
+    const plan = planNavalBattle(state, 'adriatic_sea' as never, [venetian], [genoese]);
+    this.state = state;
+    const screen = new BattleScreen(this.host, plan, 'venice', () => this.showFactionSelect());
     const params = new URLSearchParams(window.location.search);
     if (params.get('play') === '1') screen.start();
     if (params.get('resolve') === '1') screen.resolveNow();

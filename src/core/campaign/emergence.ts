@@ -14,7 +14,7 @@ import { characterName, factionState, logEvent, newArmyId } from './state';
 import { FACTIONS, getFaction, INDEPENDENT_ID } from '../data/factions';
 import { generalUnitFor } from '../data/roster';
 import { getRegion } from '../data/regions';
-import { rosterFor } from '../data/roster';
+import { landRosterFor } from '../data/roster';
 import type { Rng } from '../rng';
 import { initialAttitude, setStance, adjustAttitude } from './diplomacy';
 
@@ -132,7 +132,9 @@ export function emerge(state: CampaignState, id: FactionId, rng: Rng): boolean {
   faction.characters.push(leader);
   seat.governor = leader;
 
-  const roster = rosterFor(definition, state.year).filter(
+  // Land regiments only: a new state's founding army marches, it does not sail,
+  // and the full roster includes its hulls.
+  const roster = landRosterFor(definition, state.year).filter(
     (unit) => unit.unitClass !== 'general' && unit.tier <= 3,
   );
   const general = generalUnitFor(definition);

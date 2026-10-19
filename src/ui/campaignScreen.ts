@@ -5,9 +5,9 @@
  * then re-renders from the returned state, so the interface cannot drift out of
  * step with the simulation or quietly do something the AI could not.
  */
-import type { ArmyId, BuildingId, FactionId, RegionId, UnitTypeId } from '../core/types';
+import type { ArmyId, BuildingId, FactionId, FleetId, RegionId, UnitTypeId } from '../core/types';
 import { SETTLEMENT_ORDER } from '../core/types';
-import type { Army, CampaignState, RegionState } from '../core/campaign';
+import type { Army, CampaignState, Fleet, FleetLocation, RegionState } from '../core/campaign';
 import {
   armiesOf,
   availableBuildings,
@@ -46,14 +46,33 @@ import {
   canDeclareWar,
   canMakePeace,
   assaultOdds,
+  blockaderOf,
+  buildableShips,
+  disembark,
+  embark,
+  fleetCapacity,
+  fleetsInZone,
+  fleetsOf,
+  isAtWar,
+  mergeFleets,
+  moveFleet,
+  planNavalBattle,
+  reachableWaters,
+  sameWater,
+  scrapShip,
+  shipBuildTurns,
+  shipCost,
+  startShipbuilding,
   type BattlePlan,
 } from '../core/campaign';
 import { getBuildingType } from '../core/data/buildings';
 import { getUnitType } from '../core/data/units';
 import { getRegion } from '../core/data/regions';
 import { FACTIONS, factionName, tryGetFaction, INDEPENDENT_ID } from '../core/data/factions';
+import type { SeaZoneId } from '../core/data/seas';
+import { getSeaZone, zonesOffPort } from '../core/data/seas';
 import type { MapView } from '../render/map';
-import { drawMap, provinceAt } from '../render/map';
+import { drawMap, provinceAt, zoneAt } from '../render/map';
 import { createCamera, panCamera, zoomCamera } from '../render/projection';
 import { bar, clear, count, el, money, pretty, row, swatch } from './dom';
 import { downloadSave, saveToBrowser } from './persistence';
@@ -63,7 +82,7 @@ export interface CampaignScreenHooks {
   readonly onBattle: (plan: BattlePlan) => void;
 }
 
-type PanelTab = 'province' | 'build' | 'recruit' | 'diplomacy' | 'realm';
+type PanelTab = 'province' | 'build' | 'recruit' | 'shipyard' | 'diplomacy' | 'realm';
 
 export class CampaignScreen {
   private readonly canvas: HTMLCanvasElement;
@@ -74,7 +93,9 @@ export class CampaignScreen {
   private readonly view: MapView;
   private tab: PanelTab = 'province';
   private selectedArmy: ArmyId | undefined;
+  private selectedFleet: FleetId | undefined;
   private moveMode = false;
+  private sailMode = false;
   private busy = false;
 
   constructor(
@@ -108,6 +129,9 @@ export class CampaignScreen {
       selected: undefined,
       hovered: undefined,
       reachable: new Set(),
+      selectedZone: undefined,
+      hoveredZone: undefined,
+      reachableZones: new Set(),
       alwaysLabel: false,
     };
 
@@ -136,7 +160,9 @@ export class CampaignScreen {
    * known screen without a sequence of clicks.
    */
   openTab(tab: string): void {
-    const known: readonly PanelTab[] = ['province', 'build', 'recruit', 'diplomacy', 'realm'];
+    const known: readonly PanelTab[] = [
+      'province', 'build', 'recruit', 'shipyard', 'diplomacy', 'realm',
+    ];
     if ((known as readonly string[]).includes(tab)) {
       this.tab = tab as PanelTab;
       this.renderPanel();
@@ -213,9 +239,11 @@ export class CampaignScreen {
         return;
       }
       const hovered = provinceAt(this.view, this.state, x, y);
-      if (hovered !== this.view.hovered) {
+      const hoveredZone = hovered ? undefined : zoneAt(this.view, x, y);
+      if (hovered !== this.view.hovered || hoveredZone !== this.view.hoveredZone) {
         this.view.hovered = hovered;
-        this.canvas.style.cursor = hovered ? 'pointer' : 'grab';
+        this.view.hoveredZone = hoveredZone;
+        this.canvas.style.cursor = hovered || hoveredZone ? 'pointer' : 'grab';
         this.draw();
       }
     });
@@ -250,23 +278,68 @@ export class CampaignScreen {
 
   private handleClick(event: MouseEvent): void {
     const rect = this.canvas.getBoundingClientRect();
-    const id = provinceAt(this.view, this.state, event.clientX - rect.left, event.clientY - rect.top);
-    if (!id) return;
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const id = provinceAt(this.view, this.state, x, y);
 
-    if (this.moveMode && this.selectedArmy && this.view.reachable.has(id)) {
-      this.orderMove(this.selectedArmy, id);
+    if (id) {
+      if (this.moveMode && this.selectedArmy && this.view.reachable.has(id)) {
+        this.orderMove(this.selectedArmy, id);
+        return;
+      }
+      if (this.sailMode && this.selectedFleet && this.view.reachable.has(id)) {
+        this.orderSail(this.selectedFleet, { kind: 'port', region: id });
+        return;
+      }
+      this.selectProvince(id);
+      this.renderAll();
       return;
     }
 
-    this.selectProvince(id);
+    const zone = zoneAt(this.view, x, y);
+    if (!zone) return;
+    if (this.sailMode && this.selectedFleet && this.view.reachableZones.has(zone)) {
+      this.orderSail(this.selectedFleet, { kind: 'sea', zone });
+      return;
+    }
+    this.selectZone(zone);
     this.renderAll();
+  }
+
+  /** Selects a water, which shows the fleets standing in it. */
+  private selectZone(id: SeaZoneId | undefined): void {
+    this.view.selectedZone = id;
+    this.view.selected = undefined;
+    this.clearMovementHighlights();
+    this.selectedArmy = undefined;
+    this.selectedFleet = id
+      ? fleetsInZone(this.state, id, this.state.player)[0]?.id
+      : undefined;
+    if (this.tab !== 'diplomacy' && this.tab !== 'realm') this.tab = 'province';
+  }
+
+  private clearMovementHighlights(): void {
+    this.moveMode = false;
+    this.sailMode = false;
+    this.view.reachable.clear();
+    this.view.reachableZones.clear();
   }
 
   private selectProvince(id: RegionId | undefined): void {
     this.view.selected = id;
-    this.moveMode = false;
-    this.view.reachable.clear();
+    this.view.selectedZone = undefined;
+    this.clearMovementHighlights();
     this.selectedArmy = undefined;
+    this.selectedFleet = undefined;
+    if (id) {
+      const ourFleet = [...this.state.fleets.values()].find(
+        (fleet) =>
+          fleet.location.kind === 'port' &&
+          fleet.location.region === id &&
+          fleet.faction === this.state.player,
+      );
+      this.selectedFleet = ourFleet?.id;
+    }
     if (id) {
       // Selecting a province also picks up our own army standing in it.
       const own = [...this.state.armies.values()].find(
@@ -274,9 +347,10 @@ export class CampaignScreen {
       );
       this.selectedArmy = own?.id;
     }
-    if (this.tab === 'build' || this.tab === 'recruit') {
+    if (this.tab === 'build' || this.tab === 'recruit' || this.tab === 'shipyard') {
       const region = id ? this.state.regions.get(id) : undefined;
       if (!region || region.owner !== this.state.player) this.tab = 'province';
+      else if (this.tab === 'shipyard' && !getRegion(region.id).port) this.tab = 'province';
     }
   }
 
@@ -364,17 +438,23 @@ export class CampaignScreen {
 
   private renderPanel(): void {
     clear(this.panel);
+
+    if (this.view.selectedZone) {
+      this.renderZonePanel(this.view.selectedZone);
+      return;
+    }
+
     const id = this.view.selected;
     if (!id) {
-      this.panel.appendChild(el('div', { class: 'panel-empty' }, 'Select a province.'));
-      this.panel.appendChild(this.tabBar(false));
+      this.panel.appendChild(el('div', { class: 'panel-empty' }, 'Select a province or a sea.'));
+      this.panel.appendChild(this.tabBar(false, false));
       return;
     }
     const region = regionState(this.state, id);
     const mine = region.owner === this.state.player;
 
     this.panel.appendChild(this.panelHeader(region));
-    this.panel.appendChild(this.tabBar(mine));
+    this.panel.appendChild(this.tabBar(mine, mine && getRegion(region.id).port));
 
     const body = el('div', { class: 'panel-body' });
     switch (this.tab) {
@@ -383,6 +463,9 @@ export class CampaignScreen {
         break;
       case 'recruit':
         this.renderRecruitTab(body, region);
+        break;
+      case 'shipyard':
+        this.renderShipyardTab(body, region);
         break;
       case 'diplomacy':
         this.renderDiplomacyTab(body);
@@ -408,7 +491,7 @@ export class CampaignScreen {
     );
   }
 
-  private tabBar(mine: boolean): HTMLElement {
+  private tabBar(mine: boolean, harbour: boolean): HTMLElement {
     const make = (tab: PanelTab, label: string, enabled = true): HTMLElement =>
       el('button', {
         class: `tab${this.tab === tab ? ' active' : ''}`,
@@ -422,9 +505,258 @@ export class CampaignScreen {
       make('province', 'Province'),
       make('build', 'Build', mine),
       make('recruit', 'Recruit', mine),
+      make('shipyard', 'Ships', harbour),
       make('diplomacy', 'Diplomacy'),
       make('realm', 'Realm'),
     );
+  }
+
+  // --- the water
+
+  private renderZonePanel(id: SeaZoneId): void {
+    const zone = getSeaZone(id);
+    const fleets = fleetsInZone(this.state, id);
+    this.panel.appendChild(
+      el('div', { class: 'panel-header' },
+        el('h2', {}, zone.name),
+        el('p', { class: 'panel-sub' },
+          zone.river ? 'River system' : 'Open sea',
+          ` · ${zone.ports.length} harbours`,
+        ),
+      ),
+    );
+    this.panel.appendChild(this.tabBar(false, false));
+
+    const body = el('div', { class: 'panel-body' });
+    if (fleets.length === 0) {
+      body.appendChild(el('p', { class: 'muted' }, 'No fleet is standing in this water.'));
+    }
+    for (const fleet of fleets) this.renderFleet(body, fleet);
+
+    body.appendChild(el('h3', {}, 'Harbours on this water'));
+    for (const port of zone.ports) {
+      const province = this.state.regions.get(port);
+      if (!province) continue;
+      const closed = blockaderOf(this.state, port);
+      body.appendChild(el('div', {
+        class: 'realm-row',
+        onClick: () => {
+          this.selectProvince(port);
+          this.focusOn(port);
+          this.renderAll();
+        },
+      },
+        swatch(tryGetFaction(province.owner)?.colour ?? '#8d8578'),
+        el('span', { class: 'realm-name' }, getRegion(port).settlement),
+        el('span', { class: 'muted' }, factionName(province.owner)),
+        closed && el('span', { class: 'bad', title: `Blockaded by ${factionName(closed)}` }, 'blockaded'),
+      ));
+    }
+    this.panel.appendChild(body);
+  }
+
+  /** One fleet, with its hulls, its cargo and its orders. */
+  private renderFleet(body: HTMLElement, fleet: Fleet): void {
+    const mine = fleet.faction === this.state.player;
+    const selected = this.selectedFleet === fleet.id;
+    const header = el('div', { class: `army-header${selected ? ' selected' : ''}` },
+      swatch(tryGetFaction(fleet.faction)?.colour ?? '#888'),
+      el('span', {}, `${factionName(fleet.faction)} · ${fleet.ships.length} ships`),
+      fleet.cargo.length > 0 && el('span', { class: 'muted' }, `${fleet.cargo.length} aboard`),
+      mine && el('span', { class: 'muted' }, `sail ${fleet.movement.toFixed(1)}`),
+    );
+    if (mine) {
+      header.addEventListener('click', () => {
+        this.selectedFleet = fleet.id;
+        this.clearMovementHighlights();
+        this.renderAll();
+      });
+    }
+    body.appendChild(header);
+
+    if (!selected && mine) return;
+
+    const hulls = el('section', { class: 'unit-list' });
+    fleet.ships.forEach((ship, index) => {
+      const type = getUnitType(ship.type);
+      hulls.appendChild(el('div', { class: 'unit-row', title: type.description },
+        el('span', { class: 'unit-name' }, type.name),
+        el('span', { class: 'unit-strength' }, `${count(ship.soldiers)}/${type.soldiers}`),
+        mine && fleet.location.kind === 'port' && el('button', {
+          class: 'tiny',
+          title: 'Break up this hull',
+          onClick: () => {
+            scrapShip(this.state, fleet.id, index);
+            this.renderAll();
+          },
+        }, '×'),
+      ));
+    });
+    body.appendChild(hulls);
+
+    if (fleet.cargo.length > 0) {
+      body.appendChild(el('h3', {}, `Aboard (${count(strengthOf(fleet.cargo))} men)`));
+      const cargo = el('section', { class: 'unit-list' });
+      for (const regiment of fleet.cargo) {
+        const type = getUnitType(regiment.type);
+        cargo.appendChild(el('div', { class: 'unit-row' },
+          el('span', { class: 'unit-name' }, type.name),
+          el('span', { class: 'unit-strength' }, count(regiment.soldiers)),
+        ));
+      }
+      body.appendChild(cargo);
+    }
+
+    if (mine) body.appendChild(this.fleetControls(fleet));
+  }
+
+  private fleetControls(fleet: Fleet): HTMLElement {
+    const controls = el('div', { class: 'army-controls' });
+    const options = reachableWaters(this.state, fleet);
+
+    controls.appendChild(el('button', {
+      class: this.sailMode ? 'small active' : 'small',
+      disabled: fleet.movement <= 0 || (options.zones.length === 0 && options.ports.length === 0),
+      onClick: () => {
+        this.sailMode = !this.sailMode;
+        this.view.reachableZones = this.sailMode ? new Set(options.zones) : new Set();
+        this.view.reachable = this.sailMode ? new Set(options.ports) : new Set();
+        this.renderAll();
+      },
+    }, this.sailMode ? 'Choose a water…' : 'Sail'));
+
+    // Taking an army aboard, when both are in the same harbour.
+    if (fleet.location.kind === 'port') {
+      const home = fleet.location.region;
+      const army = [...this.state.armies.values()].find(
+        (candidate) => candidate.faction === fleet.faction && candidate.location === home,
+      );
+      const room = fleetCapacity(fleet) - fleet.cargo.length;
+      if (army && room > 0) {
+        const take = Math.min(room, army.regiments.length);
+        controls.appendChild(el('button', {
+          class: 'small',
+          title: `Take ${take} regiments aboard`,
+          onClick: () => {
+            const indices = Array.from({ length: take }, (_, index) => index);
+            const result = embark(this.state, fleet.id, army.id, indices);
+            if (!result.ok) this.flash(result.reason);
+            this.renderAll();
+          },
+        }, `Embark ${take}`));
+      }
+    }
+
+    // Putting them ashore: any harbour on this water we may land at.
+    if (fleet.cargo.length > 0) {
+      const shores =
+        fleet.location.kind === 'port'
+          ? [fleet.location.region]
+          : getSeaZone(fleet.location.zone).ports.filter((port) => {
+              const province = this.state.regions.get(port);
+              if (!province) return false;
+              return (
+                province.owner === fleet.faction ||
+                isAtWar(this.state, fleet.faction, province.owner)
+              );
+            });
+      for (const shore of shores.slice(0, 4)) {
+        controls.appendChild(el('button', {
+          class: 'small',
+          onClick: () => {
+            const result = disembark(this.state, fleet.id, shore);
+            if (!result.ok) this.flash(result.reason);
+            else {
+              this.selectProvince(shore);
+              this.focusOn(shore);
+            }
+            this.renderAll();
+          },
+        }, `Land at ${getRegion(shore).settlement}`));
+      }
+    }
+
+    const others = [...this.state.fleets.values()].filter(
+      (other) =>
+        other.id !== fleet.id &&
+        other.faction === fleet.faction &&
+        sameWater(other.location, fleet.location),
+    );
+    if (others.length > 0) {
+      controls.appendChild(el('button', {
+        class: 'small',
+        onClick: () => {
+          for (const other of others) mergeFleets(this.state, fleet.id, other.id);
+          this.renderAll();
+        },
+      }, 'Combine fleets'));
+    }
+
+    return controls;
+  }
+
+  // --- shipyard
+
+  private renderShipyardTab(body: HTMLElement, region: RegionState): void {
+    if (!getRegion(region.id).port) {
+      body.appendChild(el('p', { class: 'muted' }, 'This settlement has no harbour.'));
+      return;
+    }
+    const blockader = blockaderOf(this.state, region.id);
+    if (blockader) {
+      body.appendChild(el('p', { class: 'warning' },
+        `The harbour is blockaded by ${factionName(blockader)}. Nothing can be launched.`,
+      ));
+    }
+    if (region.shipyardQueue.length > 0) {
+      body.appendChild(el('h3', {}, 'On the slipway'));
+      const list = el('section', {});
+      region.shipyardQueue.forEach((entry, index) => {
+        list.appendChild(row(
+          `${index + 1}. ${getUnitType(entry.unit).name}`,
+          `${entry.turnsLeft} turns`,
+        ));
+      });
+      body.appendChild(list);
+    }
+
+    const waters = zonesOffPort(region.id);
+    body.appendChild(el('p', { class: 'muted' },
+      `Opens onto ${waters.map((zone) => getSeaZone(zone).name).join(', ')}.`,
+    ));
+
+    const treasury = factionState(this.state, this.state.player).treasury;
+    const options = buildableShips(this.state, region.id);
+    if (options.length === 0) {
+      body.appendChild(el('p', { class: 'muted' },
+        'No hull can be laid down here. Build a harbour, a shipyard or an arsenal first.',
+      ));
+      return;
+    }
+    for (const id of [...options].sort((a, b) => getUnitType(a).tier - getUnitType(b).tier)) {
+      const type = getUnitType(id);
+      const cost = shipCost(this.state.player, id);
+      const affordable = treasury >= cost;
+      body.appendChild(el('div', { class: 'offer' },
+        el('div', { class: 'offer-main' },
+          el('strong', {}, type.name),
+          el('p', { class: 'offer-text' }, type.description),
+          el('p', { class: 'offer-meta' },
+            `${type.soldiers} crew · ${count(cost)} florins · ${type.upkeep}/turn · ` +
+              `${shipBuildTurns(id)} turns · carries ${type.capacity ?? 0}`,
+          ),
+        ),
+        el('button', {
+          class: 'small',
+          disabled: !affordable || region.shipyardQueue.length >= 2,
+          onClick: () => {
+            const result = startShipbuilding(this.state, region.id, id);
+            if (!result.ok) this.flash(result.reason);
+            this.renderAll();
+          },
+        }, affordable ? 'Lay down' : 'Too costly'),
+      ));
+    }
   }
 
   // --- province tab
@@ -533,6 +865,7 @@ export class CampaignScreen {
     }
 
     this.renderArmySection(body, region);
+    this.renderFleetSection(body, region);
 
     if (mine) {
       const faction = factionState(this.state, this.state.player);
@@ -601,6 +934,21 @@ export class CampaignScreen {
         body.appendChild(this.armyControls(army));
       }
     }
+  }
+
+  private renderFleetSection(body: HTMLElement, region: RegionState): void {
+    const fleets = [...this.state.fleets.values()].filter(
+      (fleet) => fleet.location.kind === 'port' && fleet.location.region === region.id,
+    );
+    const blockader = blockaderOf(this.state, region.id);
+    if (fleets.length === 0 && !blockader) return;
+    body.appendChild(el('h3', {}, 'In harbour'));
+    if (blockader) {
+      body.appendChild(el('p', { class: 'warning' },
+        `Blockaded by ${factionName(blockader)}.`,
+      ));
+    }
+    for (const fleet of fleets) this.renderFleet(body, fleet);
   }
 
   private armyControls(army: Army): HTMLElement {
@@ -843,6 +1191,34 @@ export class CampaignScreen {
       ));
     }
 
+    const navy = fleetsOf(this.state, me);
+    if (navy.length > 0) {
+      body.appendChild(el('h3', {}, 'Fleets'));
+      for (const fleet of navy) {
+        const where =
+          fleet.location.kind === 'port'
+            ? getRegion(fleet.location.region).settlement
+            : getSeaZone(fleet.location.zone).name;
+        body.appendChild(el('div', {
+          class: 'realm-row',
+          onClick: () => {
+            if (fleet.location.kind === 'port') {
+              this.selectProvince(fleet.location.region);
+              this.focusOn(fleet.location.region);
+            } else {
+              this.selectZone(fleet.location.zone);
+            }
+            this.selectedFleet = fleet.id;
+            this.renderAll();
+          },
+        },
+          el('span', { class: 'realm-name' }, where),
+          el('span', { class: 'muted' }, `${fleet.ships.length} ships`),
+          fleet.cargo.length > 0 && el('span', { class: 'muted' }, `${fleet.cargo.length} aboard`),
+        ));
+      }
+    }
+
     body.appendChild(el('h3', {}, 'Characters'));
     for (const character of faction.characters) {
       body.appendChild(row(
@@ -885,6 +1261,34 @@ export class CampaignScreen {
           .map((armyId) => this.state.armies.get(armyId))
           .filter((candidate): candidate is Army => candidate !== undefined);
         const plan = planBattle(this.state, to, [army], defenders);
+        this.hooks.onBattle(plan);
+        return;
+      }
+    }
+    this.renderAll();
+  }
+
+  private orderSail(id: FleetId, target: FleetLocation): void {
+    const fleet = this.state.fleets.get(id);
+    if (!fleet) return;
+    const result = moveFleet(this.state, id, target);
+    this.clearMovementHighlights();
+
+    switch (result.kind) {
+      case 'moved':
+        if (target.kind === 'sea') this.selectZone(target.zone);
+        else this.selectProvince(target.region);
+        this.selectedFleet = id;
+        break;
+      case 'blocked':
+        this.flash(result.reason);
+        break;
+      case 'battle': {
+        const enemies = result.fleets
+          .map((other) => this.state.fleets.get(other))
+          .filter((other): other is Fleet => other !== undefined);
+        if (target.kind !== 'sea') return;
+        const plan = planNavalBattle(this.state, target.zone, [fleet], enemies);
         this.hooks.onBattle(plan);
         return;
       }

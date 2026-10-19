@@ -14,6 +14,9 @@ import { strengthOf, wallTier } from '../core/campaign';
 import { REGIONS, getRegion } from '../core/data/regions';
 import { BORDERS } from '../core/data/adjacency';
 import { tryGetFaction, INDEPENDENT_ID } from '../core/data/factions';
+import type { SeaZoneId } from '../core/data/seas';
+import { SEA_ZONES, getSeaZone } from '../core/data/seas';
+import { seaLaneClosed } from '../core/campaign';
 import type { Camera, Viewport } from './projection';
 import { project } from './projection';
 
@@ -25,6 +28,11 @@ export interface MapView {
   hovered: RegionId | undefined;
   /** Provinces highlighted as legal destinations for the selected army. */
   reachable: Set<RegionId>;
+  /** The water currently selected, if any. */
+  selectedZone: SeaZoneId | undefined;
+  hoveredZone: SeaZoneId | undefined;
+  /** Waters highlighted as legal destinations for the selected fleet. */
+  reachableZones: Set<SeaZoneId>;
   /** Draw province names regardless of zoom. */
   alwaysLabel: boolean;
 }
@@ -89,10 +97,12 @@ export function drawMap(
   ctx.fillStyle = SEA;
   ctx.fillRect(0, 0, width, height);
   drawLandWash(ctx, state, view);
+  drawSeaZones(ctx, state, view);
   drawBorders(ctx, state, view);
   drawReachable(ctx, state, view);
   drawProvinces(ctx, state, view);
   drawArmies(ctx, state, view);
+  drawFleets(ctx, state, view);
   drawLabels(ctx, state, view);
   drawSelection(ctx, state, view);
 
@@ -156,6 +166,153 @@ function drawLandBlobs(ctx: CanvasRenderingContext2D, state: CampaignState, view
   ctx.restore();
 }
 
+export function zonePosition(view: MapView, id: SeaZoneId): Point {
+  const zone = getSeaZone(id);
+  return project(view.camera, view.viewport, zone.lon, zone.lat);
+}
+
+/** How large a sea zone's marker is on screen. */
+function zoneRadius(zoom: number): number {
+  return Math.max(10, Math.min(34, zoom * 1.1));
+}
+
+/** The water whose marker contains a screen point. */
+export function zoneAt(view: MapView, x: number, y: number): SeaZoneId | undefined {
+  let best: SeaZoneId | undefined;
+  let bestDistance = Infinity;
+  const radius = zoneRadius(view.camera.zoom);
+  for (const zone of SEA_ZONES) {
+    const point = project(view.camera, view.viewport, zone.lon, zone.lat);
+    const distance = Math.hypot(point.x - x, point.y - y);
+    if (distance <= radius && distance < bestDistance) {
+      bestDistance = distance;
+      best = zone.id;
+    }
+  }
+  return best;
+}
+
+/**
+ * The waters, drawn as faint anchor points rather than painted areas. A zone
+ * is where fleets are, not a shape with a boundary, and a ring at its centre
+ * says that more honestly than a coloured blob would.
+ */
+function drawSeaZones(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
+  const zoom = view.camera.zoom;
+  const radius = zoneRadius(zoom);
+  ctx.save();
+  for (const zone of SEA_ZONES) {
+    const point = project(view.camera, view.viewport, zone.lon, zone.lat);
+    if (point.x < -60 || point.x > view.viewport.width + 60) continue;
+    if (point.y < -60 || point.y > view.viewport.height + 60) continue;
+
+    const reachable = view.reachableZones.has(zone.id);
+    const selected = view.selectedZone === zone.id;
+    const hovered = view.hoveredZone === zone.id;
+    const occupied = [...state.fleets.values()].some(
+      (fleet) => fleet.location.kind === 'sea' && fleet.location.zone === zone.id,
+    );
+    if (!reachable && !selected && !hovered && !occupied && zoom < 11) continue;
+
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    ctx.setLineDash(reachable ? [4, 4] : [2, 5]);
+    ctx.lineWidth = selected ? 2.4 : reachable ? 2 : 1;
+    ctx.strokeStyle = selected
+      ? '#ffe28a'
+      : reachable
+        ? 'rgba(255, 226, 138, 0.8)'
+        : hovered
+          ? 'rgba(180, 220, 245, 0.7)'
+          : 'rgba(120, 176, 214, 0.3)';
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (zoom >= 13 || selected || hovered) {
+      ctx.font = '500 10px ui-sans-serif, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(12, 16, 20, 0.85)';
+      ctx.strokeText(zone.name, point.x, point.y);
+      ctx.fillStyle = 'rgba(176, 208, 232, 0.9)';
+      ctx.fillText(zone.name, point.x, point.y);
+    }
+  }
+  ctx.restore();
+}
+
+/** Fleets, at anchor beside their harbour or on station in open water. */
+function drawFleets(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
+  const groups = new Map<string, { x: number; y: number; colour: string; hulls: number; cargo: boolean }[]>();
+  for (const fleet of state.fleets.values()) {
+    const colour = tryGetFaction(fleet.faction)?.colour ?? INDEPENDENT_COLOUR;
+    const anchor =
+      fleet.location.kind === 'port'
+        ? screenPositionOf(view, fleet.location.region)
+        : zonePosition(view, fleet.location.zone);
+    const key =
+      fleet.location.kind === 'port'
+        ? `port:${fleet.location.region}`
+        : `sea:${fleet.location.zone}`;
+    const list = groups.get(key) ?? [];
+    list.push({
+      x: anchor.x,
+      y: anchor.y,
+      colour,
+      hulls: fleet.ships.length,
+      cargo: fleet.cargo.length > 0,
+    });
+    groups.set(key, list);
+  }
+
+  for (const [key, fleets] of groups) {
+    const atSea = key.startsWith('sea:');
+    fleets.forEach((fleet, index) => {
+      // Fan several fleets apart so each one can be picked out and clicked.
+      const angle = Math.PI * 0.75 + index * 0.55;
+      const spread = atSea ? 0 : 14;
+      const x = fleet.x + Math.cos(angle) * spread + (atSea ? (index - (fleets.length - 1) / 2) * 13 : 0);
+      const y = fleet.y + Math.sin(angle) * spread;
+      drawHull(ctx, x, y, fleet.colour, fleet.hulls, fleet.cargo);
+    });
+  }
+}
+
+/** A small hull glyph: a boat is more legible here than a dot. */
+function drawHull(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  colour: string,
+  hulls: number,
+  laden: boolean,
+): void {
+  const size = 4 + Math.min(4, hulls * 0.5);
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x - size, y);
+  ctx.quadraticCurveTo(x, y + size * 1.1, x + size, y);
+  ctx.closePath();
+  ctx.fillStyle = colour;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(12, 18, 24, 0.9)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // A mast, and a crossyard when the ship is carrying troops.
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x, y - size * 1.4);
+  if (laden) {
+    ctx.moveTo(x - size * 0.6, y - size * 0.9);
+    ctx.lineTo(x + size * 0.6, y - size * 0.9);
+  }
+  ctx.strokeStyle = laden ? '#ffe28a' : 'rgba(236, 230, 214, 0.9)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawBorders(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
   ctx.save();
   for (const border of BORDERS) {
@@ -167,9 +324,15 @@ function drawBorders(ctx: CanvasRenderingContext2D, state: CampaignState, view: 
     if (offScreen(a, b, view.viewport)) continue;
 
     if (border.kind === 'sea') {
-      ctx.strokeStyle = 'rgba(120, 176, 214, 0.42)';
+      // A lane an enemy fleet has closed is drawn in warning colour, because
+      // an army that marches at it will simply be refused.
+      const closed =
+        from.owner !== to.owner
+          ? seaLaneClosed(state, from.owner, border.a, border.b)
+          : false;
+      ctx.strokeStyle = closed ? 'rgba(226, 87, 76, 0.65)' : 'rgba(120, 176, 214, 0.42)';
       ctx.setLineDash([5, 6]);
-      ctx.lineWidth = 1;
+      ctx.lineWidth = closed ? 1.8 : 1;
     } else {
       // A border between two different owners is drawn more strongly: it is
       // the line that matters to the player.

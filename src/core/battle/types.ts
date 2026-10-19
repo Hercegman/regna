@@ -98,6 +98,8 @@ export interface BattleSetup {
   readonly attackerCommand: number;
   readonly defenderCommand: number;
   readonly isWinter: boolean;
+  /** True for a sea fight: open water, no cover, and nowhere to run. */
+  readonly naval: boolean;
 }
 
 export type BattleOutcome = 'attacker' | 'defender' | 'draw';
