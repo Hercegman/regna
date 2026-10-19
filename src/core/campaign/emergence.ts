@@ -8,9 +8,9 @@
  * Burgundy is a fifteenth-century problem.
  */
 import type { FactionId, RegionId } from '../types';
-import { characterId } from '../types';
-import type { CampaignState, Character } from './state';
-import { characterName, factionState, logEvent, newArmyId } from './state';
+import type { CampaignState } from './state';
+import { factionState, givenName, logEvent, nameRuler, newArmyId, newCharacter } from './state';
+import { foundCourt } from './dynasty';
 import { FACTIONS, getFaction, INDEPENDENT_ID } from '../data/factions';
 import { generalUnitFor } from '../data/roster';
 import { getRegion } from '../data/regions';
@@ -118,18 +118,17 @@ export function emerge(state: CampaignState, id: FactionId, rng: Rng): boolean {
   }
 
   // A founding army and a leader.
-  state.nextCharacterSerial += 1;
-  const leader: Character = {
-    id: characterId(`char-${state.nextCharacterSerial}`),
-    faction: id,
-    name: characterName(id, rng),
+  const leader = newCharacter(state, id, {
+    sex: 'm',
+    leader: true,
+    name: nameRuler(faction, givenName(id, 'm', rng)),
     command: rng.int(4, 8),
     governance: rng.int(3, 7),
     guile: rng.int(2, 7),
     age: rng.int(28, 46),
-    leader: true,
-  };
+  });
   faction.characters.push(leader);
+  foundCourt(state, id, leader, rng);
   // He rides with the founding army rather than sitting in the seat he has
   // just taken; one man cannot do both, and the court will post a governor.
 

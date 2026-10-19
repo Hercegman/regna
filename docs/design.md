@@ -160,6 +160,52 @@ even with nothing to sell, and worth cutting if your enemy depends on it. War
 shuts a road rather than taxing it, which is why a caravan that cannot pass
 waits, turns back, and is eventually lost.
 
+## Houses
+
+Characters were in the game from the first commit: they aged, governed,
+commanded and died. What they did not do was descend from anybody, so when a
+ruler died the crown went to whoever happened to be standing nearest. That is
+not what a succession was. A medieval crown was a claim, the claim came from
+descent, and most of medieval diplomacy existed to manufacture one.
+
+Every character now has a sex and, when the realm remembers it, a father.
+A realm begins as a house rather than as a man: a ruler, his wife, and
+whatever children the marriage has had time for. Children are born to married
+couples, come of age at sixteen, and until then hold no post.
+
+**Succession** follows the line as far as the line goes: the eldest adult son,
+then an adult daughter, then a brother, then — rather than leave the line at
+all — a boy, with everything a regency implies. Only when the house has nobody
+does the crown fall to the strongest magnate in the realm, and only when the
+house is extinct does it go to a stranger.
+
+| Succession | Legitimacy left |
+| :--- | ---: |
+| son or daughter | 100 |
+| brother | 82 |
+| consort | 70 |
+| nearest of the blood | 62 |
+| a magnate with no claim | 45 |
+| a stranger, the house extinct | 35 |
+
+**Legitimacy** is subtracted from public order in every province of the realm
+at once, and a regency costs more on top. It recovers at two points a year,
+because reigning is what made a king legitimate, and it cannot recover past
+fifty-five while the ruler is still a child. A disputed succession is
+therefore a real event with a cost a player can watch and plan around.
+
+**Marriage** moves a person. The bride leaves her father's court for her
+husband's and keeps the house she came from, which is the whole of the bond:
+twenty-five points of goodwill in both directions and a standing tie between
+two realms. A reigning ruler never moves — a realm cannot hand its own crowned
+head to the neighbours — but may marry. Offers are refused, and a refusal is
+remembered.
+
+Deaths all run through one function. Old age, a lost battle and an assassin's
+knife used to clean up after themselves separately, and two of the three
+forgot that the dead man might be the king: a ruler killed in battle left his
+realm with nobody on the throne and nothing ever noticed.
+
 ## Men who are not soldiers
 
 Everything else in the game moves soldiers. Most of what a medieval state
@@ -327,11 +373,12 @@ player zooms and pans from there.
 - **No mercenary politics.** Companies serve or leave; they do not change
   sides mid-battle, besiege the employer who shorted them, or carve out
   states of their own, all of which happened.
-- **No family trees.** Characters age, govern, command and die; they do not
-  marry or inherit.
 - **No fog of war.** Every province, army, fleet and agent is visible to
   everyone. A spy therefore sells sabotage and murder rather than information,
   which is the honest way to price him in a game where nothing is hidden.
+- **No civil wars.** A disputed succession costs a realm order everywhere; it
+  does not yet produce a rival claimant with an army, which is what a disputed
+  succession usually turned into.
 - **Battle AI is a doctrine, not a search.** Hold a line with the heavy foot,
   shoot with everything, use cavalry against whatever is exposed.
 

@@ -64,6 +64,13 @@ import {
 import type { SeaZoneId } from '../data/seas';
 import { SEA_ZONE_IDS, getSeaZone, zonesOffPort, zoneServesPort } from '../data/seas';
 import { canHire, hireMercenary, isMercenary, offersAt } from './mercenaries';
+import {
+  canMarry,
+  marriageOdds,
+  marriageable,
+  marriedTo,
+  proposeMarriage,
+} from './dynasty';
 import type { Agent } from './state';
 import type { AgentKind } from '../data/agents';
 import { getAgentType } from '../data/agents';
@@ -111,7 +118,43 @@ export function takeAiTurn(state: CampaignState, id: FactionId, rng: Rng): void 
   manageMercenaries(state, id, rng);
   manageFaith(state, id, rng);
   manageCourt(state, id);
+  manageMarriages(state, id, rng);
   manageAgents(state, id, rng);
+}
+
+/**
+ * Marrying the house off.
+ *
+ * A marriage is the cheapest instrument in the game: it costs nothing but a
+ * daughter and it buys twenty-five points of goodwill from a neighbour who
+ * might otherwise have invaded. Realms therefore marry the people they are
+ * most worried about, which is what they did.
+ */
+function manageMarriages(state: CampaignState, id: FactionId, rng: Rng): void {
+  const faction = factionState(state, id);
+  if (marriageable(faction).length === 0) return;
+  // One offer a year at most. These were not made lightly and the refusals
+  // cost something.
+  if (state.season !== 'summer' || !rng.chance(0.3)) return;
+
+  const offers: { other: FactionId; worth: number }[] = [];
+  for (const [other, theirs] of state.factions) {
+    if (other === id || other === INDEPENDENT_ID || !theirs.alive) continue;
+    if (!canMarry(state, id, other).ok) continue;
+    if (marriedTo(state, id, other)) continue;
+    const bond = relation(state, id, other);
+    // Worth most with a strong neighbour we are not yet sure of, and nothing
+    // at all with somebody we already have a treaty and a marriage with.
+    let worth = marriageOdds(state, id, other) * 100;
+    if (shareBorder(state, id, other)) worth += 40;
+    if (bond.stance === 'alliance') worth -= 20;
+    worth += Math.min(40, militaryStrength(state, other) / 400);
+    offers.push({ other, worth });
+  }
+  offers.sort((a, b) => b.worth - a.worth);
+  const best = offers[0];
+  if (!best || best.worth < 40) return;
+  proposeMarriage(state, id, best.other, rng);
 }
 
 // ---------------------------------------------------------------------------

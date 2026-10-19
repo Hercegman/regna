@@ -57,9 +57,11 @@ import type { TradeRouteId } from '../data/trade';
  * the caravans on the trade roads, version 4 the mercenary pools and which
  * regiments are hired companies, version 5 the standing of each ruler with
  * the authority of his faith, who is under censure, and the holy war being
- * preached, and version 6 the agents in the field.
+ * preached, version 6 the agents in the field, and version 7 the dynasties:
+ * each character's sex, father and spouse, and each realm's legitimacy and
+ * line of rulers.
  */
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 interface SavedRegiment {
   readonly t: string;
@@ -73,6 +75,10 @@ interface SavedCharacter {
   readonly id: string;
   readonly faction: string;
   readonly name: string;
+  readonly sex: string;
+  readonly father: string | null;
+  readonly spouse: string | null;
+  readonly bornIn: string | null;
   readonly command: number;
   readonly governance: number;
   readonly guile: number;
@@ -106,6 +112,8 @@ interface SavedFaction {
   readonly relations: readonly [string, { stance: string; attitude: number; since: number }][];
   readonly capital: string | null;
   readonly characters: readonly SavedCharacter[];
+  readonly legitimacy: number;
+  readonly rulers: readonly string[];
   readonly joinedOn: number;
   readonly destroyedOn: number | null;
 }
@@ -215,6 +223,10 @@ const saveCharacter = (character: Character): SavedCharacter => ({
   faction: character.faction as string,
   name: character.name,
   command: character.command,
+  sex: character.sex,
+  father: (character.father as string | undefined) ?? null,
+  spouse: (character.spouse as string | undefined) ?? null,
+  bornIn: (character.bornIn as string | undefined) ?? null,
   governance: character.governance,
   guile: character.guile,
   age: character.age,
@@ -225,6 +237,10 @@ const loadCharacter = (saved: SavedCharacter): Character => ({
   id: toCharacterId(saved.id) as CharacterId,
   faction: toFactionId(saved.faction) as FactionId,
   name: saved.name,
+  sex: saved.sex === 'f' ? 'f' : 'm',
+  father: saved.father ? (toCharacterId(saved.father) as CharacterId) : undefined,
+  spouse: saved.spouse ? (toCharacterId(saved.spouse) as CharacterId) : undefined,
+  bornIn: saved.bornIn ? (toFactionId(saved.bornIn) as FactionId) : undefined,
   command: saved.command,
   governance: saved.governance,
   guile: saved.guile,
@@ -256,6 +272,8 @@ export function serialiseCampaign(state: CampaignState): SavedCampaign {
       ]),
       capital: (faction.capital as string | undefined) ?? null,
       characters: faction.characters.map(saveCharacter),
+      legitimacy: faction.legitimacy,
+      rulers: [...faction.rulers],
       joinedOn: faction.joinedOn,
       destroyedOn: faction.destroyedOn ?? null,
     })),
@@ -385,6 +403,8 @@ export function deserialiseCampaign(saved: SavedCampaign): CampaignState {
       ),
       capital: entry.capital ? (toRegionId(entry.capital) as RegionId) : undefined,
       characters: own,
+      legitimacy: entry.legitimacy ?? 100,
+      rulers: [...(entry.rulers ?? [])],
       joinedOn: entry.joinedOn,
       destroyedOn: entry.destroyedOn ?? undefined,
     });

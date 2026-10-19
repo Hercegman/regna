@@ -11,6 +11,7 @@ import type { CampaignState, Regiment, RegionState, Season } from './state';
 import { MERCENARY_UPKEEP_MULTIPLIER, isMercenary } from './mercenaries';
 import { censureUnrest, holyWarRelief } from './faith';
 import { merchantIncome } from './agents';
+import { isMinor, legitimacyUnrest } from './dynasty';
 import { getAgentType } from '../data/agents';
 import { factionState, hasPort, provincesOf, strengthOf, wallTier } from './state';
 import { getBuildingType } from '../data/buildings';
@@ -313,6 +314,15 @@ export function publicOrder(state: CampaignState, region: RegionState): number {
   order += buildingEffectSum(region, (e) => e.order);
   order += (faction?.traits.order ?? 0);
   if (region.governor) order += region.governor.governance;
+
+  // A realm that does not believe in its own king is harder to hold
+  // everywhere at once, which is what a disputed succession actually did.
+  const realm = state.factions.get(region.owner);
+  if (realm) {
+    order -= legitimacyUnrest(realm) / 2;
+    // A regency is a standing invitation, and everyone can see it.
+    if (isMinor(state, region.owner)) order -= 2;
+  }
 
   // A garrison keeps the peace, with diminishing returns.
   const garrison = strengthOf(region.garrison);

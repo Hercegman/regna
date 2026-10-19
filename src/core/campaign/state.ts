@@ -62,6 +62,20 @@ export interface Character {
   readonly id: CharacterId;
   readonly faction: FactionId;
   name: string;
+  readonly sex: 'm' | 'f';
+  /**
+   * The father, when he was born into a line this realm remembers. This is
+   * what makes a succession an argument about descent rather than a lottery.
+   */
+  father: CharacterId | undefined;
+  /** Whoever he or she is married to, in this court or another. */
+  spouse: CharacterId | undefined;
+  /**
+   * The realm this person was born in, when it is not the one they now serve.
+   * Only a bride who has moved to her husband's court has one, and it is the
+   * whole of the bond a marriage creates between two houses.
+   */
+  bornIn: FactionId | undefined;
   /** Battlefield command, 0-10. */
   command: number;
   /** Administration, 0-10: order and income in the province he governs. */
@@ -206,6 +220,18 @@ export interface FactionState {
   /** The province that acts as the capital for distance-to-capital effects. */
   capital: RegionId | undefined;
   characters: Character[];
+  /**
+   * How secure the ruler's title is, 0 to 100. A clean succession from father
+   * to eldest son leaves it untouched; a brother, a cousin or an outright
+   * stranger does not, and a realm that does not believe in its own king is
+   * harder to hold.
+   */
+  legitimacy: number;
+  /**
+   * The given names of every ruler this realm has had, in order, so that the
+   * third Stjepan is actually the third.
+   */
+  rulers: string[];
   /** Turn the faction entered play. */
   joinedOn: number;
   /** Set when the faction has lost every province. */
@@ -372,19 +398,72 @@ const NAME_POOLS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
+ * Women's names, by the same cultures.
+ *
+ * A dynasty needs both halves of itself. These are the names that actually
+ * recur in the charters and chronicles of each region in this period, which
+ * is also why several of them repeat across cultures: Europe's ruling houses
+ * married each other constantly, and the names travelled with the brides.
+ */
+const WOMENS_NAMES: Readonly<Record<string, readonly string[]>> = {
+  latin_west: ['Adela', 'Matilda', 'Constance', 'Eleanor', 'Agnes', 'Blanche', 'Sibylla', 'Jeanne'],
+  nordic: ['Ingrid', 'Astrid', 'Gyda', 'Sigrid', 'Helena', 'Margareta', 'Thora', 'Ragnhild'],
+  slavic_west: ['Jelena', 'Dobrava', 'Anastazija', 'Katarina', 'Judita', 'Zorica', 'Marica', 'Vladislava'],
+  slavic_east: ['Yevpraksia', 'Predslava', 'Anna', 'Maria', 'Verkhuslava', 'Olena', 'Sbyslava', 'Rogneda'],
+  balkan: ['Jelena', 'Simonida', 'Teodora', 'Ana', 'Milica', 'Danica', 'Jefimija', 'Katarina'],
+  hellenic: ['Anna', 'Eirene', 'Theodora', 'Zoe', 'Maria', 'Eudokia', 'Helena', 'Euphrosyne'],
+  levantine: ['Zubaida', 'Khadija', 'Safiya', 'Rabia', 'Fatima', 'Amina', 'Nur', 'Shajar'],
+  maghrebi: ['Zaynab', 'Aisha', 'Fatima', 'Habiba', 'Maryam', 'Sawda', 'Tuda', 'Yasmin'],
+  steppe: ['Borte', 'Terken', 'Altun', 'Sorghaghtani', 'Oghul', 'Chabi', 'Ilbilge', 'Gurbesu'],
+  sahelian: ['Kassa', 'Sogolon', 'Nana', 'Aminata', 'Hawa', 'Fatoumata', 'Dalla', 'Kaya'],
+  celtic: ['Gormlaith', 'Derbforgaill', 'Mor', 'Gwenllian', 'Bebinn', 'Sadb', 'Angharad', 'Lassar'],
+};
+
+/** A given name of the faction's culture, for a man or a woman. */
+export function givenName(faction: FactionId, sex: 'm' | 'f', rng: Rng): string {
+  const culture = tryGetFaction(faction)?.culture ?? 'latin_west';
+  if (sex === 'f') {
+    return rng.pick(WOMENS_NAMES[culture] ?? WOMENS_NAMES.latin_west!);
+  }
+  const pool =
+    FACTION_NAME_POOLS[faction as string] ?? NAME_POOLS[culture] ?? NAME_POOLS.latin_west!;
+  return rng.pick(pool);
+}
+
+/**
  * A given name drawn from the faction's own culture. Successors and newly
  * emerged rulers go through this too, so that a dynasty is never reduced to
  * being called after its own adjective.
  */
 export function characterName(faction: FactionId, rng: Rng): string {
-  const culture = tryGetFaction(faction)?.culture ?? 'latin_west';
-  const pool =
-    FACTION_NAME_POOLS[faction as string] ?? NAME_POOLS[culture] ?? NAME_POOLS.latin_west!;
-  const given = rng.pick(pool);
-  // Regnal numbers make a line of rulers legible at a glance.
-  const numeral = rng.int(1, 6);
-  const numerals = ['I', 'II', 'III', 'IV', 'V', 'VI'];
-  return `${given} ${numerals[numeral - 1]}`;
+  return `${givenName(faction, 'm', rng)} I`;
+}
+
+const NUMERALS = [
+  'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X',
+  'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII', 'XIX', 'XX',
+];
+
+/** "Stjepan III" back to "Stjepan". */
+export function givenNameOf(character: Character | string): string {
+  const name = typeof character === 'string' ? character : character.name;
+  const parts = name.split(' ');
+  const last = parts[parts.length - 1];
+  return last && NUMERALS.includes(last) ? parts.slice(0, -1).join(' ') : name;
+}
+
+/**
+ * Names a new ruler, with the regnal number his realm's own history gives him.
+ *
+ * The number used to be rolled, which produced a Henri IV succeeded by a
+ * Henri II. Counting the line instead means the third Stjepan is the third
+ * Stjepan, and a long-lived dynasty reads as one at a glance.
+ */
+export function nameRuler(faction: FactionState, given: string): string {
+  const before = faction.rulers.filter((name) => name === given).length;
+  const numeral = NUMERALS[Math.min(before, NUMERALS.length - 1)] ?? 'I';
+  faction.rulers.push(given);
+  return `${given} ${numeral}`;
 }
 
 /**
@@ -479,16 +558,49 @@ const FACTION_NAME_POOLS: Readonly<Record<string, readonly string[]>> = {
 };
 
 function nextCharacter(state: CampaignState, faction: FactionId, rng: Rng, leader: boolean): Character {
-  state.nextCharacterSerial += 1;
-  return {
-    id: characterId(`char-${state.nextCharacterSerial}`),
-    faction,
-    name: characterName(faction, rng),
+  // A ruler in 1080 is a man; the women of the house appear as daughters and
+  // as brides, which is where they mattered to a realm's politics.
+  const sex: 'm' | 'f' = leader ? 'm' : rng.chance(0.45) ? 'f' : 'm';
+  return newCharacter(state, faction, {
+    sex,
+    leader,
+    name: leader ? characterName(faction, rng) : givenName(faction, sex, rng),
     command: rng.int(leader ? 3 : 1, leader ? 8 : 6),
     governance: rng.int(1, leader ? 8 : 6),
     guile: rng.int(1, leader ? 8 : 6),
     age: rng.int(leader ? 28 : 20, leader ? 50 : 38),
-    leader,
+  });
+}
+
+/** Everything a character needs, with the bookkeeping filled in. */
+export function newCharacter(
+  state: CampaignState,
+  faction: FactionId,
+  fields: {
+    sex: 'm' | 'f';
+    name: string;
+    command: number;
+    governance: number;
+    guile: number;
+    age: number;
+    leader?: boolean;
+    father?: CharacterId | undefined;
+  },
+): Character {
+  state.nextCharacterSerial += 1;
+  return {
+    id: characterId(`char-${state.nextCharacterSerial}`),
+    faction,
+    name: fields.name,
+    sex: fields.sex,
+    father: fields.father,
+    spouse: undefined,
+    bornIn: undefined,
+    command: fields.command,
+    governance: fields.governance,
+    guile: fields.guile,
+    age: fields.age,
+    leader: fields.leader ?? false,
   };
 }
 
@@ -635,6 +747,8 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
       relations: new Map(),
       capital: seat,
       characters: [],
+      legitimacy: 100,
+      rulers: [],
       joinedOn: present ? 0 : -1,
       destroyedOn: undefined,
     });
@@ -647,6 +761,8 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
     relations: new Map(),
     capital: undefined,
     characters: [],
+    legitimacy: 100,
+    rulers: [],
     joinedOn: 0,
     destroyedOn: undefined,
   });
@@ -655,6 +771,7 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
   for (const [id, faction] of state.factions) {
     if (!faction.alive || id === INDEPENDENT_ID) continue;
     const leader = nextCharacter(state, id, rng, true);
+    leader.name = nameRuler(faction, givenNameOf(leader));
     faction.characters.push(leader);
 
     const capital = faction.capital;

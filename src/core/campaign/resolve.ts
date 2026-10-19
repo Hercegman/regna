@@ -20,6 +20,8 @@ import { getRegion } from '../data/regions';
 import type { SeaZoneId } from '../data/seas';
 import { getSeaZone } from '../data/seas';
 import { getFaction, tryGetFaction } from '../data/factions';
+import { Rng } from '../rng';
+import { removeFromCourt } from './dynasty';
 import { getUnitType } from '../data/units';
 import type { BattleResult, BattleSetup } from '../battle/types';
 import { runBattle } from '../battle/sim';
@@ -260,17 +262,19 @@ function applySide(
       if (!army.general) continue;
       const roll = hashString(`${result.duration}:${which}:${army.id}:${army.general.id}`) / 0x100000000;
       if (roll < 0.12) {
-        const faction = factionState(state, army.faction);
         logEvent(
           state,
           army.faction,
           `${army.general.name} of ${nameOf(army.faction)} falls in battle.`,
         );
-        faction.characters = faction.characters.filter((c) => c.id !== army.general!.id);
-        for (const province of state.regions.values()) {
-          if (province.governor?.id === army.general.id) province.governor = undefined;
-        }
-        army.general = undefined;
+        // Seeded from the dead man, so a replayed battle kills him the same
+        // way and hands his realm on to the same successor.
+        removeFromCourt(
+          state,
+          army.faction,
+          army.general.id,
+          new Rng(`death:${army.general.id as string}`),
+        );
       }
     }
   }

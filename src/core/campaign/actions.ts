@@ -19,6 +19,7 @@ import { getBuildingType, BUILDING_TYPES } from '../data/buildings';
 import { getRegion } from '../data/regions';
 import { borderBetween, landNeighbours, seaNeighbours } from '../data/adjacency';
 import { getUnitType } from '../data/units';
+import { isAdult } from './dynasty';
 import { getFaction, tryGetFaction, INDEPENDENT_ID } from '../data/factions';
 export { isAtWar } from './state';
 import { seaLaneClosed } from './naval';
@@ -483,7 +484,11 @@ export function unassignedCharacters(state: CampaignState, id: FactionId): reado
   for (const army of state.armies.values()) {
     if (army.general) busy.add(army.general.id as string);
   }
-  return faction.characters.filter((character) => !busy.has(character.id as string));
+  // A child holds no post. He is at court being brought up, and the realm
+  // has to wait for him like everybody else did.
+  return faction.characters.filter(
+    (character) => isAdult(character) && !busy.has(character.id as string),
+  );
 }
 
 /**

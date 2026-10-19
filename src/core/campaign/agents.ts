@@ -30,6 +30,7 @@ import { tryGetFaction, INDEPENDENT_ID } from '../data/factions';
 import { neighbours } from '../data/adjacency';
 import { adjustAttitude } from './diplomacy';
 import { familyOf, adjustStanding } from './faith';
+import { removeFromCourt } from './dynasty';
 
 type Outcome = { ok: true } | { ok: false; reason: string };
 const ok: Outcome = { ok: true };
@@ -438,7 +439,7 @@ function succeed(
         region.unrest = Math.min(100, region.unrest + 5);
         return `${agent.name} finds nobody in ${place} worth killing.`;
       }
-      removeCharacter(state, victim.faction, victim.name);
+      removeCharacter(state, victim.faction, victim.name, rng);
       adjustAttitude(state, victim.faction, agent.faction, -12);
       return `${victim.name} is killed at ${place}.`;
     }
@@ -512,16 +513,11 @@ export function victimAt(
   return undefined;
 }
 
-function removeCharacter(state: CampaignState, id: FactionId, name: string): void {
+function removeCharacter(state: CampaignState, id: FactionId, name: string, rng: Rng): void {
   const faction = state.factions.get(id);
-  if (!faction) return;
-  faction.characters = faction.characters.filter((character) => character.name !== name);
-  for (const region of state.regions.values()) {
-    if (region.governor?.name === name) region.governor = undefined;
-  }
-  for (const army of state.armies.values()) {
-    if (army.general?.name === name) army.general = undefined;
-  }
+  const victim = faction?.characters.find((character) => character.name === name);
+  if (!victim) return;
+  removeFromCourt(state, id, victim.id, rng);
 }
 
 function foreignAgentAt(

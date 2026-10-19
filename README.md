@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-d9b55f?style=flat-square&labelColor=12161a)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white&labelColor=12161a)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-6-646cff?style=flat-square&logo=vite&logoColor=white&labelColor=12161a)](https://vite.dev)
-[![Tests](https://img.shields.io/badge/tests-304%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
+[![Tests](https://img.shields.io/badge/tests-332%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
 [![Runtime deps](https://img.shields.io/badge/runtime%20dependencies-none-8b91a0?style=flat-square&labelColor=12161a)](#architecture)
 
 [Why](#why-regna) · [The world](#the-world) · [Features](#features) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Playing](#playing) · [Architecture](#architecture) · [Roadmap](#roadmap)
@@ -112,6 +112,19 @@ play in the year it actually rose, at the place it rose from.
   Only Latin rulers answer to Rome. The schism of 1054 is the point: no pope
   could excommunicate a Greek emperor in any sense the Greek emperor noticed,
   and no crusade is preached against Constantinople while a Christian holds it.
+
+- **A realm is a house.** Every ruler has a father, a wife and children, and
+  the crown follows the line: the eldest adult son, then a daughter, then a
+  brother, then — rather than leave the line — a boy under a regency. Only
+  when the house has nobody does a magnate take it, and every step away from
+  the direct line costs the realm legitimacy, which is subtracted from public
+  order in every province it holds until the new ruler has reigned long enough
+  to be believed in.
+
+  A marriage moves a real person: the bride leaves her father's court for her
+  husband's, keeps the house she came from, and that is the bond. It is the
+  cheapest instrument in the game and every realm uses it, including the ones
+  you are about to be invaded by.
 
 - **Four men and a purse.** A spy, an envoy, a priest and a factor go where an
   army cannot and nobody declares war over them. They cross any border in any
@@ -229,6 +242,10 @@ realm.
   it is expected to fetch, and sends one.
 - **For hire.** Companies appear on the province panel wherever any are standing
   about, including in towns you do not own.
+- **The house.** The **Realm** tab shows the ruler, the realm's legitimacy,
+  the line of rulers before him and who would succeed him if he died today —
+  including when that would be a child. Marriage offers are on the
+  **Diplomacy** tab, with the odds on the button.
 - **Abroad.** The **Agents** tab raises a spy, an envoy, a priest or a factor
   where the institution for him exists, lists everyone you have and everyone
   standing in the province you are looking at, and offers each man the missions
@@ -255,7 +272,7 @@ Both are offered again on the faction select screen.
 | `src/render/` | The Mercator projection and camera, the province geometry, the vector art, the campaign map, the battlefield. |
 | `src/ui/` | Screens, panels, persistence. Plain DOM, no framework. |
 | `tools/` | `build-geography.py`, which turns Natural Earth's vectors into the checked-in coastline. |
-| `tests/` | 304 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
+| `tests/` | 332 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
 
 Nothing in `src/core/` touches the DOM or calls `Math.random`. Randomness comes
 from a xoshiro128\*\* generator whose state is saved with the campaign, which is
@@ -298,7 +315,8 @@ URL parameters open a known state without a sequence of clicks:
 ## Roadmap
 
 - [x] Agents — spies, envoys, priests and merchants
-- [ ] Dynasties: marriage, legitimacy, and a disputed succession worth fighting
+- [x] Dynasties: marriage, legitimacy, and a succession that follows the line
+- [ ] Civil war: a disputed succession that produces a rival claimant with an army
 - [ ] An opening tutorial, because the interface is dense and says nothing
 - [ ] Mercenary politics: companies that change sides, or take a city instead of a contract
 

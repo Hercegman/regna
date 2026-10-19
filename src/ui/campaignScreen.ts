@@ -104,6 +104,17 @@ import {
 } from '../core/campaign/agents';
 import type { MissionOffer } from '../core/campaign/agents';
 import { AGENT_TYPES, getAgentType } from '../core/data/agents';
+import {
+  canMarry,
+  heirApparent,
+  isAdult,
+  isMinor,
+  leaderOf,
+  legitimacyUnrest,
+  marriageOdds,
+  marriedTo,
+  proposeMarriage,
+} from '../core/campaign/dynasty';
 import { Rng } from '../core/rng';
 import { commitRng, rngFor } from '../core/campaign';
 import { getBuildingType } from '../core/data/buildings';
@@ -1397,10 +1408,37 @@ export class CampaignScreen {
               this.renderAll();
             },
           }, 'Alliance'),
+          this.marriageButton(faction.id),
         ),
       );
       body.appendChild(row);
     }
+  }
+
+  /**
+   * A marriage offer, when both houses have somebody of an age.
+   *
+   * The cheapest instrument in the game: it costs nothing but a daughter and
+   * buys a great deal of goodwill. The button says what the odds are, because
+   * a refusal costs a little and the player should know what he is risking.
+   */
+  private marriageButton(other: FactionId): HTMLElement | false {
+    const me = this.state.player;
+    if (marriedTo(this.state, me, other)) {
+      return el('span', { class: 'muted tiny', title: 'Our houses are already joined' }, 'married');
+    }
+    const allowed = canMarry(this.state, me, other);
+    if (!allowed.ok) return false;
+    const odds = Math.round(marriageOdds(this.state, me, other) * 100);
+    return el('button', {
+      class: 'tiny',
+      title: `${odds}% that the offer is accepted. A refusal is remembered.`,
+      onClick: () => {
+        const outcome = this.roll((rng) => proposeMarriage(this.state, me, other, rng));
+        if (!outcome.ok) this.flash(`${factionName(other)} declines the match.`);
+        this.renderAll();
+      },
+    }, `Marry ${odds}%`);
   }
 
   // --- realm tab
@@ -1426,6 +1464,67 @@ export class CampaignScreen {
     const result = act(rng);
     commitRng(this.state, rng);
     return result;
+  }
+
+  /**
+   * The house: who rules, how securely, and who is left to inherit.
+   *
+   * A succession is the one event a player cannot do anything about after the
+   * fact, so the panel shows what the realm would be left with beforehand:
+   * the heir, the children growing up, and what a shaky title is costing.
+   */
+  private renderHouse(body: HTMLElement, me: FactionId): void {
+    const faction = factionState(this.state, me);
+    const ruler = leaderOf(this.state, me);
+    body.appendChild(el('h3', {}, 'The house'));
+    if (!ruler) {
+      body.appendChild(el('p', { class: 'muted' }, 'The throne is vacant.'));
+      return;
+    }
+
+    const minor = isMinor(this.state, me);
+    body.appendChild(el('section', {},
+      row('Ruler', `${ruler.name}${minor ? ' (a minor)' : ''}`),
+      row('Aged', `${Math.floor(ruler.age)}`),
+      row('Legitimacy', `${Math.round(faction.legitimacy)}/100`,
+        'A realm that does not believe in its own ruler is harder to hold everywhere at once'),
+      faction.legitimacy < 100 && row('Cost in order', `-${legitimacyUnrest(faction).toFixed(1)}`,
+        'Subtracted from public order in every province of the realm'),
+      row('Line', faction.rulers.length > 1 ? faction.rulers.join(', ') : faction.rulers[0] ?? '—'),
+    ));
+
+    const heir = heirApparent(this.state, me);
+    body.appendChild(el('p', { class: 'offer-meta' },
+      heir
+        ? `If the ruler dies today, ${heir.name} succeeds${isAdult(heir) ? '' : ' as a child, under a regency'}.`
+        : 'There is nobody of the house to succeed: the crown would go to whoever is strongest.',
+    ));
+
+    const court = [...faction.characters].sort((a, b) => b.age - a.age);
+    for (const character of court) {
+      const roles: string[] = [];
+      if (character.leader) roles.push('rules');
+      if (character.id === ruler.spouse) roles.push('consort');
+      if (character.father === ruler.id) roles.push(character.sex === 'm' ? 'son' : 'daughter');
+      if (character.bornIn) roles.push(`of ${factionName(character.bornIn)}`);
+      const post =
+        [...this.state.regions.values()].find((r) => r.governor?.id === character.id) ??
+        undefined;
+      const army = [...this.state.armies.values()].find((a) => a.general?.id === character.id);
+      if (post) roles.push(`governs ${getRegion(post.id).settlement}`);
+      if (army) roles.push('commands an army');
+      if (!isAdult(character)) roles.push('a child');
+      else if (!character.spouse) roles.push('unmarried');
+
+      body.appendChild(el('div', {
+        class: 'realm-row',
+        title: `Command ${character.command} · administration ${character.governance} · guile ${character.guile}`,
+      },
+        el('span', { class: 'realm-name' }, `${character.name}${character.sex === 'f' ? ' ♀' : ''}`),
+        el('span', { class: 'muted' }, `${Math.floor(character.age)}`),
+        el('span', { class: 'muted' }, roles.join(' · ')),
+      ));
+    }
   }
 
   private renderAgentsTab(body: HTMLElement, region: RegionState): void {
@@ -1604,6 +1703,8 @@ export class CampaignScreen {
       row('Balance', money(finances.net), 'emphasis'),
     ));
 
+    this.renderHouse(body, me);
+
     body.appendChild(el('h3', {}, 'Provinces'));
     const provinces = provincesOf(this.state, me).sort(
       (a, b) => SETTLEMENT_ORDER.indexOf(b.tier) - SETTLEMENT_ORDER.indexOf(a.tier),
@@ -1681,13 +1782,6 @@ export class CampaignScreen {
       }
     }
 
-    body.appendChild(el('h3', {}, 'Characters'));
-    for (const character of faction.characters) {
-      body.appendChild(row(
-        `${character.name}${character.leader ? ' (ruler)' : ''}`,
-        `age ${character.age} · command ${character.command} · admin ${character.governance}`,
-      ));
-    }
   }
 
   /** Standing with the authority of our faith, and what to do about it. */

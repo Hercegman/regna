@@ -8,12 +8,13 @@
  * identically.
  */
 import type { FactionId } from '../types';
-import { characterId, clamp, SETTLEMENT_ORDER, unitTypeId } from '../types';
-import type { CampaignState, Character, RegionState } from './state';
+import { clamp, SETTLEMENT_ORDER, unitTypeId } from '../types';
+import type { CampaignState, RegionState } from './state';
 import {
   CAMPAIGN_END_YEAR,
-  characterName,
   commitRng,
+  givenName,
+  newCharacter,
   factionState,
   logEvent,
   fleetCapacity,
@@ -25,6 +26,14 @@ import { factionFinances, growthRate, publicOrder, tierThreshold } from './econo
 import { commissionShip, fleetMovementBudget, isBlockaded } from './naval';
 import { advanceCaravans } from './caravans';
 import { ageAgents, refreshAgents } from './agents';
+import {
+  MAX_COURT,
+  attendCourt,
+  bearChildren,
+  removeFromCourt,
+  settleLegitimacy,
+  succeed,
+} from './dynasty';
 import { desertUnpaid, replenishMercenaries } from './mercenaries';
 import { considerHolyWar, driftStanding, notePiety, progressHolyWar } from './faith';
 import { getBuildingType } from '../data/buildings';
@@ -89,6 +98,9 @@ export function endTurn(state: CampaignState): TurnReport {
   reapDeadFactions(state);
   driftRelations(state, rng);
   ageCharacters(state, rng);
+  bearChildren(state, rng);
+  attendCourt(state, rng);
+  settleLegitimacy(state);
 
   // 7. Give every army and fleet its movement back.
   for (const army of state.armies.values()) {
@@ -445,43 +457,19 @@ function ageCharacters(state: CampaignState, rng: Rng): void {
       // Death becomes likely past sixty, as it did.
       const risk = character.age < 45 ? 0.008 : 0.008 + (character.age - 45) * 0.011;
       if (!rng.chance(risk)) continue;
-      faction.characters = faction.characters.filter((other) => other.id !== character.id);
-      for (const region of state.regions.values()) {
-        if (region.governor?.id === character.id) region.governor = undefined;
-      }
-      for (const army of state.armies.values()) {
-        if (army.general?.id === character.id) army.general = undefined;
-      }
       if (character.leader) {
         logEvent(state, id, `${character.name} of ${getFaction(id).name} dies.`);
-        promoteHeir(state, id, rng);
       }
+      removeFromCourt(state, id, character.id, rng);
     }
     // A faction with no characters at all produces one: a state is not a person.
     if (faction.characters.length === 0) promoteHeir(state, id, rng);
   }
 }
 
+/** A realm that has lost everybody needs somebody; the dynasty decides who. */
 function promoteHeir(state: CampaignState, id: FactionId, rng: Rng): void {
-  const faction = factionState(state, id);
-  const heir = faction.characters.find((character) => !character.leader);
-  if (heir) {
-    heir.leader = true;
-    logEvent(state, id, `${heir.name} succeeds to the throne of ${getFaction(id).name}.`);
-    return;
-  }
-  state.nextCharacterSerial += 1;
-  const fresh: Character = {
-    id: characterId(`char-${state.nextCharacterSerial}`),
-    faction: id,
-    name: characterName(id, rng),
-    command: rng.int(2, 7),
-    governance: rng.int(2, 7),
-    guile: rng.int(1, 7),
-    age: rng.int(22, 40),
-    leader: true,
-  };
-  faction.characters.push(fresh);
+  succeed(state, id, rng, undefined);
 }
 
 /** Has the campaign reached its end date? */
@@ -567,17 +555,19 @@ export function reckon(state: CampaignState): Reckoning | undefined {
 /** New characters come of age, so factions do not run out of commanders. */
 export function addCharacter(state: CampaignState, id: FactionId, rng: Rng): void {
   const faction = factionState(state, id);
-  if (faction.characters.length >= 8) return;
-  state.nextCharacterSerial += 1;
-  const character: Character = {
-    id: characterId(`char-${state.nextCharacterSerial}`),
-    faction: id,
-    name: characterName(id, rng),
-    command: rng.int(1, 7),
-    governance: rng.int(1, 7),
-    guile: rng.int(1, 7),
-    age: rng.int(18, 26),
-    leader: false,
-  };
-  faction.characters.push(character);
+  if (faction.characters.length >= MAX_COURT) return;
+  // Someone who turns up at court without being born into it: a kinsman from
+  // a cadet branch, a useful magnate, a bishop's nephew. He has no father the
+  // realm remembers, which is exactly why his claim is weak.
+  const sex: 'm' | 'f' = rng.chance(0.75) ? 'm' : 'f';
+  faction.characters.push(
+    newCharacter(state, id, {
+      sex,
+      name: givenName(id, sex, rng),
+      command: rng.int(1, 7),
+      governance: rng.int(1, 7),
+      guile: rng.int(1, 7),
+      age: rng.int(18, 26),
+    }),
+  );
 }
