@@ -100,6 +100,22 @@ The values are relative, not absolute. The Spice Road and the western Saharan
 gold road are the richest because they were; a regional fur or wool road is
 worth about half as much.
 
+## The companies
+
+Sixteen pools, each placed where the company was actually raised and dated to
+the years it existed. The Cumans are hireable until 1300 and gone after it; the
+Swiss appear in 1300 and the Landsknechts raised in imitation of them in 1480;
+the Brabancon routiers run from 1150 to 1360 and the free companies from 1360
+to 1460, which is roughly the span over which the one institution turned into
+the other; Matthias Corvinus's Black Army exists only between 1458 and 1495,
+because when the money stopped it dispersed in a single season.
+
+Where a company could be hired is as much a historical claim as where it came
+from. Genoese crossbowmen are offered at Genoa and Pisa, but also at Marseille,
+Barcelona and Naples, because those are the ports their galleys called at.
+Almughavars are offered in Catalonia and also at Naples, Athens and Corinth,
+which is where the Catalan Company went and stayed.
+
 ## Units
 
 Unit rosters are assembled from pools rather than written per faction, so a

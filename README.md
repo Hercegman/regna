@@ -16,7 +16,8 @@ inspiration; the code, the data and the prose are this project's own.
 | Provinces | 222, each at its settlement's real coordinates |
 | Sea zones | 35, from the Norwegian Sea to the Niger |
 | Trade roads | 19, from the Silk Road to the English wool trade |
-| Unit types | 95 land, 14 ship classes |
+| Mercenary pools | 16, each in the country that bred the company |
+| Unit types | 95 land, 14 ship classes, 8 hire-only companies |
 | Buildings | 39, in 13 upgrade chains |
 | Campaign | 1080 to 1530, two turns to the year |
 
@@ -41,6 +42,12 @@ actually apply.
 `src/core/campaign/actions.ts` or `naval.ts` that the AI calls. The AI cannot do
 anything the player cannot, and anything it cannot do is a missing order rather
 than a cheat.
+
+**Mercenaries are found, not raised.** A company exists in the country that
+bred it, in limited numbers. Hiring one ignores your own roster entirely and
+denies it to everyone else until the country furnishes another. It joins at
+once, costs nearly twice a levy to keep, and is the first thing to leave when
+the pay stops.
 
 **Trade is a wager, not an allowance.** A trade road is an ordered path of real
 provinces. Sending a caravan along one costs money now and pays more on
@@ -80,6 +87,10 @@ and press **Sail**, then click a water or a harbour. Load an army with
 hostile squadron holds brings on a sea battle. Keep a fleet at sea through the
 winter and the gales will take hulls from it.
 
+Companies for hire appear on the **Province** panel wherever any are standing
+about, including in towns you do not own. They join an army of yours in the
+province if one is there, and the garrison otherwise.
+
 On the roads: the **Trade** tab lists every trade road through the province,
 what a caravan would cost and what it is expected to fetch, and sends one.
 Press `T` to draw every road on the map. A road through a province you hold
@@ -91,7 +102,7 @@ Both are offered again on the faction select screen.
 ## Development
 
 ```
-npm test           # vitest, 181 tests
+npm test           # vitest, 199 tests
 npm run typecheck  # tsc --noEmit, strict
 npm run build      # typecheck then bundle
 ```
@@ -104,10 +115,10 @@ URL parameters open a known state without a sequence of clicks:
 
 ```
 src/core/            simulation: deterministic, no DOM
-  data/              factions, units, ships, buildings, regions, adjacency,
-                     seas, trade roads
+  data/              factions, units, ships, mercenaries, buildings, regions,
+                     adjacency, seas, trade roads
   campaign/          turn loop, economy, recruitment, diplomacy, navy, trade,
-                     AI, saves
+                     mercenaries, AI, saves
   battle/            deployment, the tick simulation, battle AI, terrain
 src/render/          projection, campaign map, battlefield
 src/ui/              screens, panels, persistence

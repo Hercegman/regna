@@ -101,6 +101,8 @@ One routine per faction per turn, in four stages:
    army to a hostile shore, and come home before the winter gales.
 6. **Trade**: take the wager on a road when the expected return clearly beats
    the outlay, and leave it alone when the road is cut.
+7. **Hiring**: buy companies only when at war and only where they are needed,
+   because a company is a stopgap rather than a standing establishment.
 
 It plays by the player's rules, through the player's order functions.
 
@@ -152,6 +154,25 @@ even with nothing to sell, and worth cutting if your enemy depends on it. War
 shuts a road rather than taxing it, which is why a caravan that cannot pass
 waits, turns back, and is eventually lost.
 
+## Soldiers you do not own
+
+A realm raises troops from its own provinces, slowly, limited by what its
+settlements can muster. It can also buy them.
+
+A mercenary pool is a company standing about in the country that produced it.
+Hiring ignores the hiring state's roster: what matters is being there with the
+money. A company joins immediately, which is the whole point of the
+institution, and in exchange it costs a premium to take on and nearly twice a
+levy to keep.
+
+Pools are finite and replenish slowly, so hiring a company denies it to
+everyone else until the country furnishes another. Two states at war over the
+same ground are bidding against each other for the same men.
+
+Companies leave when the pay does. When a realm cannot meet its bills the hired
+men go first, before anything of its own, which is both what happened and a
+reason to think twice before building an army out of other people's soldiers.
+
 ## Where the money goes
 
 A realm pays for its buildings, its soldiers, its administration, and its
@@ -167,6 +188,9 @@ on its money while poorer neighbours out-built it.
 
 ## What is deliberately simple
 
+- **No mercenary politics.** Companies serve or leave; they do not change
+  sides mid-battle, besiege the employer who shorted them, or carve out
+  states of their own, all of which happened.
 - **No family trees.** Characters age, govern, command and die; they do not
   marry or inherit.
 - **Battle AI is a doctrine, not a search.** Hold a line with the heavy foot,
