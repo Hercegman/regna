@@ -96,9 +96,11 @@ One routine per faction per turn, in four stages:
    that meet, hold a siege it has begun, relieve a besieged province, take a
    weakly held neighbour, march towards the nearest enemy, or make for the
    quayside when the only enemy it has is across water.
-5. **The navy**: build to a target set by how much coast it has, fight a
-   squadron it can beat, sail to close an enemy harbour, carry an army to a
-   hostile shore, and come home before the winter gales.
+5. **The navy**: build to a target set by how much coast it has and how rich it
+   is, fight a squadron it can beat, sail to close an enemy harbour, carry an
+   army to a hostile shore, and come home before the winter gales.
+6. **Trade**: take the wager on a road when the expected return clearly beats
+   the outlay, and leave it alone when the road is cut.
 
 It plays by the player's rules, through the player's order functions.
 
@@ -129,12 +131,44 @@ weather, seaworthy designs fewer than galleys, and every fleet's range falls.
 That is why medieval fleets were laid up from autumn to spring, and why a
 blockade was so hard to maintain.
 
+## Trade
+
+Two kinds, deliberately separate.
+
+**Local trade** is what a province earns from the neighbours it can reach: a
+function of open borders, computed in `economy.ts`. It is passive, and a war
+with a neighbour reduces it.
+
+**Long-distance trade** is the nineteen named roads. Each is an ordered path of
+provinces whose consecutive pairs share a border, so a caravan can walk it. A
+caravan costs an outlay to load, carries a cargo worth more than that, pays a
+toll of five per cent to every foreign lord it crosses, and pays the rest to
+its owner on arrival. Any army at war with its owner that stands where it
+stands takes the lot.
+
+That makes a road worth three different things to three different states: worth
+sending caravans along if you hold an end of it, worth holding the middle of
+even with nothing to sell, and worth cutting if your enemy depends on it. War
+shuts a road rather than taxing it, which is why a caravan that cannot pass
+waits, turns back, and is eventually lost.
+
+## Where the money goes
+
+A realm pays for its buildings, its soldiers, its administration, and its
+hoard. The last is the least obvious and the most necessary. Medieval
+treasuries leaked: money in a vault was spent on display, siphoned by the
+officials guarding it, lent to favourites, or quietly debased. Mechanically it
+is the brake that stops a small state on a rich trade road accumulating a
+fortune it has no use for, and it leaves a working reserve untouched.
+
+The AI commits to about twenty-five turns of extra upkeep out of savings as
+well as out of income. Without that it spent revenue only, and a rich state sat
+on its money while poorer neighbours out-built it.
+
 ## What is deliberately simple
 
 - **No family trees.** Characters age, govern, command and die; they do not
   marry or inherit.
-- **No trade goods in transit.** Trade is a function of open borders, not of
-  caravans that can be raided.
 - **Battle AI is a doctrine, not a search.** Hold a line with the heavy foot,
   shoot with everything, use cavalry against whatever is exposed.
 

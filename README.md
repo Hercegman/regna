@@ -15,6 +15,7 @@ inspiration; the code, the data and the prose are this project's own.
 | Factions | 73, every one a real polity |
 | Provinces | 222, each at its settlement's real coordinates |
 | Sea zones | 35, from the Norwegian Sea to the Niger |
+| Trade roads | 19, from the Silk Road to the English wool trade |
 | Unit types | 95 land, 14 ship classes |
 | Buildings | 39, in 13 upgrade chains |
 | Campaign | 1080 to 1530, two turns to the year |
@@ -40,6 +41,12 @@ actually apply.
 `src/core/campaign/actions.ts` or `naval.ts` that the AI calls. The AI cannot do
 anything the player cannot, and anything it cannot do is a missing order rather
 than a cheat.
+
+**Trade is a wager, not an allowance.** A trade road is an ordered path of real
+provinces. Sending a caravan along one costs money now and pays more on
+arrival, less a toll to every lord whose land it crosses. War shuts a road
+rather than taxing it, and an army standing where a caravan stands takes the
+whole cargo.
 
 **Two layers to the map.** Provinces are the land and sea zones are the water.
 A harbour opens onto one or more zones; fleets move from zone to zone. A
@@ -73,27 +80,34 @@ and press **Sail**, then click a water or a harbour. Load an army with
 hostile squadron holds brings on a sea battle. Keep a fleet at sea through the
 winter and the gales will take hulls from it.
 
+On the roads: the **Trade** tab lists every trade road through the province,
+what a caravan would cost and what it is expected to fetch, and sends one.
+Press `T` to draw every road on the map. A road through a province you hold
+pays you a toll whoever sent the caravan.
+
 **Save** stores the campaign in the browser; **Export** downloads it as a file.
 Both are offered again on the faction select screen.
 
 ## Development
 
 ```
-npm test           # vitest, 152 tests
+npm test           # vitest, 181 tests
 npm run typecheck  # tsc --noEmit, strict
 npm run build      # typecheck then bundle
 ```
 
 URL parameters open a known state without a sequence of clicks:
-`?faction=croatia`, `?turns=60`, `?tab=shipyard`, `?demo=battle&play=1`,
+`?faction=croatia`, `?turns=60`, `?tab=trade`, `?demo=battle&play=1`,
 `?demo=sea`.
 
 ## Layout
 
 ```
 src/core/            simulation: deterministic, no DOM
-  data/              factions, units, ships, buildings, regions, adjacency, seas
-  campaign/          turn loop, economy, recruitment, diplomacy, navy, AI, saves
+  data/              factions, units, ships, buildings, regions, adjacency,
+                     seas, trade roads
+  campaign/          turn loop, economy, recruitment, diplomacy, navy, trade,
+                     AI, saves
   battle/            deployment, the tick simulation, battle AI, terrain
 src/render/          projection, campaign map, battlefield
 src/ui/              screens, panels, persistence
@@ -110,7 +124,8 @@ zone in `seas.ts`. The tests will tell you if the result is inconsistent: they
 assert that every faction can field melee, ranged, cavalry and siege troops,
 that the map is fully reachable, that sea crossings join two harbours, that the
 island landmasses are exactly the expected ones, that every harbour has water to
-sail into, and that a hull is never found in an army or on a town wall.
+sail into, that every trade road is contiguous, and that a hull is never found
+in an army or on a town wall.
 
 See `docs/design.md` for how the simulation fits together and `docs/history.md`
 for the historical decisions behind the data.

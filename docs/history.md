@@ -84,6 +84,22 @@ dromon with its Greek fire belongs to Byzantium and Trebizond alone and is gone
 by 1350. A river galley cannot be built at Venice and a carrack cannot be
 floated down the Tigris.
 
+## The roads
+
+Nineteen routes, each one a road that carried real cargo. Where the map forces
+a choice, the route follows the ground rather than the romance: the Via
+Francigena goes Milan, Genoa, Pisa, Siena, Rome because that is the way the
+provinces connect, and the road from the Varangians to the Greeks reaches the
+Black Sea across the steppe because the lower Dnieper is not a province here.
+
+Two roads are dated. The Hanseatic circuit opens in 1160, when the league of
+towns that ran it began to form. The Champagne fairs close in 1400, by which
+time the sea route from Italy to Flanders had taken their trade.
+
+The values are relative, not absolute. The Spice Road and the western Saharan
+gold road are the richest because they were; a regional fur or wool road is
+worth about half as much.
+
 ## Units
 
 Unit rosters are assembled from pools rather than written per faction, so a
