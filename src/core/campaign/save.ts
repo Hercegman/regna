@@ -50,10 +50,12 @@ import type { TradeRouteId } from '../data/trade';
 /**
  * Bumped whenever the saved shape changes. Version 2 added fleets, the ships
  * building at a harbour, and the cargo a fleet is carrying. Version 3 added
- * the caravans on the trade roads, and version 4 the mercenary pools and which
- * regiments are hired companies.
+ * the caravans on the trade roads, version 4 the mercenary pools and which
+ * regiments are hired companies, and version 5 the standing of each ruler with
+ * the authority of his faith, who is under censure, and the holy war being
+ * preached.
  */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 interface SavedRegiment {
   readonly t: string;
@@ -155,6 +157,19 @@ export interface SavedCampaign {
   readonly fleets: readonly SavedFleet[];
   readonly caravans: readonly SavedCaravan[];
   readonly mercenaries: readonly [string, { available: number; countdown: number }][];
+  readonly faith: {
+    readonly standing: readonly [string, number][];
+    readonly censured: readonly [string, number][];
+    readonly holyWar: {
+      readonly faith: string;
+      readonly caller: string;
+      readonly target: string;
+      readonly calledOn: number;
+      readonly expires: number;
+      readonly participants: readonly string[];
+    } | null;
+    readonly lastWarEnded: number;
+  };
   readonly log: readonly {
     readonly turn: number;
     readonly year: number;
@@ -285,6 +300,21 @@ export function serialiseCampaign(state: CampaignState): SavedCampaign {
       stalled: caravan.stalled,
     })),
     mercenaries: [...state.mercenaries.entries()].map(([id, pool]) => [id, { ...pool }]),
+    faith: {
+      standing: [...state.faith.standing.entries()].map(([id, value]) => [id as string, value]),
+      censured: [...state.faith.censured.entries()].map(([id, turn]) => [id as string, turn]),
+      holyWar: state.faith.holyWar
+        ? {
+            faith: state.faith.holyWar.faith,
+            caller: state.faith.holyWar.caller as string,
+            target: state.faith.holyWar.target as string,
+            calledOn: state.faith.holyWar.calledOn,
+            expires: state.faith.holyWar.expires,
+            participants: state.faith.holyWar.participants.map((id) => id as string),
+          }
+        : null,
+      lastWarEnded: state.faith.lastWarEnded,
+    },
     log: state.log.map((entry) => ({
       turn: entry.turn,
       year: entry.year,
@@ -412,6 +442,29 @@ export function deserialiseCampaign(saved: SavedCampaign): CampaignState {
     (saved.mercenaries ?? []).map(([id, pool]) => [id, { ...pool }]),
   );
 
+  const savedFaith = saved.faith;
+  const faith: CampaignState['faith'] = {
+    standing: new Map(
+      (savedFaith?.standing ?? []).map(([id, value]) => [toFactionId(id) as FactionId, value]),
+    ),
+    censured: new Map(
+      (savedFaith?.censured ?? []).map(([id, turn]) => [toFactionId(id) as FactionId, turn]),
+    ),
+    holyWar: savedFaith?.holyWar
+      ? {
+          faith: savedFaith.holyWar.faith === 'muslim' ? 'muslim' : 'christian',
+          caller: toFactionId(savedFaith.holyWar.caller) as FactionId,
+          target: toRegionId(savedFaith.holyWar.target) as RegionId,
+          calledOn: savedFaith.holyWar.calledOn,
+          expires: savedFaith.holyWar.expires,
+          participants: savedFaith.holyWar.participants.map(
+            (id) => toFactionId(id) as FactionId,
+          ),
+        }
+      : undefined,
+    lastWarEnded: savedFaith?.lastWarEnded ?? -99,
+  };
+
   const log: LogEntry[] = saved.log.map((entry) => ({
     turn: entry.turn,
     year: entry.year,
@@ -431,6 +484,7 @@ export function deserialiseCampaign(saved: SavedCampaign): CampaignState {
     fleets,
     caravans,
     mercenaries,
+    faith,
     nextArmySerial: saved.nextArmySerial,
     nextFleetSerial: saved.nextFleetSerial ?? 0,
     nextCaravanSerial: saved.nextCaravanSerial ?? 0,

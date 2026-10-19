@@ -14,6 +14,7 @@ import { factionName, tryGetFaction, INDEPENDENT_ID } from '../data/factions';
 import { landNeighbours, seaNeighbours } from '../data/adjacency';
 import { militaryStrength } from './actions';
 import type { Rng } from '../rng';
+import { isFairGame, noteWarDeclared } from './faith';
 
 const NEUTRAL: Relation = { stance: 'neutral', attitude: 0, since: 0 };
 
@@ -124,6 +125,9 @@ export function canDeclareWar(state: CampaignState, a: FactionId, b: FactionId):
   if (a === INDEPENDENT_ID || b === INDEPENDENT_ID || a === b) return false;
   const current = relation(state, a, b);
   if (current.stance === 'war') return false;
+  // A ruler under censure has no peace to break: his co-religionists may fall
+  // on him at once, which is what the sentence was for.
+  if (isFairGame(state, b, a)) return true;
   if (current.stance === 'ceasefire' && state.turn - current.since < PEACE_COOLDOWN) return false;
   if (current.stance === 'alliance' && state.turn - current.since < WAR_COOLDOWN) return false;
   return true;
@@ -140,6 +144,7 @@ export function declareWar(state: CampaignState, a: FactionId, b: FactionId): bo
     const toB = relation(state, third, b);
     if (toB.stance === 'alliance') adjustAttitude(state, third, a, -12);
   }
+  noteWarDeclared(state, a, b);
   logEvent(
     state,
     a,

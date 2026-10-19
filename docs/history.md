@@ -84,6 +84,25 @@ dromon with its Greek fire belongs to Byzantium and Trebizond alone and is gone
 by 1350. A river galley cannot be built at Venice and a carrack cannot be
 floated down the Tigris.
 
+## The holy wars
+
+Thirty-three sacred places, each with the reason it was worth marching for.
+Several appear twice, once for each faith, because both of them meant it:
+Jerusalem outranks everything for Christendom and is the third holy place of
+Islam; Antioch was Byzantine, then Frankish for a hundred and seventy years,
+then Mamluk; Cordoba was a caliphal capital before it was a prize of the
+Reconquista.
+
+Dates matter. Jerusalem is not a crusade target before 1095 and Edessa not
+before 1144, because the Second Crusade was preached to undo its loss. The
+Egyptian targets open in 1190, when the later crusades began aiming at Cairo on
+the reasoning that Jerusalem is held from it. Constantinople becomes a target
+for Islam in 1300, when the emirate that would take it appeared.
+
+Authority passes down a named list if its holder falls, which makes conquering
+Rome a real act: if no listed successor survives, nobody can preach a crusade
+at all.
+
 ## The roads
 
 Nineteen routes, each one a road that carried real cargo. Where the map forces

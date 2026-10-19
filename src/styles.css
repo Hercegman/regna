@@ -138,6 +138,15 @@ select.select {
 .top-right { justify-content: flex-end; }
 .top-centre { justify-content: center; text-transform: capitalize; }
 .coin { color: var(--accent); font-variant-numeric: tabular-nums; }
+.holy-badge {
+  padding: 0.15em 0.6em;
+  font-size: 0.78rem;
+  border-radius: 999px;
+  border-color: var(--line);
+  color: var(--text-muted);
+}
+.holy-badge.calling { border-color: var(--accent); color: var(--accent); }
+.holy-badge.sworn { border-color: var(--good); color: var(--good); }
 .coin::before { content: "ƒ "; opacity: 0.7; }
 .income { font-variant-numeric: tabular-nums; }
 

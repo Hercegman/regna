@@ -260,6 +260,10 @@ export function desertUnpaid(state: CampaignState, faction: FactionId, needed: n
       faction,
       `${tryGetFaction(faction)?.adjective ?? 'The'} mercenaries leave for want of pay.`,
     );
+    // A command whose last company has walked away is no longer an army.
+    for (const [id, army] of [...state.armies]) {
+      if (army.faction === faction && army.regiments.length === 0) state.armies.delete(id);
+    }
   }
   return recovered;
 }

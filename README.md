@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-d9b55f?style=flat-square&labelColor=12161a)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white&labelColor=12161a)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-6-646cff?style=flat-square&logo=vite&logoColor=white&labelColor=12161a)](https://vite.dev)
-[![Tests](https://img.shields.io/badge/tests-207%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
+[![Tests](https://img.shields.io/badge/tests-235%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
 [![Runtime deps](https://img.shields.io/badge/runtime%20dependencies-none-8b91a0?style=flat-square&labelColor=12161a)](#architecture)
 
 [Why](#why-regna) · [The world](#the-world) · [Features](#features) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Playing](#playing) · [Architecture](#architecture) · [Roadmap](#roadmap)
@@ -49,6 +49,7 @@ play in the year it actually rose, at the place it rose from.
 | Sea zones | **35**, from the Norwegian Sea to the Niger |
 | Trade roads | **19**, from the Silk Road to the English wool trade |
 | Mercenary pools | **16**, each in the country that bred the company |
+| Sacred places | **33**, claimed by one faith or contested by two |
 | Unit types | **91** land, **13** ships, **8** hire-only companies |
 | Buildings | **39**, in 13 upgrade chains |
 | Campaign | 1080 to 1530, two turns to the year |
@@ -83,6 +84,17 @@ play in the year it actually rose, at the place it rose from.
   harbour outright needs every approach closed, which is why Constantinople with
   three seas in front of it is so much harder to invest than Zadar with one.
   Keep a fleet at sea through the winter and the gales will take hulls from it.
+
+- **A faith with an authority behind it.** The pope at Rome and the caliph at
+  Baghdad keep a standing for every ruler who answers to them, preach a crusade
+  or a jihad for a place their faith claims, and censure those who turn their
+  swords on their own instead. Excommunication shuts the churches, dissolves
+  every alliance and makes a prince fair game to his co-religionists; it is
+  lifted by mending one's ways or, as it usually was, by paying for it.
+
+  Only Latin rulers answer to Rome. The schism of 1054 is the point: no pope
+  could excommunicate a Greek emperor in any sense the Greek emperor noticed,
+  and no crusade is preached against Constantinople while a Christian holds it.
 
 - **Mercenaries are found, not raised.** A company exists in the country that
   bred it, in limited numbers. Hiring one ignores your own roster entirely and
@@ -178,6 +190,10 @@ realm.
   it is expected to fetch, and sends one.
 - **For hire.** Companies appear on the province panel wherever any are standing
   about, including in towns you do not own.
+- **The faith.** The **Realm** tab holds your standing with the authority of
+  your own faith, the price of absolution if you are under censure, and the
+  crusade or jihad now being preached. Taking the vow relieves a quarter of
+  your soldiers' upkeep and declares war on whoever holds the place.
 
 **Save** stores the campaign in the browser; **Export** downloads it as a file.
 Both are offered again on the faction select screen.
@@ -195,7 +211,7 @@ Both are offered again on the faction select screen.
 | `src/core/battle/` | Deployment, the fixed-timestep simulation, the battle AI and the ground. |
 | `src/render/` | The Mercator projection and camera, the campaign map, the battlefield. |
 | `src/ui/` | Screens, panels, persistence. Plain DOM, no framework. |
-| `tests/` | 207 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
+| `tests/` | 235 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
 
 Nothing in `src/core/` touches the DOM or calls `Math.random`. Randomness comes
 from a xoshiro128\*\* generator whose state is saved with the campaign, which is
@@ -233,7 +249,6 @@ URL parameters open a known state without a sequence of clicks:
 
 ## Roadmap
 
-- [ ] The Papacy as a political force: crusades, excommunication, the interdict
 - [ ] Agents — spies, envoys, priests and merchants
 - [ ] Dynasties: marriage, legitimacy, and a disputed succession worth fighting
 - [ ] An opening tutorial, because the interface is dense and says nothing

@@ -25,6 +25,7 @@ import { factionFinances, growthRate, publicOrder, tierThreshold } from './econo
 import { commissionShip, fleetMovementBudget, isBlockaded } from './naval';
 import { advanceCaravans } from './caravans';
 import { desertUnpaid, replenishMercenaries } from './mercenaries';
+import { considerHolyWar, driftStanding, notePiety, progressHolyWar } from './faith';
 import { getBuildingType } from '../data/buildings';
 import { getUnitType } from '../data/units';
 import { getRegion } from '../data/regions';
@@ -71,6 +72,9 @@ export function endTurn(state: CampaignState): TurnReport {
   weatherFleets(state, rng);
   advanceCaravans(state, rng);
   replenishMercenaries(state);
+  progressHolyWar(state);
+  considerHolyWar(state, rng);
+  driftStanding(state);
 
   // 4. Money, after the provinces have been updated.
   settleFinances(state);
@@ -124,6 +128,8 @@ function progressConstruction(state: CampaignState, region: RegionState): void {
   }
   region.buildings.add(work.building);
   region.construction = undefined;
+  // The authority of a faith notices who builds for it.
+  if (type.category === 'religion') notePiety(state, region.owner, 2 + type.level * 2);
   logEvent(
     state,
     region.owner,

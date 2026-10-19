@@ -190,8 +190,9 @@ describe('what a company costs', () => {
     const type = unitTypeId('town_militia');
     const raised = { type, soldiers: 120, experience: 0 };
     const hired = { type, soldiers: 120, experience: 0, mercenary: true };
-    expect(regimentUpkeep(MILAN, hired)).toBeGreaterThan(regimentUpkeep(MILAN, raised));
-    void state;
+    expect(regimentUpkeep(state, MILAN, hired)).toBeGreaterThan(
+      regimentUpkeep(state, MILAN, raised),
+    );
   });
 
   it('leaves for want of pay before anything of our own does', () => {
@@ -206,6 +207,10 @@ describe('what a company costs', () => {
     const recovered = desertUnpaid(state, BYZANTIUM, 10_000);
     expect(recovered).toBeGreaterThan(0);
     expect(mercenaryCompanies(state, BYZANTIUM)).toBe(0);
+    // And a command whose last company walked away is gone, not left empty.
+    for (const army of state.armies.values()) {
+      expect(army.regiments.length, 'an empty army was kept').toBeGreaterThan(0);
+    }
     const stillNative = [...state.regions.values()]
       .filter((region) => region.owner === BYZANTIUM)
       .reduce((sum, region) => sum + region.garrison.filter((r) => !isMercenary(r)).length, 0);

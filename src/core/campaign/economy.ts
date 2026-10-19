@@ -9,6 +9,7 @@ import type { FactionId, RegionId } from '../types';
 import { clamp, SETTLEMENT_ORDER } from '../types';
 import type { CampaignState, Regiment, RegionState, Season } from './state';
 import { MERCENARY_UPKEEP_MULTIPLIER, isMercenary } from './mercenaries';
+import { censureUnrest, holyWarRelief } from './faith';
 import { factionState, hasPort, provincesOf, strengthOf, wallTier } from './state';
 import { getBuildingType } from '../data/buildings';
 import { getRegion } from '../data/regions';
@@ -208,14 +209,20 @@ export function hoardingCost(treasury: number): number {
 }
 
 /** Upkeep of one regiment, after the faction's upkeep trait. */
-export function regimentUpkeep(faction: FactionId, regiment: Regiment): number {
+export function regimentUpkeep(
+  state: CampaignState,
+  faction: FactionId,
+  regiment: Regiment,
+): number {
   const traits = tryGetFaction(faction)?.traits ?? {};
   const type = getUnitType(regiment.type);
   // A hired company costs far more than the same troops raised at home. That
   // is the price of having them tomorrow instead of in four turns, and the
   // reason an army of other people's soldiers is a dangerous habit.
   const premium = isMercenary(regiment) ? MERCENARY_UPKEEP_MULTIPLIER : 1;
-  return type.upkeep * premium * (1 + (traits.upkeep ?? 0));
+  // A ruler who has taken the cross is kept partly by the faithful.
+  const relief = 1 - holyWarRelief(state, faction);
+  return type.upkeep * premium * relief * (1 + (traits.upkeep ?? 0));
 }
 
 export function factionFinances(
@@ -231,7 +238,7 @@ export function factionFinances(
       // A regiment at half strength costs half as much to keep.
       const type = getUnitType(regiment.type);
       const fraction = regiment.soldiers / type.soldiers;
-      garrisonUpkeep += regimentUpkeep(id, regiment) * fraction;
+      garrisonUpkeep += regimentUpkeep(state, id, regiment) * fraction;
     }
   }
   let armyUpkeep = 0;
@@ -240,7 +247,7 @@ export function factionFinances(
     for (const regiment of army.regiments) {
       const type = getUnitType(regiment.type);
       const fraction = regiment.soldiers / type.soldiers;
-      armyUpkeep += regimentUpkeep(id, regiment) * fraction;
+      armyUpkeep += regimentUpkeep(state, id, regiment) * fraction;
     }
   }
   const stipend = tryGetFaction(id)?.traits.stipend ?? 0;
@@ -328,6 +335,8 @@ export function publicOrder(state: CampaignState, region: RegionState): number {
   order -= SETTLEMENT_ORDER.indexOf(region.tier) * 1.1;
 
   if (region.siege) order -= 5;
+  // A ruler under censure keeps order in a country whose churches are shut.
+  order -= censureUnrest(state, region.id);
   return order;
 }
 

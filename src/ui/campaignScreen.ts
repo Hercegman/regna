@@ -5,7 +5,7 @@
  * then re-renders from the returned state, so the interface cannot drift out of
  * step with the simulation or quietly do something the AI could not.
  */
-import type { ArmyId, BuildingId, FleetId, RegionId, UnitTypeId } from '../core/types';
+import type { ArmyId, BuildingId, FactionId, FleetId, RegionId, UnitTypeId } from '../core/types';
 import { SETTLEMENT_ORDER } from '../core/types';
 import type { Army, CampaignState, Fleet, FleetLocation, RegionState } from '../core/campaign';
 import {
@@ -69,6 +69,17 @@ import {
   expectedReturn,
   canHire,
   hireMercenary,
+  absolutionPrice,
+  authorityFor,
+  canJoinHolyWar,
+  donate,
+  faithOf,
+  holyWarHolder,
+  isCensured,
+  isSworn,
+  joinHolyWar,
+  seekAbsolution,
+  standingOf,
   isMercenary,
   mercenaryCompanies,
   offersAt,
@@ -419,6 +430,7 @@ export class CampaignScreen {
         el('strong', {}, `${state.year}`),
         el('span', { class: 'muted' }, pretty(state.season)),
         el('span', { class: 'muted' }, `turn ${state.turn}`),
+        this.holyWarBadge(),
       ),
     );
     this.topBar.appendChild(
@@ -445,6 +457,32 @@ export class CampaignScreen {
         }, this.busy ? 'Resolving…' : 'End turn'),
       ),
     );
+  }
+
+  /** A word in the top bar while a holy war stands, and a way into it. */
+  private holyWarBadge(): HTMLElement | false {
+    const war = this.state.faith.holyWar;
+    if (!war) return false;
+    const ours = faithOf(this.state.player) === war.faith;
+    const sworn = isSworn(this.state, this.state.player);
+    const label =
+      war.faith === 'christian'
+        ? `Crusade: ${getRegion(war.target).settlement}`
+        : `Jihad: ${getRegion(war.target).settlement}`;
+    return el('button', {
+      class: `holy-badge${sworn ? ' sworn' : ours ? ' calling' : ''}`,
+      title: sworn
+        ? 'We have taken the vow. Our soldiers cost less while it stands.'
+        : ours
+          ? 'Our faith is calling. Open the realm to answer it.'
+          : 'A holy war is being preached, though not by our faith.',
+      onClick: () => {
+        this.selectProvince(war.target);
+        this.focusOn(war.target);
+        this.tab = 'realm';
+        this.renderAll();
+      },
+    }, label);
   }
 
   private renderLog(): void {
@@ -1342,6 +1380,8 @@ export class CampaignScreen {
       ));
     }
 
+    this.renderFaithSection(body, me);
+
     const navy = fleetsOf(this.state, me);
     if (navy.length > 0) {
       body.appendChild(el('h3', {}, 'Fleets'));
@@ -1401,6 +1441,120 @@ export class CampaignScreen {
         `age ${character.age} · command ${character.command} · admin ${character.governance}`,
       ));
     }
+  }
+
+  /** Standing with the authority of our faith, and what to do about it. */
+  private renderFaithSection(body: HTMLElement, me: FactionId): void {
+    const faith = faithOf(me);
+    const war = this.state.faith.holyWar;
+
+    if (!faith) {
+      if (war) {
+        body.appendChild(el('h3', {}, 'The faith'));
+        body.appendChild(el('p', { class: 'muted' },
+          `${factionName(war.caller)} preaches ${war.faith === 'christian' ? 'a crusade' : 'a jihad'} ` +
+            `for ${getRegion(war.target).settlement}. It is not our communion that calls.`,
+        ));
+      }
+      return;
+    }
+
+    const authority = authorityFor(this.state, faith);
+    const standing = Math.round(standingOf(this.state, me));
+    const censured = isCensured(this.state, me);
+
+    body.appendChild(el('h3', {}, 'The faith'));
+    body.appendChild(el('section', {},
+      row('Authority', authority ? factionName(authority) : 'The see is empty'),
+      row('Standing', el('span', {},
+        bar((standing + 100) / 200, standing < -20 ? '#e2574c' : standing > 20 ? '#7fb069' : '#e5a33a'),
+        ` ${standing}`,
+      )),
+    ));
+
+    if (censured) {
+      const price = absolutionPrice(this.state, me);
+      const treasury = factionState(this.state, me).treasury;
+      body.appendChild(el('p', { class: 'warning' },
+        faith === 'christian'
+          ? 'We are excommunicated. The churches are shut, our alliances are dissolved, and ' +
+            'every Catholic prince may make war on us without pretext.'
+          : 'We are declared a rebel against the faith. Our oaths are void and every Muslim ' +
+            'ruler may make war on us without pretext.',
+      ));
+      body.appendChild(el('div', { class: 'army-controls' },
+        el('button', {
+          class: 'small',
+          disabled: treasury < price,
+          title: `Pay ${count(price)} florins for absolution`,
+          onClick: () => {
+            const result = seekAbsolution(this.state, me);
+            if (!result.ok) this.flash(result.reason);
+            this.renderAll();
+          },
+        }, `Seek absolution (${count(price)})`),
+      ));
+      return;
+    }
+
+    if (authority && authority !== me) {
+      const gift = Math.min(2000, Math.max(250, Math.floor(factionState(this.state, me).treasury / 6)));
+      body.appendChild(el('div', { class: 'army-controls' },
+        el('button', {
+          class: 'small',
+          disabled: factionState(this.state, me).treasury < gift,
+          title: 'A gift buys goodwill, though never the office itself',
+          onClick: () => {
+            const result = donate(this.state, me, gift);
+            if (!result.ok) this.flash(result.reason);
+            this.renderAll();
+          },
+        }, `Give ${count(gift)} to the church`),
+      ));
+    }
+
+    if (!war) return;
+    body.appendChild(el('h3', {},
+      war.faith === 'christian' ? 'The crusade' : 'The jihad',
+    ));
+    const holder = holyWarHolder(this.state);
+    body.appendChild(el('p', { class: 'offer-text' },
+      `${factionName(war.caller)} calls for ${getRegion(war.target).settlement}` +
+        (holder ? `, held by ${factionName(holder)}` : '') +
+        `. The call stands for ${Math.max(0, war.expires - this.state.turn)} more turns.`,
+    ));
+    if (war.participants.length > 0) {
+      body.appendChild(el('p', { class: 'offer-meta' },
+        `Sworn: ${war.participants.map((id) => factionName(id)).join(', ')}`,
+      ));
+    }
+
+    if (isSworn(this.state, me)) {
+      body.appendChild(el('p', { class: 'good' },
+        `We have taken the ${war.faith === 'christian' ? 'cross' : 'oath'}. ` +
+          'Our soldiers cost a quarter less while the vow stands.',
+      ));
+      return;
+    }
+    const allowed = canJoinHolyWar(this.state, me);
+    body.appendChild(el('div', { class: 'army-controls' },
+      el('button', {
+        class: 'small',
+        disabled: !allowed.ok,
+        title: allowed.ok
+          ? 'Taking the vow declares war on whoever holds the place'
+          : allowed.reason,
+        onClick: () => {
+          const result = joinHolyWar(this.state, me);
+          if (!result.ok) {
+            this.flash(result.reason);
+          } else if (holder && !isAtWar(this.state, me, holder)) {
+            declareWar(this.state, me, holder);
+          }
+          this.renderAll();
+        },
+      }, war.faith === 'christian' ? 'Take the cross' : 'Take the oath'),
+    ));
   }
 
   // -------------------------------------------------------------------------

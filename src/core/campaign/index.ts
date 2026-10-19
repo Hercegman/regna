@@ -32,5 +32,6 @@ export * from './turn';
 export * from './naval';
 export * from './caravans';
 export * from './mercenaries';
+export * from './faith';
 export * from './save';
 export { takeAiTurn } from './ai';

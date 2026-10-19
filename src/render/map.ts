@@ -109,6 +109,7 @@ export function drawMap(
   drawFleets(ctx, state, view);
   drawCaravans(ctx, state, view);
   drawLabels(ctx, state, view);
+  drawHolyWar(ctx, state, view);
   drawSelection(ctx, state, view);
 
   ctx.restore();
@@ -573,6 +574,45 @@ function drawLabels(ctx: CanvasRenderingContext2D, state: CampaignState, view: M
     ctx.fillStyle = '#ece6d6';
     ctx.fillText(label, point.x, point.y + offset);
   }
+  ctx.restore();
+}
+
+/**
+ * The place a holy war is being preached for, ringed so that it cannot be
+ * missed. A crusade that the player has to go hunting for in a log is not a
+ * crusade.
+ */
+function drawHolyWar(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
+  const war = state.faith.holyWar;
+  if (!war) return;
+  const province = state.regions.get(war.target);
+  if (!province) return;
+  const point = screenPositionOf(view, war.target);
+  const radius = radiusFor(province, view.camera.zoom) + 9;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = war.faith === 'christian' ? 'rgba(236, 226, 200, 0.9)' : 'rgba(126, 200, 160, 0.9)';
+  ctx.lineWidth = 2.2;
+  ctx.setLineDash([6, 4]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // A cross for a crusade, a crescent for a jihad.
+  ctx.strokeStyle = war.faith === 'christian' ? '#ece2c8' : '#7ec8a0';
+  ctx.lineWidth = 2;
+  const mark = radius + 7;
+  ctx.beginPath();
+  if (war.faith === 'christian') {
+    ctx.moveTo(point.x, point.y - mark - 5);
+    ctx.lineTo(point.x, point.y - mark + 5);
+    ctx.moveTo(point.x - 4, point.y - mark - 1);
+    ctx.lineTo(point.x + 4, point.y - mark - 1);
+  } else {
+    ctx.arc(point.x, point.y - mark, 5, Math.PI * 0.35, Math.PI * 1.65);
+  }
+  ctx.stroke();
   ctx.restore();
 }
 

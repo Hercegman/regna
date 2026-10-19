@@ -186,6 +186,35 @@ The AI commits to about twenty-five turns of extra upkeep out of savings as
 well as out of income. Without that it spent revenue only, and a rich state sat
 on its money while poorer neighbours out-built it.
 
+## The faith as a political force
+
+Each of the two great faiths has an authority: the pope at Rome, the caliph at
+Baghdad, with named successors if either falls. The authority keeps a standing,
+from -100 to 100, for every ruler who answers to it, moved by what those rulers
+do with their armies. Making war on one's own communion costs standing; making
+war on another gains it; taking a place the faith claims gains a great deal;
+building for the church gains a little.
+
+Below -55 the authority loses patience and censures. Excommunication shuts the
+churches, which costs public order in every province whose people share the
+faith, dissolves every alliance with co-religionists, and lets them declare war
+without waiting out any cooldown. It is lifted by mending one's ways over time
+or, as it usually was, by paying for it.
+
+**Who answers to whom is not the same as who belongs to what.** Only Latin
+rulers answer to Rome; the schism of 1054 is the point, and no pope could
+excommunicate a Greek emperor in any sense the Greek emperor noticed. But
+Byzantium is still Christendom, so no crusade is preached against it while it
+holds Constantinople, and a Catholic who attacks it loses standing all the same,
+if less than for attacking a Catholic.
+
+A crusade and a jihad are one mechanism seen from two sides. The authority
+preaches for a place its faith claims and somebody else holds, weighted by how
+badly it wanted it, with Jerusalem the measure of everything. Rulers take the
+vow, which relieves a quarter of their soldiers' upkeep and declares war on
+whoever holds the place. Taking it pays the taker in standing and plunder;
+letting the call lapse costs everyone who swore and did nothing.
+
 ## How a campaign ends
 
 Three ways, and the third is the one that was missing. A realm wins by

@@ -43,6 +43,7 @@ import {
   proposeTrade,
   relation,
   shareBorder,
+  shareSeaLane,
   warDesire,
 } from './diplomacy';
 import { applyBattleResult, autoResolve, planBattle, planNavalBattle, assaultOdds } from './resolve';
@@ -60,6 +61,17 @@ import {
 import type { SeaZoneId } from '../data/seas';
 import { SEA_ZONE_IDS, getSeaZone, zonesOffPort, zoneServesPort } from '../data/seas';
 import { canHire, hireMercenary, isMercenary, offersAt } from './mercenaries';
+import {
+  absolutionPrice,
+  canJoinHolyWar,
+  donate,
+  holyWarHolder,
+  isCensured,
+  isSworn,
+  joinHolyWar,
+  seekAbsolution,
+  standingOf,
+} from './faith';
 import type { TradeRoute } from '../data/trade';
 import {
   activeRoutesThrough,
@@ -78,6 +90,54 @@ export function takeAiTurn(state: CampaignState, id: FactionId, rng: Rng): void 
   manageArmies(state, id, rng);
   manageNavy(state, id, rng);
   manageMercenaries(state, id, rng);
+  manageFaith(state, id, rng);
+}
+
+// ---------------------------------------------------------------------------
+// The authority of the faith
+// ---------------------------------------------------------------------------
+
+/**
+ * A ruler's dealings with the authority of his own faith: take the cross when
+ * it is preached and he can reach the place, buy absolution when he is under
+ * censure and can afford it, and give to the church when he is in bad odour
+ * and rich.
+ */
+function manageFaith(state: CampaignState, id: FactionId, rng: Rng): void {
+  const faction = factionState(state, id);
+
+  // 1. Under censure, the first business is getting out from under it.
+  if (isCensured(state, id)) {
+    const price = absolutionPrice(state, id);
+    if (faction.treasury > price * 2 && rng.chance(0.5)) seekAbsolution(state, id);
+    return;
+  }
+
+  // 2. A ruler in bad odour and in funds gives to the church, as they did.
+  if (standingOf(state, id) < -20 && faction.treasury > 6000 && rng.chance(0.3)) {
+    donate(state, id, Math.min(2500, Math.floor(faction.treasury / 4)));
+  }
+
+  // 3. Taking the cross. The vow commits a realm to a war, so it is only worth
+  // making when the place can actually be reached.
+  if (!state.faith.holyWar) return;
+  if (!canJoinHolyWar(state, id).ok) return;
+  const holder = holyWarHolder(state);
+  if (!holder || holder === id) return;
+
+  const reachable =
+    shareBorder(state, id, holder) ||
+    shareSeaLane(state, id, holder) ||
+    fleetsOf(state, id).some((fleet) => fleetCapacity(fleet) > 0);
+  if (!reachable) return;
+  // A realm already fighting on two fronts has no men to spare for a vow.
+  if (countWars(state, id) > 1 && !rng.chance(0.25)) return;
+  if (!rng.chance(0.45)) return;
+
+  if (joinHolyWar(state, id).ok) {
+    // Taking the cross is a declaration of war on whoever holds the place.
+    if (!isAtWar(state, id, holder)) declareWar(state, id, holder);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -282,6 +342,10 @@ function retrench(state: CampaignState, id: FactionId): void {
     if (budget >= 0) break;
     candidate.disband();
     budget += candidate.upkeep;
+  }
+  // Paying off the last regiment of a command dissolves the command.
+  for (const [armyId, army] of [...state.armies]) {
+    if (army.faction === id && army.regiments.length === 0) state.armies.delete(armyId);
   }
 }
 
@@ -798,6 +862,18 @@ function actWithArmy(state: CampaignState, army: Army, rng: Rng): void {
   if (home && home.id !== army.location && landNeighbours(army.location).includes(home.id)) {
     attemptMove(state, army, home.id, rng);
     return;
+  }
+
+  // 3.5. A sworn ruler marches for the place he swore to take, wherever it is.
+  if (isSworn(state, army.faction) && state.faith.holyWar) {
+    const objective = state.faith.holyWar.target;
+    if (objective !== army.location) {
+      const leg = stepTowardsProvince(state, army, objective);
+      if (leg) {
+        attemptMove(state, army, leg, rng);
+        return;
+      }
+    }
   }
 
   // 4. Otherwise march towards the nearest enemy province. An army that only

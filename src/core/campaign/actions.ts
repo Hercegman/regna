@@ -22,6 +22,7 @@ import { getUnitType } from '../data/units';
 import { getFaction, tryGetFaction, INDEPENDENT_ID } from '../data/factions';
 export { isAtWar } from './state';
 import { seaLaneClosed } from './naval';
+import { noteProvinceTaken } from './faith';
 import { isShip, rosterFor } from '../data/roster';
 
 
@@ -344,6 +345,7 @@ export function transferProvince(
   region.unrest = Math.min(100, region.unrest + 25 + SETTLEMENT_ORDER.indexOf(region.tier) * 4);
   const faction = state.factions.get(toFaction);
   if (faction && !faction.capital) faction.capital = id;
+  noteProvinceTaken(state, id, toFaction, from);
   logEvent(
     state,
     toFaction,

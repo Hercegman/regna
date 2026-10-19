@@ -214,6 +214,26 @@ export interface CampaignState {
    * else until the country furnishes another.
    */
   mercenaries: Map<string, { available: number; countdown: number }>;
+  /**
+   * Standing with the authority of one's own faith, who is under censure, and
+   * the holy war now being preached. Kept on the state because a crusade is a
+   * fact about the world, not about any one ruler.
+   */
+  faith: {
+    standing: Map<FactionId, number>;
+    censured: Map<FactionId, number>;
+    holyWar:
+      | {
+          faith: 'christian' | 'muslim';
+          caller: FactionId;
+          target: RegionId;
+          calledOn: number;
+          expires: number;
+          participants: FactionId[];
+        }
+      | undefined;
+    lastWarEnded: number;
+  };
   nextArmySerial: number;
   nextFleetSerial: number;
   nextCaravanSerial: number;
@@ -482,6 +502,7 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
     fleets: new Map(),
     caravans: new Map(),
     mercenaries: initialMercenaryPools(),
+    faith: { standing: new Map(), censured: new Map(), holyWar: undefined, lastWarEnded: -99 },
     nextArmySerial: 0,
     nextFleetSerial: 0,
     nextCaravanSerial: 0,
