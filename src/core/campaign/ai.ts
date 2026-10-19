@@ -75,6 +75,7 @@ import {
   poachable,
 } from './mercenaries';
 import type { Poach } from './mercenaries';
+import { estimatedGarrison, watchedProvinces } from './sight';
 import {
   canMarry,
   marriageOdds,
@@ -1095,6 +1096,7 @@ function sailFleet(state: CampaignState, fleet: Fleet, rng: Rng): void {
  */
 function landingTarget(state: CampaignState, fleet: Fleet): RegionId | undefined {
   const troops = strengthOf(fleet.cargo);
+  const watched = watchedProvinces(state, fleet.faction);
   let best: { port: RegionId; score: number } | undefined;
   for (const zone of SEA_ZONE_IDS) {
     if (!routeExists(fleet, zone)) continue;
@@ -1102,7 +1104,10 @@ function landingTarget(state: CampaignState, fleet: Fleet): RegionId | undefined
       const province = state.regions.get(port);
       if (!province || province.owner === fleet.faction) continue;
       if (!isAtWar(state, fleet.faction, province.owner)) continue;
-      const defenders = strengthOf(province.garrison);
+      // The one place the AI judges ground it may never have looked at. It
+      // uses the same estimate a player would be given: the size of the place
+      // and the height of its walls.
+      const defenders = estimatedGarrison(state, fleet.faction, province, watched);
       if (defenders > troops * 2) continue;
       const score = troops / Math.max(1, defenders) + province.population / 10;
       if (!best || score > best.score) best = { port, score };

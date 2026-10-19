@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-d9b55f?style=flat-square&labelColor=12161a)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white&labelColor=12161a)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-6-646cff?style=flat-square&logo=vite&logoColor=white&labelColor=12161a)](https://vite.dev)
-[![Tests](https://img.shields.io/badge/tests-380%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
+[![Tests](https://img.shields.io/badge/tests-397%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
 [![Runtime deps](https://img.shields.io/badge/runtime%20dependencies-none-8b91a0?style=flat-square&labelColor=12161a)](#architecture)
 
 [Why](#why-regna) · [The world](#the-world) · [Features](#features) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Playing](#playing) · [Architecture](#architecture) · [Roadmap](#roadmap)
@@ -168,6 +168,16 @@ play in the year it actually rose, at the place it rose from.
   its administration, and its hoard, because money in a vault was spent on
   display, siphoned by the officials guarding it, or quietly debased.
 
+- **You see what you have eyes on.** Who holds a town and how large it is are
+  public everywhere, as they were. What is standing in it is not: the garrison,
+  the works, the discontent, and every army, fleet and agent in the field are
+  visible only where you have your own ground, your own men, or one province
+  beyond them. The AI needed almost no change for this — it never looked
+  further than its own borders and its own armies — so the fog removes an
+  advantage the player had rather than giving one to the machine. It is also
+  what finally makes a spy worth his wages: he makes a province visible simply
+  by standing in it.
+
 - **One order layer.** Every button calls the same function the AI calls. The AI
   cannot do anything you cannot, and anything it cannot do is a missing order
   rather than a cheat.
@@ -291,7 +301,7 @@ Both are offered again on the faction select screen.
 | `src/render/` | The Mercator projection and camera, the province geometry, the vector art, the campaign map, the battlefield. |
 | `src/ui/` | Screens, panels, persistence. Plain DOM, no framework. |
 | `tools/` | `build-geography.py`, which turns Natural Earth's vectors into the checked-in coastline. |
-| `tests/` | 380 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
+| `tests/` | 397 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
 
 Nothing in `src/core/` touches the DOM or calls `Math.random`. Randomness comes
 from a xoshiro128\*\* generator whose state is saved with the campaign, which is
@@ -338,7 +348,8 @@ URL parameters open a known state without a sequence of clicks:
 - [x] Mercenary politics: companies that change sides, or take a city instead of a contract
 - [x] An opening guide, because the interface is dense and used to say nothing
 - [x] Civil war: a disputed succession that produces a rival claimant with an army
-- [ ] Fog of war, which would give a spy something to sell besides sabotage
+- [x] Fog of war, which gives a spy something to sell besides sabotage
+- [ ] Battles fought in winter, in rain, and at night
 
 ## Not a reimplementation
 

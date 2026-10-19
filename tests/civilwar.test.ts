@@ -308,26 +308,31 @@ describe('across a save', () => {
 
 describe('over a campaign', () => {
   it('tears a few realms in two, and no more than that', () => {
-    const state = newCampaign({ seed: 'civil-live' });
+    // A rising is rare on purpose, so one seed is not evidence either way:
+    // whether it happened in a particular campaign says more about that
+    // campaign than about the model. Several, and the shape is the claim.
     let risen = 0;
     let settled = 0;
     let peak = 0;
-    for (let turn = 0; turn < 200; turn++) {
-      endTurn(state);
-      peak = Math.max(peak, state.civilWars.size);
-      for (const entry of state.log.slice(-60)) {
-        if (entry.turn !== state.turn && entry.turn !== state.turn - 1) continue;
-        if (/raises his standard/.test(entry.text)) risen += 1;
-        if (/is put down|takes the capital, and with it|cause is abandoned/.test(entry.text)) {
-          settled += 1;
+    for (const seed of ['civil-live', 'civil-live-2', 'civil-live-3']) {
+      const state = newCampaign({ seed });
+      for (let turn = 0; turn < 160; turn++) {
+        endTurn(state);
+        peak = Math.max(peak, state.civilWars.size);
+        for (const entry of state.log.slice(-60)) {
+          if (entry.turn !== state.turn && entry.turn !== state.turn - 1) continue;
+          if (/raises his standard/.test(entry.text)) risen += 1;
+          if (/is put down|takes the capital, and with it|cause is abandoned/.test(entry.text)) {
+            settled += 1;
+          }
         }
       }
     }
     expect(risen).toBeGreaterThan(0);
-    expect(risen).toBeLessThan(25);
+    expect(risen).toBeLessThan(60);
     expect(settled).toBeGreaterThan(0);
     expect(peak).toBeLessThan(10);
-  }, 300_000);
+  }, 600_000);
 
   it('never leaves a realm with two rulers, or a war against a dead crown', () => {
     const state = newCampaign({ seed: 'civil-live' });

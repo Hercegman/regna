@@ -420,6 +420,42 @@ model is not doing.
 wide do not share a scale. Untouched, the camera frames the two armies; the
 player zooms and pans from there.
 
+## What a realm can see
+
+Every player used to know the garrison of every town in Europe, what was being
+built in it, and where every army on the map was standing. No medieval
+government knew any of that.
+
+There are two levels and no memory. What is public stays public everywhere:
+who holds a town, how large it is, what the country is like, what its people
+believe. Everyone knew that about everywhere, and a game that hid it would be
+hiding the wrong thing. What is not public is what is standing in it — the
+garrison, the works, the discontent — and every army, fleet, agent and caravan
+in the field.
+
+A realm watches its own ground; anywhere it has an army, a fleet, an agent or
+a caravan standing; one province beyond all of those, because a lord knows
+what is mustering across his own river and an army in the field has scouts;
+and every harbour on a water its squadron is sitting in, which is most of what
+a blockade is for.
+
+There is no memory because a remembered garrison is a lie after one season,
+and storing one per realm per province would be a large thing to save in order
+to be wrong with. A realm sees what it has eyes on now.
+
+**The AI needed almost no change**, which is the interesting part. Look at
+where it reads an enemy's strength and it is always ground its own army or its
+own border is touching: an adjacent province it is deciding whether to attack,
+a settlement it is besieging, its own frontier. The one exception is choosing
+a coast to land an invasion on, and there it now uses the same estimate the
+player is given — the size of the place and the height of its walls. So the
+fog takes an advantage away from the player rather than handing one to the
+machine, which is the right direction for both.
+
+It also gives a spy something to sell. He makes a province watched simply by
+standing in it, which is exactly the thing an intelligencer was for and the
+one use the old model could not price.
+
 ## Teaching it
 
 The interface has eight panels and nine systems behind them and used to say
@@ -443,9 +479,9 @@ succeeds would be a poor teacher.
 - **Mercenaries do not change sides mid-battle.** They take another prince's
   money between seasons and they keep towns they are owed for, but once a
   battle has begun the order of battle is fixed.
-- **No fog of war.** Every province, army, fleet and agent is visible to
-  everyone. A spy therefore sells sabotage and murder rather than information,
-  which is the honest way to price him in a game where nothing is hidden.
+- **Fog has no memory.** A province falls back to what is publicly known the
+  moment the last man leaves it, rather than keeping a stale picture of what
+  was there last year.
 - **Battle AI is a doctrine, not a search.** Hold a line with the heavy foot,
   shoot with everything, use cavalry against whatever is exposed.
 

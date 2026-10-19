@@ -105,6 +105,7 @@ import {
 import type { MissionOffer } from '../core/campaign/agents';
 import { AGENT_TYPES, getAgentType } from '../core/data/agents';
 import { civilWarAgainst, civilWarStanding } from '../core/campaign/civilwar';
+import { canSeeAgent, canSeeArmy, watchedProvinces } from '../core/campaign/sight';
 import {
   canMarry,
   heirApparent,
@@ -481,7 +482,10 @@ export class CampaignScreen {
   look(id: RegionId, zoom: number | undefined): void {
     this.focusOn(id);
     if (zoom !== undefined) this.view.camera.zoom = zoom;
-    this.draw();
+    const tab = this.tab;
+    this.selectProvince(id);
+    this.tab = tab;
+    this.renderAll();
   }
 
   private focusOn(id: RegionId): void {
@@ -1093,12 +1097,20 @@ export class CampaignScreen {
 
   // --- province tab
 
+  /** What the realm can see this frame; recomputed per render, not cached. */
+  private watched(): ReadonlySet<RegionId> {
+    return watchedProvinces(this.state, this.state.player);
+  }
+
   private renderProvinceTab(body: HTMLElement, region: RegionState): void {
     const geography = getRegion(region.id);
     const income = provinceIncome(this.state, region);
     const order = publicOrder(this.state, region);
     const mine = region.owner === this.state.player;
     const faith = tryGetFaction(region.owner)?.religion;
+    // What everyone knew about everywhere, and what only somebody standing
+    // there could tell you.
+    const watched = this.watched().has(region.id);
 
     body.appendChild(el('section', {},
       row('Settlement', pretty(region.tier)),
@@ -1107,12 +1119,22 @@ export class CampaignScreen {
       row('Resource', pretty(geography.resource)),
       row('Walls', pretty(wallTier(region))),
       row('Faith', `${pretty(region.religion)}${faith && faith !== region.religion ? ' (ruled by another)' : ''}`),
-      row('Unrest', el('span', {},
+      watched && row('Unrest', el('span', {},
         bar(region.unrest / 100, region.unrest > 60 ? '#e2574c' : '#e5a33a'),
         ` ${Math.round(region.unrest)}`,
       )),
-      row('Public order', order.toFixed(1)),
+      watched && row('Public order', order.toFixed(1)),
     ));
+
+    if (!watched) {
+      body.appendChild(el('p', { class: 'muted' },
+        'We have nobody there. Who holds the place and how large it is are common ' +
+        'knowledge; what is standing in it is not. An army, a fleet in its harbour, ' +
+        'or an agent of ours would tell us.',
+      ));
+      this.renderPoachSection(body, region);
+      return;
+    }
 
     if (mine) {
       body.appendChild(el('h3', {}, 'Income'));
@@ -1324,7 +1346,12 @@ export class CampaignScreen {
   }
 
   private renderArmySection(body: HTMLElement, region: RegionState): void {
-    const armies = [...this.state.armies.values()].filter((army) => army.location === region.id);
+    const watched = this.watched();
+    const armies = [...this.state.armies.values()].filter(
+      (army) =>
+        army.location === region.id &&
+        canSeeArmy(this.state, this.state.player, army.id, watched),
+    );
     if (armies.length === 0) return;
     body.appendChild(el('h3', {}, 'Armies present'));
     for (const army of armies) {
@@ -1728,7 +1755,11 @@ export class CampaignScreen {
 
     // Whoever is standing on the province in view, ours and anyone else's,
     // because the man you want to act on is nearly always one of those.
-    const here = agentsAt(this.state, region.id);
+    // Somebody else's man only shows where we have eyes on the place.
+    const watched = this.watched();
+    const here = agentsAt(this.state, region.id).filter(
+      (agent) => canSeeAgent(this.state, me, agent.id, watched),
+    );
     if (here.length > 0) {
       body.appendChild(el('h3', {}, `Standing in ${getRegion(region.id).settlement}`));
       for (const agent of here) this.renderAgentRow(body, agent, true);

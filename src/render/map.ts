@@ -15,6 +15,14 @@ import type { Point, RegionId, Terrain } from '../core/types';
 import { SETTLEMENT_ORDER } from '../core/types';
 import type { CampaignState, RegionState } from '../core/campaign';
 import { caravanLocation, seaLaneClosed, strengthOf, wallTier } from '../core/campaign';
+import {
+  canSeeAgent,
+  canSeeArmy,
+  canSeeCaravan,
+  canSeeFleet,
+  watchedProvinces,
+  watchedZones,
+} from '../core/campaign/sight';
 import { REGIONS, getRegion } from '../core/data/regions';
 import { BORDERS } from '../core/data/adjacency';
 import { tryGetFaction, INDEPENDENT_ID } from '../core/data/factions';
@@ -53,6 +61,17 @@ export interface MapView {
   alwaysLabel: boolean;
   /** Draw every trade road, not only the ones through the selection. */
   showRoutes: boolean;
+}
+
+/**
+ * What the player can see this frame.
+ *
+ * Computed once per draw rather than per province, because every layer below
+ * needs it and the answer does not change inside one frame.
+ */
+interface Sight {
+  readonly provinces: ReadonlySet<RegionId>;
+  readonly zones: ReadonlySet<string>;
 }
 
 const INDEPENDENT_COLOUR = '#8d8578';
@@ -145,6 +164,10 @@ export function drawMap(
   const { width, height } = view.viewport;
   const t = viewTransform(view.camera, view.viewport);
   const zoom = view.camera.zoom;
+  const sight: Sight = {
+    provinces: watchedProvinces(state, state.player),
+    zones: watchedZones(state, state.player),
+  };
 
   ctx.save();
   ctx.clearRect(0, 0, width, height);
@@ -170,18 +193,19 @@ export function drawMap(
   drawRealmBands(ctx, state, t, zoom);
   drawTerrain(ctx, state, view, t);
   drawProvinceBorders(ctx, state, view, t);
+  drawVeil(ctx, state, view, t, sight);
   ctx.restore();
 
   drawWater(ctx, t, zoom);
   drawCoast(ctx, land, zoom);
-  drawSeaBorders(ctx, state, view);
-  drawSeaZones(ctx, state, view);
+  drawSeaBorders(ctx, state, view, sight);
+  drawSeaZones(ctx, state, view, sight);
   drawTradeRoutes(ctx, state, view);
   drawReachable(ctx, state, view, t);
-  drawSettlements(ctx, state, view, t);
-  drawForces(ctx, state, view, t);
-  drawCaravans(ctx, state, view);
-  drawAgents(ctx, state, view);
+  drawSettlements(ctx, state, view, t, sight);
+  drawForces(ctx, state, view, t, sight);
+  drawCaravans(ctx, state, view, sight);
+  drawAgents(ctx, state, view, sight);
   drawHolyWar(ctx, state, view);
   drawLabels(ctx, state, view, t);
   drawSelection(ctx, state, view, t);
@@ -453,6 +477,33 @@ function drawProvinceBorders(
   ctx.restore();
 }
 
+/**
+ * A veil over ground we have no eyes on.
+ *
+ * Who holds a province and how big its town is were public facts; what is
+ * standing in it was not. The veil marks where that knowledge ends, so the
+ * player can tell the difference between an empty province and one he simply
+ * cannot see into.
+ */
+function drawVeil(
+  ctx: CanvasRenderingContext2D,
+  state: CampaignState,
+  view: MapView,
+  t: Transform,
+  sight: Sight,
+): void {
+  ctx.save();
+  ctx.fillStyle = 'rgba(12, 16, 22, 0.3)';
+  for (const shape of provinceShapes()) {
+    if (!state.regions.has(shape.id) || shape.cell.length < 3) continue;
+    if (sight.provinces.has(shape.id)) continue;
+    tracePath(ctx, shape.cell, t);
+    ctx.fill();
+  }
+  void view;
+  ctx.restore();
+}
+
 /** Lakes and the great rivers. */
 function drawWater(ctx: CanvasRenderingContext2D, t: Transform, zoom: number): void {
   ctx.save();
@@ -500,7 +551,12 @@ function drawCoast(ctx: CanvasRenderingContext2D, land: Path2D, zoom: number): v
 }
 
 /** The sea crossings an army can make, and which of them a fleet has closed. */
-function drawSeaBorders(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
+function drawSeaBorders(
+  ctx: CanvasRenderingContext2D,
+  state: CampaignState,
+  view: MapView,
+  sight: Sight,
+): void {
   ctx.save();
   ctx.setLineDash([5, 6]);
   for (const border of BORDERS) {
@@ -511,8 +567,13 @@ function drawSeaBorders(ctx: CanvasRenderingContext2D, state: CampaignState, vie
     const a = screenPositionOf(view, border.a);
     const b = screenPositionOf(view, border.b);
     if (offScreen(a, b, view.viewport)) continue;
+    // Whether a crossing is shut is a fact about somebody's fleet, so it is
+    // only known where that fleet could be seen.
+    const watched = sight.provinces.has(border.a) || sight.provinces.has(border.b);
     const closed =
-      from.owner !== to.owner ? seaLaneClosed(state, from.owner, border.a, border.b) : false;
+      watched && from.owner !== to.owner
+        ? seaLaneClosed(state, from.owner, border.a, border.b)
+        : false;
     ctx.strokeStyle = closed ? 'rgba(226, 87, 76, 0.65)' : 'rgba(150, 196, 226, 0.3)';
     ctx.lineWidth = closed ? 1.8 : 1;
     ctx.beginPath();
@@ -523,7 +584,12 @@ function drawSeaBorders(ctx: CanvasRenderingContext2D, state: CampaignState, vie
   ctx.restore();
 }
 
-function drawSeaZones(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
+function drawSeaZones(
+  ctx: CanvasRenderingContext2D,
+  state: CampaignState,
+  view: MapView,
+  sight: Sight,
+): void {
   const zoom = view.camera.zoom;
   const radius = zoneRadius(zoom);
   ctx.save();
@@ -535,8 +601,13 @@ function drawSeaZones(ctx: CanvasRenderingContext2D, state: CampaignState, view:
     const reachable = view.reachableZones.has(zone.id);
     const selected = view.selectedZone === zone.id;
     const hovered = view.hoveredZone === zone.id;
+    // Naming a water because somebody's hulls are on it is itself a fact
+    // about those hulls, so it only happens where they can be seen.
     const occupied = [...state.fleets.values()].some(
-      (fleet) => fleet.location.kind === 'sea' && fleet.location.zone === zone.id,
+      (fleet) =>
+        fleet.location.kind === 'sea' &&
+        fleet.location.zone === zone.id &&
+        canSeeFleet(state, state.player, fleet.id, sight.provinces, sight.zones),
     );
     if (reachable || selected || hovered) {
       ctx.beginPath();
@@ -635,6 +706,7 @@ function drawSettlements(
   state: CampaignState,
   view: MapView,
   t: Transform,
+  sight: Sight,
 ): void {
   const zoom = view.camera.zoom;
   for (const geography of REGIONS) {
@@ -656,8 +728,9 @@ function drawSettlements(
       port: geography.port,
     });
 
-    // A besieged place gets a ring of the besieger's intent.
-    if (region.siege) {
+    // A besieged place gets a ring of the besieger's intent — where we have
+    // somebody near enough to know an army is sitting outside it.
+    if (region.siege && sight.provinces.has(region.id)) {
       ctx.save();
       ctx.beginPath();
       ctx.arc(x, y, scale * 2.1, 0, Math.PI * 2);
@@ -675,6 +748,7 @@ function drawForces(
   state: CampaignState,
   view: MapView,
   t: Transform,
+  sight: Sight,
 ): void {
   const zoom = view.camera.zoom;
   const size = Math.max(3.5, Math.min(13, zoom * 0.3));
@@ -682,6 +756,7 @@ function drawForces(
   // Armies, fanned out where several share a province.
   const byRegion = new Map<RegionId, { colour: string; dark: string; men: number }[]>();
   for (const army of state.armies.values()) {
+    if (!canSeeArmy(state, state.player, army.id, sight.provinces)) continue;
     const faction = tryGetFaction(army.faction);
     const list = byRegion.get(army.location) ?? [];
     list.push({
@@ -704,6 +779,7 @@ function drawForces(
   // Fleets, at anchor beside their harbour or on station in open water.
   const fleetGroups = new Map<string, { x: number; y: number; colour: string; dark: string; laden: boolean }[]>();
   for (const fleet of state.fleets.values()) {
+    if (!canSeeFleet(state, state.player, fleet.id, sight.provinces, sight.zones)) continue;
     const faction = tryGetFaction(fleet.faction);
     const anchor =
       fleet.location.kind === 'port'
@@ -732,11 +808,17 @@ function drawForces(
   }
 }
 
-function drawCaravans(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
+function drawCaravans(
+  ctx: CanvasRenderingContext2D,
+  state: CampaignState,
+  view: MapView,
+  sight: Sight,
+): void {
   if (view.camera.zoom < DETAIL_ZOOM) return;
   const size = Math.max(2.4, Math.min(7, view.camera.zoom * 0.17));
   const byRegion = new Map<RegionId, string[]>();
   for (const caravan of state.caravans.values()) {
+    if (!canSeeCaravan(state, state.player, caravan.id, sight.provinces)) continue;
     const where = caravanLocation(caravan);
     if (!where) continue;
     const colour = tryGetFaction(caravan.faction)?.colour ?? INDEPENDENT_COLOUR;
@@ -755,11 +837,17 @@ function drawCaravans(ctx: CanvasRenderingContext2D, state: CampaignState, view:
  * stand in so that they do not collide with the armies below it or the
  * caravans above it.
  */
-function drawAgents(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
+function drawAgents(
+  ctx: CanvasRenderingContext2D,
+  state: CampaignState,
+  view: MapView,
+  sight: Sight,
+): void {
   if (view.camera.zoom < DETAIL_ZOOM) return;
   const size = Math.max(2.6, Math.min(8, view.camera.zoom * 0.2));
   const byRegion = new Map<RegionId, { colour: string; dark: string; kind: AgentKind }[]>();
   for (const agent of state.agents.values()) {
+    if (!canSeeAgent(state, state.player, agent.id, sight.provinces)) continue;
     const faction = tryGetFaction(agent.faction);
     const list = byRegion.get(agent.location) ?? [];
     list.push({

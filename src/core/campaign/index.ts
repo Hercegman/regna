@@ -49,5 +49,6 @@ export * from './faith';
 export * from './agents';
 export * from './dynasty';
 export * from './civilwar';
+export * from './sight';
 export * from './save';
 export { takeAiTurn } from './ai';
