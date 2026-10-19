@@ -124,7 +124,7 @@ export class BattleScreen {
     // A camera the player has not touched keeps the whole field in view; one
     // they have is left where they put it.
     if (this.view.touched) clampBattleCamera(this.view);
-    else frameBattleCamera(this.view, this.battle.units);
+    else frameBattleCamera(this.view, this.battle.units, this.battle.setup.settlement);
   }
 
   private attachInput(): void {

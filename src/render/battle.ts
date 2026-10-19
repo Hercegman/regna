@@ -19,7 +19,7 @@ import { getUnitType } from '../core/data/units';
 import { tryGetFaction } from '../core/data/factions';
 import type { BattleState } from '../core/battle/sim';
 import { frontage } from '../core/battle/sim';
-import type { BattleUnit } from '../core/battle/types';
+import type { BattleSettlement, BattleUnit } from '../core/battle/types';
 import { FIELD_DEPTH, FIELD_WIDTH } from '../core/battle/types';
 import { drawTerrainMark, jitter, terrainColour } from './mapArt';
 
@@ -59,7 +59,11 @@ export function fitBattleCamera(view: BattleView): void {
  * on empty grass. Framing the men instead roughly doubles the scale, which is
  * the difference between seeing regiments and seeing marks.
  */
-export function frameBattleCamera(view: BattleView, units: readonly BattleUnit[]): void {
+export function frameBattleCamera(
+  view: BattleView,
+  units: readonly BattleUnit[],
+  settlement?: BattleSettlement | undefined,
+): void {
   const standing = units.filter((unit) => !unit.fled && unit.stance !== 'destroyed');
   if (standing.length === 0) {
     fitBattleCamera(view);
@@ -75,6 +79,14 @@ export function frameBattleCamera(view: BattleView, units: readonly BattleUnit[]
     maxX = Math.max(maxX, unit.position.x + half);
     minY = Math.min(minY, unit.position.y);
     maxY = Math.max(maxY, unit.position.y);
+  }
+  // The place being stormed is the point of the battle, so it is in the frame
+  // whether or not anyone is standing on the far side of it.
+  if (settlement) {
+    minX = Math.min(minX, settlement.centre.x - settlement.radius);
+    maxX = Math.max(maxX, settlement.centre.x + settlement.radius);
+    minY = Math.min(minY, settlement.centre.y - settlement.radius);
+    maxY = Math.max(maxY, settlement.centre.y + settlement.radius);
   }
   // Room for the standards above the line and for an advance to begin.
   const margin = 90;
@@ -320,19 +332,30 @@ function drawSettlementWorks(
   ctx.save();
   ctx.beginPath();
   ctx.arc(centre.x, centre.y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(96, 90, 76, 0.75)';
+  ctx.fillStyle = '#9a8f74';
   ctx.fill();
   ctx.clip();
-  for (let i = 0; i < 26; i++) {
+  // The shadow the wall throws inwards, which is what makes it a wall and not
+  // a drawn circle.
+  ctx.strokeStyle = 'rgba(32, 28, 20, 0.3)';
+  ctx.lineWidth = radius * 0.16;
+  ctx.beginPath();
+  ctx.arc(centre.x, centre.y, radius - radius * 0.08, 0, Math.PI * 2);
+  ctx.stroke();
+
+  for (let i = 0; i < 34; i++) {
     const angle = jitter(i, 7) * Math.PI * 2;
-    const reach = radius * 0.86 * Math.sqrt(jitter(i, 17));
+    const reach = radius * 0.84 * Math.sqrt(jitter(i, 17));
     const hx = centre.x + Math.cos(angle) * reach;
     const hy = centre.y + Math.sin(angle) * reach;
-    const w = radius * 0.11;
+    const w = radius * (0.06 + jitter(i, 31) * 0.04);
+    // Walls, then the roof over them: a triangle alone reads as a tent.
+    ctx.fillStyle = '#b6a98c';
+    ctx.fillRect(hx - w * 0.8, hy - w * 0.1, w * 1.6, w * 0.9);
     ctx.beginPath();
-    ctx.moveTo(hx - w, hy + w * 0.6);
-    ctx.lineTo(hx, hy - w * 0.8);
-    ctx.lineTo(hx + w, hy + w * 0.6);
+    ctx.moveTo(hx - w, hy);
+    ctx.lineTo(hx, hy - w * 0.85);
+    ctx.lineTo(hx + w, hy);
     ctx.closePath();
     ctx.fillStyle = i % 2 === 0 ? '#8a5a3c' : '#5f3c28';
     ctx.fill();

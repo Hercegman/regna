@@ -42,6 +42,10 @@ export class App {
       this.openDemoBattle();
       return;
     }
+    if (demo === 'siege') {
+      this.openDemoSiege();
+      return;
+    }
     if (demo === 'sea') {
       this.openDemoSeaBattle();
       return;
@@ -209,6 +213,42 @@ export class App {
     const plan = planBattle(state, attacker.location, [attacker], [defender]);
     this.state = state;
     const screen = new BattleScreen(this.host, plan, 'france', () => this.showFactionSelect());
+    applyBattleParams(screen);
+  }
+
+  /**
+   * An assault on a walled town, which is the one battle with works on the
+   * field and the one the garrison turns out for.
+   */
+  private openDemoSiege(): void {
+    const state = newCampaign({ seed: 'demo-siege', player: 'hre' as FactionId });
+    const besieger = [...state.armies.values()].find(
+      (army) => army.faction === ('hre' as FactionId),
+    );
+    if (!besieger) {
+      this.showFactionSelect();
+      return;
+    }
+    const target = [...state.regions.values()].find(
+      (region) => region.owner !== besieger.faction && region.tier !== 'village',
+    );
+    if (!target) {
+      this.showFactionSelect();
+      return;
+    }
+    for (const id of [
+      'imperial_spearmen', 'imperial_spearmen', 'armoured_sergeants', 'halberdiers',
+      'crossbow_militia', 'levy_archers', 'mailed_knights',
+    ]) {
+      const type = getUnitType(unitTypeId(id));
+      besieger.regiments.push({ type: type.id, soldiers: type.soldiers, experience: 2 });
+    }
+    besieger.location = target.id;
+    const plan = planBattle(state, target.id, [besieger], [], { isAssault: true });
+    this.state = state;
+    const screen = new BattleScreen(this.host, plan, 'hre' as FactionId, () =>
+      this.showFactionSelect(),
+    );
     applyBattleParams(screen);
   }
 

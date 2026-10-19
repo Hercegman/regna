@@ -268,6 +268,7 @@ URL parameters open a known state without a sequence of clicks:
 ?faction=venice&look=venice&zoom=40      the map, over a given province, close in
 ?demo=battle&at=255                      a land battle four minutes in
 ?demo=battle&at=255&bzoom=3              the same battle, close enough to see the men
+?demo=siege&at=240                       an assault on a walled town
 ?demo=sea&play=1                         a sea fight, running
 ?demo=end&faction=croatia                the closing reckoning
 ```
