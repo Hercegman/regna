@@ -35,6 +35,7 @@ import {
   succeed,
 } from './dynasty';
 import { desertUnpaid, mutiny, replenishMercenaries } from './mercenaries';
+import { considerCivilWar, progressCivilWars } from './civilwar';
 import { considerHolyWar, driftStanding, notePiety, progressHolyWar } from './faith';
 import { getBuildingType } from '../data/buildings';
 import { getUnitType } from '../data/units';
@@ -43,7 +44,7 @@ import { getFaction, tryGetFaction, INDEPENDENT_ID } from '../data/factions';
 import { freeGarrisonCount, movementBudget, transferProvince } from './actions';
 import { driftRelations } from './diplomacy';
 import { dueThisYear, emerge, reapDeadFactions } from './emergence';
-import { takeAiTurn } from './ai';
+import { movePretenders, takeAiTurn } from './ai';
 import type { Rng } from '../rng';
 
 export interface TurnReport {
@@ -66,7 +67,10 @@ export function endTurn(state: CampaignState): TurnReport {
     takeAiTurn(state, id, rng);
   }
 
-  // 2. Resolve what the turn's events left standing.
+  // 2. The pretenders march, and then everything that was left standing is
+  // resolved. They move after the realms so that a rising cannot be answered
+  // before it has happened.
+  movePretenders(state, rng);
   progressSieges(state, rng);
 
   // 3. Provinces: build, muster, grow, settle or revolt.
@@ -99,6 +103,8 @@ export function endTurn(state: CampaignState): TurnReport {
   for (const id of dueThisYear(state)) emerge(state, id, rng);
   reapDeadFactions(state);
   driftRelations(state, rng);
+  progressCivilWars(state);
+  considerCivilWar(state, rng);
   ageCharacters(state, rng);
   bearChildren(state, rng);
   attendCourt(state, rng);

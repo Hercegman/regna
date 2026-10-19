@@ -83,6 +83,12 @@ export function claimOf(
     else if (character.id === lateRuler.spouse) claim = 45;
     else if (sharesDescent(faction, character, lateRuler)) claim = 35;
   }
+  // Descent from any king this realm has had, not only from the last one.
+  // This is what a pretender's whole argument rested on, and without it a
+  // magnate who had taken a throne outranked the dead king's own son.
+  if (character.father && faction.crowned.includes(character.father as string)) {
+    claim = Math.max(claim, 60);
+  }
   if (character.sex === 'f') claim -= 12;
   // A man the realm already trusts with something is easier to accept.
   claim += character.governance * 0.4 + character.command * 0.3;
@@ -319,6 +325,7 @@ export function succeed(
 
   heir.leader = true;
   heir.name = nameRuler(faction, givenNameOf(heir));
+  faction.crowned.push(heir.id as string);
   const legitimacy = AFTER[by];
   faction.legitimacy = legitimacy;
 

@@ -15,6 +15,7 @@ import {
   appointGeneral,
   availableBuildings,
   mergeArmies,
+  movementBudget,
   setGovernor,
   unassignedCharacters,
   sortieFromGarrison,
@@ -1443,6 +1444,75 @@ function targetScore(state: CampaignState, army: Army, target: RegionId): number
     // No great power takes offence when an independent town is annexed.
   if (province.owner === INDEPENDENT_ID) score += 3;
   return score;
+}
+
+/**
+ * The pretenders.
+ *
+ * Their armies belong to nobody, because from everyone else's point of view
+ * that is what a rising is: ground and men the king no longer controls. They
+ * are the one exception to the rule that independents do not manoeuvre, and
+ * they have exactly one idea, which is the only one a pretender needed — go
+ * to the capital and take it.
+ */
+export function movePretenders(state: CampaignState, rng: Rng): void {
+  for (const war of [...state.civilWars.values()]) {
+    const crown = state.factions.get(war.crown);
+    const capital = crown?.capital;
+    if (!capital) continue;
+    for (const id of [...war.armies]) {
+      const army = state.armies.get(id);
+      if (!army || army.regiments.length === 0) continue;
+      army.movement = movementBudget(state, army);
+      marchOnTheCapital(state, army, capital, rng);
+    }
+  }
+}
+
+function marchOnTheCapital(
+  state: CampaignState,
+  army: Army,
+  capital: RegionId,
+  rng: Rng,
+): void {
+  // A host that has been cut to pieces sits down in what it still holds
+  // rather than throwing itself at walls.
+  if (strengthOf(army.regiments) < 200) return;
+
+  for (let step = 0; step < 3 && army.movement > 0; step++) {
+    if (army.location === capital) return;
+    const next = towardsProvince(army.location, capital);
+    if (!next) return;
+    const before = army.location;
+    attemptMove(state, army, next, rng);
+    // A move that produced a battle or a siege is the end of the season.
+    if (army.location === before) return;
+  }
+}
+
+/** One step along the shortest land route, through anybody's ground. */
+function towardsProvince(from: RegionId, goal: RegionId): RegionId | undefined {
+  if (from === goal) return undefined;
+  const seen = new Set<RegionId>([from]);
+  let frontier: { id: RegionId; first: RegionId }[] = [];
+  for (const id of landNeighbours(from)) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    frontier.push({ id, first: id });
+  }
+  for (let depth = 0; depth < 16 && frontier.length > 0; depth++) {
+    for (const entry of frontier) if (entry.id === goal) return entry.first;
+    const next: { id: RegionId; first: RegionId }[] = [];
+    for (const entry of frontier) {
+      for (const neighbour of landNeighbours(entry.id)) {
+        if (seen.has(neighbour)) continue;
+        seen.add(neighbour);
+        next.push({ id: neighbour, first: entry.first });
+      }
+    }
+    frontier = next;
+  }
+  return undefined;
 }
 
 function attemptMove(state: CampaignState, army: Army, to: RegionId, rng: Rng): void {

@@ -206,6 +206,38 @@ knife used to clean up after themselves separately, and two of the three
 forgot that the dead man might be the king: a ruler killed in battle left his
 realm with nobody on the throne and nothing ever noticed.
 
+### Civil war
+
+A disputed succession cost the realm order in every province it held and
+nothing else. What a disputed succession actually was is somebody else with a
+claim, provinces declaring for him, and an army marching on the capital.
+
+Two kinds of man rise. The first has the better right: a king's son passed
+over, a brother who thought it should have been his. A claim is descent from
+anybody this realm has crowned — not merely from the last ruler, which was the
+bug that made the model useless, because by the time a usurper is on the
+throne the old house is usually the reason he is there. The second kind has no
+right at all and does not need one: a capable magnate looking at a king his own
+realm does not believe in.
+
+The provinces that declare are the discontented and the recently conquered, up
+to a third of the realm, never the capital — that is the thing he has to come
+and take. They leave the realm and are held as the independent lords hold
+theirs, because from everybody else's point of view that is exactly what they
+are: ground the king no longer controls. The difference is that this ground
+has a claimant standing on it, and his host is the one independent army in the
+game that manoeuvres. It has a single idea, which is the only one a pretender
+needed.
+
+It ends three ways. He reaches the capital and is king, and everything that
+declared for him comes back into the realm with him while the old king is
+deposed. The crown takes back everything that declared and breaks his army.
+Or nobody wins for a generation and the cause dies with its moment, which
+leaves the crown with the worst of both.
+
+Measured over three two-century campaigns: two to four risings each, never
+more than three at once.
+
 ## Men who are not soldiers
 
 Everything else in the game moves soldiers. Most of what a medieval state
@@ -414,9 +446,6 @@ succeeds would be a poor teacher.
 - **No fog of war.** Every province, army, fleet and agent is visible to
   everyone. A spy therefore sells sabotage and murder rather than information,
   which is the honest way to price him in a game where nothing is hidden.
-- **No civil wars.** A disputed succession costs a realm order everywhere; it
-  does not yet produce a rival claimant with an army, which is what a disputed
-  succession usually turned into.
 - **Battle AI is a doctrine, not a search.** Hold a line with the heavy foot,
   shoot with everything, use cavalry against whatever is exposed.
 

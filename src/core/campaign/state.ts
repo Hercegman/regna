@@ -22,6 +22,7 @@ import type {
 } from '../types';
 import { armyId, fleetId, caravanId, characterId } from '../types';
 import type { AgentKind } from '../data/agents';
+import type { CivilWar } from './civilwar';
 import { SETTLEMENT_ORDER } from '../types';
 import type { RngState } from '../rng';
 import { Rng } from '../rng';
@@ -233,11 +234,19 @@ export interface FactionState {
    */
   rulers: string[];
   /**
+   * The ids of everyone who has actually held the crown. A claim is descent
+   * from one of these; without the list a realm cannot tell a king's son from
+   * a magnate's, and every pretender measured himself against the wrong man.
+   */
+  crowned: string[];
+  /**
    * Turns in a row the realm has failed to pay its soldiers. Hired companies
    * watch this number more closely than anyone: the first season's arrears
    * sends them home, the second makes them consider what else is on offer.
    */
   arrears: number;
+  /** Turn the realm's last civil war began, so one does not follow another. */
+  lastCivilWar: number;
   /** Turn the faction entered play. */
   joinedOn: number;
   /** Set when the faction has lost every province. */
@@ -269,6 +278,11 @@ export interface CampaignState {
    * whoever pays him.
    */
   agents: Map<AgentId, Agent>;
+  /**
+   * Risings against a crown, keyed by the crown being fought for. A realm can
+   * only be torn in two one way at a time.
+   */
+  civilWars: Map<FactionId, CivilWar>;
   /**
    * How many companies are standing about in each mercenary pool. Keyed by
    * pool id, and part of the state because hiring one denies it to everybody
@@ -692,6 +706,7 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
     fleets: new Map(),
     caravans: new Map(),
     agents: new Map(),
+    civilWars: new Map(),
     mercenaries: initialMercenaryPools(),
     faith: { standing: new Map(), censured: new Map(), holyWar: undefined, lastWarEnded: -99 },
     nextArmySerial: 0,
@@ -755,7 +770,9 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
       characters: [],
       legitimacy: 100,
       rulers: [],
+    crowned: [],
       arrears: 0,
+    lastCivilWar: -999,
       joinedOn: present ? 0 : -1,
       destroyedOn: undefined,
     });
@@ -770,7 +787,9 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
     characters: [],
     legitimacy: 100,
     rulers: [],
+    crowned: [],
     arrears: 0,
+    lastCivilWar: -999,
     joinedOn: 0,
     destroyedOn: undefined,
   });
@@ -780,6 +799,7 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
     if (!faction.alive || id === INDEPENDENT_ID) continue;
     const leader = nextCharacter(state, id, rng, true);
     leader.name = nameRuler(faction, givenNameOf(leader));
+    faction.crowned.push(leader.id as string);
     faction.characters.push(leader);
 
     const capital = faction.capital;

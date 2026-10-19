@@ -147,6 +147,7 @@ select.select {
 }
 .holy-badge.calling { border-color: var(--accent); color: var(--accent); }
 .holy-badge.sworn { border-color: var(--good); color: var(--good); }
+.holy-badge.revolt { border-color: var(--bad); color: var(--bad); }
 .coin::before { content: "ƒ "; opacity: 0.7; }
 .income { font-variant-numeric: tabular-nums; }
 

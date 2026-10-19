@@ -127,6 +127,7 @@ export function emerge(state: CampaignState, id: FactionId, rng: Rng): boolean {
     guile: rng.int(2, 7),
     age: rng.int(28, 46),
   });
+  faction.crowned.push(leader.id as string);
   faction.characters.push(leader);
   foundCourt(state, id, leader, rng);
   // He rides with the founding army rather than sitting in the seat he has

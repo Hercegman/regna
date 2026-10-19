@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-d9b55f?style=flat-square&labelColor=12161a)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white&labelColor=12161a)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-6-646cff?style=flat-square&logo=vite&logoColor=white&labelColor=12161a)](https://vite.dev)
-[![Tests](https://img.shields.io/badge/tests-361%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
+[![Tests](https://img.shields.io/badge/tests-380%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
 [![Runtime deps](https://img.shields.io/badge/runtime%20dependencies-none-8b91a0?style=flat-square&labelColor=12161a)](#architecture)
 
 [Why](#why-regna) · [The world](#the-world) · [Features](#features) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Playing](#playing) · [Architecture](#architecture) · [Roadmap](#roadmap)
@@ -125,6 +125,14 @@ play in the year it actually rose, at the place it rose from.
   husband's, keeps the house she came from, and that is the bond. It is the
   cheapest instrument in the game and every realm uses it, including the ones
   you are about to be invaded by.
+
+- **And a realm can come apart.** A king his own realm does not believe in
+  invites a rival: a son passed over, a brother, or simply a capable magnate.
+  Provinces declare for him, leave the realm, and his host marches on the
+  capital. If he reaches it he is king and the realm is whole again under him;
+  if the crown takes back everything that declared, the rising is put down; if
+  neither happens for a generation, the cause dies and the provinces stay out
+  of the king's hands.
 
 - **Four men and a purse.** A spy, an envoy, a priest and a factor go where an
   army cannot and nobody declares war over them. They cross any border in any
@@ -283,7 +291,7 @@ Both are offered again on the faction select screen.
 | `src/render/` | The Mercator projection and camera, the province geometry, the vector art, the campaign map, the battlefield. |
 | `src/ui/` | Screens, panels, persistence. Plain DOM, no framework. |
 | `tools/` | `build-geography.py`, which turns Natural Earth's vectors into the checked-in coastline. |
-| `tests/` | 361 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
+| `tests/` | 380 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
 
 Nothing in `src/core/` touches the DOM or calls `Math.random`. Randomness comes
 from a xoshiro128\*\* generator whose state is saved with the campaign, which is
@@ -329,7 +337,7 @@ URL parameters open a known state without a sequence of clicks:
 - [x] Dynasties: marriage, legitimacy, and a succession that follows the line
 - [x] Mercenary politics: companies that change sides, or take a city instead of a contract
 - [x] An opening guide, because the interface is dense and used to say nothing
-- [ ] Civil war: a disputed succession that produces a rival claimant with an army
+- [x] Civil war: a disputed succession that produces a rival claimant with an army
 - [ ] Fog of war, which would give a spy something to sell besides sabotage
 
 ## Not a reimplementation

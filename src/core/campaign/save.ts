@@ -48,6 +48,7 @@ import type {
 } from './state';
 import type { RngState } from '../rng';
 import type { AgentKind } from '../data/agents';
+import type { CivilWar } from './civilwar';
 import type { SeaZoneId } from '../data/seas';
 import type { TradeRouteId } from '../data/trade';
 
@@ -59,9 +60,10 @@ import type { TradeRouteId } from '../data/trade';
  * the authority of his faith, who is under censure, and the holy war being
  * preached, version 6 the agents in the field, and version 7 the dynasties:
  * each character's sex, father and spouse, and each realm's legitimacy and
- * line of rulers, and version 8 what each realm owes its soldiers.
+ * line of rulers, version 8 what each realm owes its soldiers, and version 9
+ * the risings against a crown.
  */
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 interface SavedRegiment {
   readonly t: string;
@@ -114,7 +116,9 @@ interface SavedFaction {
   readonly characters: readonly SavedCharacter[];
   readonly legitimacy: number;
   readonly rulers: readonly string[];
+  readonly crowned: readonly string[];
   readonly arrears: number;
+  readonly lastCivilWar: number;
   readonly joinedOn: number;
   readonly destroyedOn: number | null;
 }
@@ -154,6 +158,15 @@ interface SavedAgent {
   readonly missions: number;
 }
 
+interface SavedCivilWar {
+  readonly crown: string;
+  readonly claimant: SavedCharacter;
+  readonly declaredOn: number;
+  readonly expires: number;
+  readonly provinces: readonly string[];
+  readonly armies: readonly string[];
+}
+
 interface SavedArmy {
   readonly id: string;
   readonly faction: string;
@@ -183,6 +196,7 @@ export interface SavedCampaign {
   readonly fleets: readonly SavedFleet[];
   readonly caravans: readonly SavedCaravan[];
   readonly agents: readonly SavedAgent[];
+  readonly civilWars: readonly SavedCivilWar[];
   readonly mercenaries: readonly [string, { available: number; countdown: number }][];
   readonly faith: {
     readonly standing: readonly [string, number][];
@@ -275,7 +289,9 @@ export function serialiseCampaign(state: CampaignState): SavedCampaign {
       characters: faction.characters.map(saveCharacter),
       legitimacy: faction.legitimacy,
       rulers: [...faction.rulers],
+      crowned: [...faction.crowned],
       arrears: faction.arrears,
+      lastCivilWar: faction.lastCivilWar,
       joinedOn: faction.joinedOn,
       destroyedOn: faction.destroyedOn ?? null,
     })),
@@ -327,6 +343,14 @@ export function serialiseCampaign(state: CampaignState): SavedCampaign {
       cargo: fleet.cargo.map(saveRegiment),
       admiral: (fleet.admiral?.id as string | undefined) ?? null,
       movement: fleet.movement,
+    })),
+    civilWars: [...state.civilWars.values()].map((war) => ({
+      crown: war.crown as string,
+      claimant: saveCharacter(war.claimant),
+      declaredOn: war.declaredOn,
+      expires: war.expires,
+      provinces: war.provinces.map((id) => id as string),
+      armies: war.armies.map((id) => id as string),
     })),
     agents: [...state.agents.values()].map((agent) => ({
       id: agent.id as string,
@@ -407,7 +431,9 @@ export function deserialiseCampaign(saved: SavedCampaign): CampaignState {
       characters: own,
       legitimacy: entry.legitimacy ?? 100,
       rulers: [...(entry.rulers ?? [])],
+      crowned: [...(entry.crowned ?? [])],
       arrears: entry.arrears ?? 0,
+      lastCivilWar: entry.lastCivilWar ?? -999,
       joinedOn: entry.joinedOn,
       destroyedOn: entry.destroyedOn ?? undefined,
     });
@@ -507,6 +533,19 @@ export function deserialiseCampaign(saved: SavedCampaign): CampaignState {
     });
   }
 
+  const civilWars = new Map<FactionId, CivilWar>();
+  for (const entry of saved.civilWars ?? []) {
+    const crown = toFactionId(entry.crown) as FactionId;
+    civilWars.set(crown, {
+      crown,
+      claimant: loadCharacter(entry.claimant),
+      declaredOn: entry.declaredOn,
+      expires: entry.expires,
+      provinces: entry.provinces.map((id) => toRegionId(id) as RegionId),
+      armies: entry.armies.map((id) => toArmyId(id) as ArmyId),
+    });
+  }
+
   const mercenaries = new Map<string, { available: number; countdown: number }>(
     (saved.mercenaries ?? []).map(([id, pool]) => [id, { ...pool }]),
   );
@@ -553,6 +592,7 @@ export function deserialiseCampaign(saved: SavedCampaign): CampaignState {
     fleets,
     caravans,
     agents,
+    civilWars,
     mercenaries,
     faith,
     nextArmySerial: saved.nextArmySerial,

@@ -104,6 +104,7 @@ import {
 } from '../core/campaign/agents';
 import type { MissionOffer } from '../core/campaign/agents';
 import { AGENT_TYPES, getAgentType } from '../core/data/agents';
+import { civilWarAgainst, civilWarStanding } from '../core/campaign/civilwar';
 import {
   canMarry,
   heirApparent,
@@ -587,6 +588,7 @@ export class CampaignScreen {
         el('strong', {}, `${state.year}`),
         el('span', { class: 'muted' }, pretty(state.season)),
         el('span', { class: 'muted' }, `turn ${state.turn}`),
+        this.civilWarBadge(),
         this.holyWarBadge(),
       ),
     );
@@ -624,6 +626,27 @@ export class CampaignScreen {
         }, this.busy ? 'Resolving…' : 'End turn'),
       ),
     );
+  }
+
+  /**
+   * A word in the top bar while somebody is fighting us for our own throne.
+   * It is the one event that can end a campaign without a foreign army ever
+   * crossing the border, so it does not wait to be found in a panel.
+   */
+  private civilWarBadge(): HTMLElement | false {
+    const war = civilWarAgainst(this.state, this.state.player);
+    if (!war) return false;
+    const standing = civilWarStanding(this.state, this.state.player);
+    return el('button', {
+      class: 'holy-badge revolt',
+      title: `${standing?.declared ?? 0} provinces have declared for him. ` +
+        'Take them back and break his army, or lose the throne.',
+      onClick: () => {
+        this.tab = 'realm';
+        this.seen.add('tab:realm');
+        this.renderAll();
+      },
+    }, `${war.claimant.name} in revolt`);
   }
 
   /** A word in the top bar while a holy war stands, and a way into it. */
@@ -1641,6 +1664,24 @@ export class CampaignScreen {
       row('Line', faction.rulers.length > 1 ? faction.rulers.join(', ') : faction.rulers[0] ?? '—'),
     ));
 
+    const war = civilWarAgainst(this.state, me);
+    if (war) {
+      const standing = civilWarStanding(this.state, me)!;
+      body.appendChild(el('div', { class: 'offer' },
+        el('div', { class: 'offer-main' },
+          el('strong', { class: 'bad' }, `${war.claimant.name} has raised his standard`),
+          el('p', { class: 'offer-text' },
+            'He holds provinces that have declared against us and is marching on the capital. ' +
+            'Take back everything that declared and break his army, or lose the throne.',
+          ),
+          el('p', { class: 'offer-meta' },
+            `${standing.declared} provinces in revolt · ${count(standing.men)} men under his standard · ` +
+            `${standing.seasonsLeft} seasons before his cause dies`,
+          ),
+        ),
+      ));
+    }
+
     const heir = heirApparent(this.state, me);
     body.appendChild(el('p', { class: 'offer-meta' },
       heir
@@ -1663,6 +1704,7 @@ export class CampaignScreen {
       if (army) roles.push('commands an army');
       if (!isAdult(character)) roles.push('a child');
       else if (!character.spouse) roles.push('unmarried');
+      else if (roles.length === 0) roles.push('married, unposted');
 
       body.appendChild(el('div', {
         class: 'realm-row',

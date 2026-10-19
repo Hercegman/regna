@@ -20,7 +20,7 @@ import { getRegion } from '../data/regions';
 import { borderBetween, landNeighbours, seaNeighbours } from '../data/adjacency';
 import { getUnitType } from '../data/units';
 import { isAdult } from './dynasty';
-import { getFaction, tryGetFaction, INDEPENDENT_ID } from '../data/factions';
+import { tryGetFaction, INDEPENDENT_ID } from '../data/factions';
 export { isAtWar } from './state';
 import { seaLaneClosed } from './naval';
 import { noteProvinceTaken } from './faith';
@@ -314,11 +314,11 @@ export function beginSiege(state: CampaignState, id: ArmyId, to: RegionId): Outc
   // Only announce a siege that is actually beginning. Re-stating it every turn
   // the army stands there would bury the rest of the chronicle.
   if (!alreadyOurs) {
-    logEvent(
-      state,
-      army.faction,
-      `${getFaction(army.faction).adjective} forces lay siege to ${getRegion(to).settlement}.`,
-    );
+    // An army without a faction behind it is a rising, not a realm: a
+    // pretender's host or the independent lords. They lay sieges too, and
+    // asking the faction table about them used to throw.
+    const besieger = tryGetFaction(army.faction)?.adjective ?? 'Rebel';
+    logEvent(state, army.faction, `${besieger} forces lay siege to ${getRegion(to).settlement}.`);
   }
   return ok;
 }
