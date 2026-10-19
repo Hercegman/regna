@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-d9b55f?style=flat-square&labelColor=12161a)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white&labelColor=12161a)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-6-646cff?style=flat-square&logo=vite&logoColor=white&labelColor=12161a)](https://vite.dev)
-[![Tests](https://img.shields.io/badge/tests-199%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
+[![Tests](https://img.shields.io/badge/tests-207%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
 [![Runtime deps](https://img.shields.io/badge/runtime%20dependencies-none-8b91a0?style=flat-square&labelColor=12161a)](#architecture)
 
 [Why](#why-regna) · [The world](#the-world) · [Features](#features) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Playing](#playing) · [Architecture](#architecture) · [Roadmap](#roadmap)
@@ -195,7 +195,7 @@ Both are offered again on the faction select screen.
 | `src/core/battle/` | Deployment, the fixed-timestep simulation, the battle AI and the ground. |
 | `src/render/` | The Mercator projection and camera, the campaign map, the battlefield. |
 | `src/ui/` | Screens, panels, persistence. Plain DOM, no framework. |
-| `tests/` | 199 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
+| `tests/` | 207 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
 
 Nothing in `src/core/` touches the DOM or calls `Math.random`. Randomness comes
 from a xoshiro128\*\* generator whose state is saved with the campaign, which is
@@ -228,11 +228,11 @@ URL parameters open a known state without a sequence of clicks:
 ?faction=croatia&turns=60&tab=trade      a campaign already sixty turns in
 ?demo=battle&at=255                      a land battle four minutes in
 ?demo=sea&play=1                         a sea fight, running
+?demo=end&faction=croatia                the closing reckoning
 ```
 
 ## Roadmap
 
-- [ ] End the campaign in 1530, with a reckoning rather than silence
 - [ ] The Papacy as a political force: crusades, excommunication, the interdict
 - [ ] Agents — spies, envoys, priests and merchants
 - [ ] Dynasties: marriage, legitimacy, and a disputed succession worth fighting

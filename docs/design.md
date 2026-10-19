@@ -186,6 +186,19 @@ The AI commits to about twenty-five turns of extra upkeep out of savings as
 well as out of income. Without that it spent revenue only, and a rich state sat
 on its money while poorer neighbours out-built it.
 
+## How a campaign ends
+
+Three ways, and the third is the one that was missing. A realm wins by
+supremacy when it holds more than half the map, and is finished by ruin when it
+holds no province and commands no army. Otherwise the campaign runs out of
+years in 1530 and is judged on where the realm stood: how much of the map it
+held, how many men were under arms, how many hulls were afloat, what was in the
+treasury, and its rank among the surviving powers.
+
+The end date existed in the rules from the beginning and nothing consulted it,
+so a campaign simply ran on for ever. `reckon` now answers all three cases in
+one place, and the interface asks it after every turn and every battle.
+
 ## What is deliberately simple
 
 - **No mercenary politics.** Companies serve or leave; they do not change

@@ -5,11 +5,10 @@
  * then re-renders from the returned state, so the interface cannot drift out of
  * step with the simulation or quietly do something the AI could not.
  */
-import type { ArmyId, BuildingId, FactionId, FleetId, RegionId, UnitTypeId } from '../core/types';
+import type { ArmyId, BuildingId, FleetId, RegionId, UnitTypeId } from '../core/types';
 import { SETTLEMENT_ORDER } from '../core/types';
 import type { Army, CampaignState, Fleet, FleetLocation, RegionState } from '../core/campaign';
 import {
-  armiesOf,
   availableBuildings,
   cancelConstruction,
   disbandRegiment,
@@ -81,7 +80,7 @@ import {
 import { getBuildingType } from '../core/data/buildings';
 import { getUnitType } from '../core/data/units';
 import { getRegion } from '../core/data/regions';
-import { FACTIONS, factionName, tryGetFaction, INDEPENDENT_ID } from '../core/data/factions';
+import { FACTIONS, factionName, tryGetFaction } from '../core/data/factions';
 import type { SeaZoneId } from '../core/data/seas';
 import { getSeaZone, zonesOffPort } from '../core/data/seas';
 import { getTradeRoute } from '../core/data/trade';
@@ -1525,31 +1524,6 @@ export class CampaignScreen {
     this.renderAll();
   }
 
-  /** Reports whether the player still holds anything. */
-  isDefeated(): boolean {
-    const faction = factionState(this.state, this.state.player);
-    return !faction.alive || (provincesOf(this.state, this.state.player).length === 0 &&
-      armiesOf(this.state, this.state.player).length === 0);
-  }
-
-  /** True when the player holds more than half the map. */
-  hasWon(): boolean {
-    const total = this.state.regions.size;
-    const mine = provincesOf(this.state, this.state.player).length;
-    return mine > total * 0.5;
-  }
-
-  /** The strongest rivals, for the end screen. */
-  rivals(): { readonly faction: FactionId; readonly provinces: number }[] {
-    const counts = new Map<FactionId, number>();
-    for (const region of this.state.regions.values()) {
-      if (region.owner === INDEPENDENT_ID) continue;
-      counts.set(region.owner, (counts.get(region.owner) ?? 0) + 1);
-    }
-    return [...counts.entries()]
-      .map(([faction, provinces]) => ({ faction, provinces }))
-      .sort((a, b) => b.provinces - a.provinces);
-  }
 }
 
 export type { UnitTypeId, BuildingId };

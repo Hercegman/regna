@@ -4,7 +4,15 @@
  */
 import type { FactionId } from '../core/types';
 import type { BattlePlan, CampaignState } from '../core/campaign';
-import { newCampaign, planBattle, planNavalBattle, CAMPAIGN_START_YEAR } from '../core/campaign';
+import type { Reckoning } from '../core/campaign';
+import {
+  endTurn,
+  newCampaign,
+  planBattle,
+  planNavalBattle,
+  reckon,
+  CAMPAIGN_START_YEAR,
+} from '../core/campaign';
 import { getUnitType } from '../core/data/units';
 import { getRegion } from '../core/data/regions';
 import { getSeaZone } from '../core/data/seas';
@@ -14,7 +22,7 @@ import { CampaignScreen } from './campaignScreen';
 import { BattleScreen } from './battleScreen';
 import { renderFactionSelect } from './factionSelect';
 import { browserSaveMeta, loadFromBrowser, uploadSave } from './persistence';
-import { clear, count, el } from './dom';
+import { clear, count, el, row } from './dom';
 
 export class App {
   private campaign: CampaignScreen | undefined;
@@ -36,6 +44,10 @@ export class App {
     }
     if (demo === 'sea') {
       this.openDemoSeaBattle();
+      return;
+    }
+    if (demo === 'end') {
+      this.openDemoEnding();
       return;
     }
     if (known && known.appearsIn <= CAMPAIGN_START_YEAR) {
@@ -218,31 +230,81 @@ export class App {
     applyBattleParams(screen);
   }
 
+  /**
+   * The closing reckoning, for looking at it without playing four and a half
+   * centuries to reach it. `?demo=end&faction=croatia` names the realm.
+   */
+  private openDemoEnding(): void {
+    const params = new URLSearchParams(window.location.search);
+    const wanted = params.get('faction');
+    const chosen = FACTIONS.find((faction) => (faction.id as string) === wanted);
+    const player = chosen && chosen.appearsIn <= CAMPAIGN_START_YEAR ? chosen.id : undefined;
+    const state = newCampaign({ seed: 'demo-end', ...(player ? { player } : {}) });
+    for (let turn = 0; turn < 60; turn++) endTurn(state);
+    state.year = 1531;
+    this.state = state;
+    this.campaign = new CampaignScreen(this.host, state, {
+      onBattle: (plan) => this.askAboutBattle(plan),
+    });
+    this.checkEnd();
+  }
+
   private checkEnd(): void {
     const campaign = this.campaign;
     if (!campaign) return;
-    if (campaign.isDefeated()) this.showEnd(false);
-    else if (campaign.hasWon()) this.showEnd(true);
+    const verdict = reckon(campaign.getState());
+    if (verdict) this.showEnd(verdict);
   }
 
-  private showEnd(victory: boolean): void {
-    const campaign = this.campaign;
-    if (!campaign) return;
-    const state = campaign.getState();
-    const ranked = campaign.rivals().slice(0, 8);
+  private showEnd(verdict: Reckoning): void {
+    const title =
+      verdict.outcome === 'supremacy'
+        ? 'The realm is supreme'
+        : verdict.outcome === 'ruin'
+          ? 'The realm has fallen'
+          : 'The age closes';
+
+    const opening =
+      verdict.outcome === 'supremacy'
+        ? `${factionName(verdict.faction)} holds more of the map than everyone else together, ` +
+          `in the year ${verdict.year}.`
+        : verdict.outcome === 'ruin'
+          ? `${factionName(verdict.faction)} holds nothing and commands nobody. The year is ` +
+            `${verdict.year}.`
+          : `The year is ${verdict.year} and the Middle Ages are over. ` +
+            `${factionName(verdict.faction)} ends them ` +
+            (verdict.rank === 1
+              ? 'the first power in the world.'
+              : verdict.rank <= 3
+                ? `the ${verdict.rank === 2 ? 'second' : 'third'} power in the world.`
+                : `${verdict.rank}th among the powers.`);
+
     clear(this.host);
     this.host.appendChild(
       el('div', { class: 'end-screen' },
-        el('h1', {}, victory ? 'The realm is supreme' : 'The realm has fallen'),
-        el('p', {},
-          `${factionName(state.player)}, in the year ${state.year}.`,
-        ),
+        el('h1', {}, title),
+        el('p', {}, opening),
+        verdict.outcome !== 'ruin' &&
+          el('section', { class: 'reckoning' },
+            row('Provinces', `${verdict.provinces} of ${verdict.totalProvinces}`),
+            row('Share of the map', `${Math.round(verdict.share * 100)}%`),
+            row('Under arms', count(verdict.soldiers)),
+            verdict.hulls > 0 && row('Hulls afloat', String(verdict.hulls)),
+            row('Treasury', count(verdict.treasury)),
+          ),
         el('h3', {}, 'The powers of the age'),
         el('ol', { class: 'ranking' },
-          ...ranked.map((entry) =>
-            el('li', {}, `${factionName(entry.faction)} — ${entry.provinces} provinces`),
+          ...verdict.powers.slice(0, 8).map((entry) =>
+            el('li', { class: entry.faction === verdict.faction ? 'ours' : '' },
+              `${factionName(entry.faction)} — ${entry.provinces} provinces`,
+            ),
           ),
         ),
+        // A realm outside the first eight still wants to see where it stands.
+        verdict.rank > 8 &&
+          el('p', { class: 'ranking ours' },
+            `${verdict.rank}. ${factionName(verdict.faction)} — ${verdict.provinces} provinces`,
+          ),
         el('button', { class: 'primary', onClick: () => this.showFactionSelect() }, 'Play again'),
       ),
     );

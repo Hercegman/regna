@@ -480,6 +480,81 @@ export function campaignOver(state: CampaignState): boolean {
   return state.year > CAMPAIGN_END_YEAR;
 }
 
+export type CampaignOutcome = 'supremacy' | 'ruin' | 'the clock';
+
+/** How a realm stands at the end, and why the campaign ended at all. */
+export interface Reckoning {
+  readonly outcome: CampaignOutcome;
+  readonly year: number;
+  readonly faction: FactionId;
+  readonly provinces: number;
+  /** Provinces on the map, so the share can be shown as a fraction of it. */
+  readonly totalProvinces: number;
+  readonly share: number;
+  readonly treasury: number;
+  readonly soldiers: number;
+  readonly hulls: number;
+  /** Rank among the surviving powers, counting provinces. First is 1. */
+  readonly rank: number;
+  readonly powers: readonly { readonly faction: FactionId; readonly provinces: number }[];
+}
+
+/**
+ * Judges a campaign.
+ *
+ * A realm wins by supremacy if it holds more than half the map, loses by ruin
+ * if it holds nothing at all, and otherwise the campaign simply runs out of
+ * years in 1530 and is judged on where it stood. Without this last case a
+ * campaign had no end: the date existed in the rules and nothing ever consulted
+ * it.
+ */
+export function reckon(state: CampaignState): Reckoning | undefined {
+  const counts = new Map<FactionId, number>();
+  for (const region of state.regions.values()) {
+    if (region.owner === INDEPENDENT_ID) continue;
+    counts.set(region.owner, (counts.get(region.owner) ?? 0) + 1);
+  }
+  const powers = [...counts.entries()]
+    .map(([faction, provinces]) => ({ faction, provinces }))
+    .sort((a, b) => b.provinces - a.provinces || (a.faction < b.faction ? -1 : 1));
+
+  const player = state.player;
+  const provinces = counts.get(player) ?? 0;
+  const share = state.regions.size === 0 ? 0 : provinces / state.regions.size;
+  const armies = [...state.armies.values()].filter((army) => army.faction === player);
+  const landless = provinces === 0 && armies.length === 0;
+
+  let outcome: CampaignOutcome | undefined;
+  if (landless) outcome = 'ruin';
+  else if (share > 0.5) outcome = 'supremacy';
+  else if (campaignOver(state)) outcome = 'the clock';
+  if (!outcome) return undefined;
+
+  let soldiers = 0;
+  for (const army of armies) soldiers += strengthOf(army.regiments);
+  for (const region of state.regions.values()) {
+    if (region.owner === player) soldiers += strengthOf(region.garrison);
+  }
+  let hulls = 0;
+  for (const fleet of state.fleets.values()) {
+    if (fleet.faction === player) hulls += fleet.ships.length;
+  }
+
+  return {
+    outcome,
+    year: state.year,
+    faction: player,
+    provinces,
+    totalProvinces: state.regions.size,
+    share,
+    treasury: Math.round(state.factions.get(player)?.treasury ?? 0),
+    soldiers: Math.round(soldiers),
+    hulls,
+    rank: powers.findIndex((entry) => entry.faction === player) + 1,
+    powers,
+  };
+}
+
 /** New characters come of age, so factions do not run out of commanders. */
 export function addCharacter(state: CampaignState, id: FactionId, rng: Rng): void {
   const faction = factionState(state, id);

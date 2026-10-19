@@ -247,3 +247,5 @@ select.select {
 .end-screen { max-width: 34rem; margin: 0 auto; padding: 4rem 2rem; }
 .end-screen h1 { color: var(--accent); }
 .ranking { color: var(--text-muted); line-height: 1.7; }
+.ranking .ours { color: var(--accent); font-weight: 600; }
+.reckoning { margin: 1.2rem 0; max-width: 24rem; }
