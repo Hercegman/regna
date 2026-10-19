@@ -69,6 +69,21 @@ this stays true rather than being quietly patched by a later edit.
 - **Moscow** exists as a province from the start under the name of its land,
   although the town was founded in 1147. The ground was there.
 
+## The waters
+
+Thirty-five zones, named as the period named them where it had a name and
+geographically where it did not. Five are cut off from the Mediterranean and
+stay that way, each for a real reason: the Caspian and the Volga are a closed
+basin, Mesopotamia reaches the Gulf beyond the edge of the map, the Red Sea had
+no canal until the nineteenth century, and the Niger's inland delta reaches no
+ocean a galley can use.
+
+Ships are gated by era and by water. The longship goes out of use after 1270,
+the cog arrives in 1180, the carrack in 1400 and the galleass in 1450. The
+dromon with its Greek fire belongs to Byzantium and Trebizond alone and is gone
+by 1350. A river galley cannot be built at Venice and a carrack cannot be
+floated down the Tigris.
+
 ## Units
 
 Unit rosters are assembled from pools rather than written per faction, so a

@@ -94,14 +94,43 @@ One routine per faction per turn, in four stages:
    worth the risk.
 4. **Armies**: muster the surplus of a garrison into the field, combine armies
    that meet, hold a siege it has begun, relieve a besieged province, take a
-   weakly held neighbour, or march towards the nearest enemy.
+   weakly held neighbour, march towards the nearest enemy, or make for the
+   quayside when the only enemy it has is across water.
+5. **The navy**: build to a target set by how much coast it has, fight a
+   squadron it can beat, sail to close an enemy harbour, carry an army to a
+   hostile shore, and come home before the winter gales.
 
 It plays by the player's rules, through the player's order functions.
 
+## The sea
+
+The map has two layers. Provinces are the land; sea zones are the water. A
+harbour province opens onto one or more zones, and a fleet moves from zone to
+zone rather than from port to port. Great rivers are zones too, because the
+Nile, the Danube, the Dnieper, the Volga and the Rhine carried more medieval
+traffic than most coastlines, and a war galley on them is as real as one at sea.
+
+A ship is a fighting unit like any other, so a sea battle runs the same
+simulation a land battle does: closing, shooting and then boarding, which is
+what a medieval sea fight was. What ships have that regiments do not is
+capacity, the number of land regiments they can carry, which is how an invasion
+crosses water. The land regiments a fleet is carrying take no part in a sea
+battle, which is why a loaded invasion fleet is such a poor thing to be
+intercepted with, and why losing the hulls drowns the army aboard.
+
+Blockade works per lane rather than per port. A squadron at sea between two
+harbours closes the trade along that lane and stops an army crossing it. For a
+harbour to count as invested, every water it opens onto must be closed and its
+owner must have nothing afloat to contest them; a port with three seas in front
+of it is correspondingly hard to shut.
+
+Winter is the great limiter. A fleet kept at sea through it loses hulls to
+weather, seaworthy designs fewer than galleys, and every fleet's range falls.
+That is why medieval fleets were laid up from autumn to spring, and why a
+blockade was so hard to maintain.
+
 ## What is deliberately simple
 
-- **No fleets.** An army crosses a sea border between two harbours. Naval
-  interception is not modelled.
 - **No family trees.** Characters age, govern, command and die; they do not
   marry or inherit.
 - **No trade goods in transit.** Trade is a function of open borders, not of

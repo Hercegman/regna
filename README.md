@@ -14,7 +14,8 @@ inspiration; the code, the data and the prose are this project's own.
 |---|---|
 | Factions | 73, every one a real polity |
 | Provinces | 222, each at its settlement's real coordinates |
-| Unit types | 95, resolved to factions through recruitment pools |
+| Sea zones | 35, from the Norwegian Sea to the Niger |
+| Unit types | 95 land, 14 ship classes |
 | Buildings | 39, in 13 upgrade chains |
 | Campaign | 1080 to 1530, two turns to the year |
 
@@ -36,8 +37,16 @@ separate auto-resolve formula, so the odds the player is shown are the odds that
 actually apply.
 
 **One order layer.** Every button in the interface calls the same function in
-`src/core/campaign/actions.ts` that the AI calls. The AI cannot do anything the
-player cannot, and anything it cannot do is a missing order rather than a cheat.
+`src/core/campaign/actions.ts` or `naval.ts` that the AI calls. The AI cannot do
+anything the player cannot, and anything it cannot do is a missing order rather
+than a cheat.
+
+**Two layers to the map.** Provinces are the land and sea zones are the water.
+A harbour opens onto one or more zones; fleets move from zone to zone. A
+squadron standing between two harbours closes the trade along that lane and
+stops an army crossing it, and shutting a harbour outright needs every approach
+closed, which is why Constantinople with three seas in front of it is so much
+harder to invest than Zadar with one.
 
 **Data over special cases.** Factions, units, buildings and provinces are
 tables. Balance work means editing numbers in one file.
@@ -49,12 +58,20 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-Choose a faction, then: click a province to select it, drag to pan, scroll to
-zoom, `L` to force every province name on. The panel on the right has the
-province, its building and recruitment options, diplomacy and the state of the
-realm. Select your army, press **March**, and click one of the highlighted
-provinces. Moving into a defended enemy province offers battle, which you can
-fight yourself or leave to your captains.
+Choose a faction, then: click a province to select it, click open water to see
+the fleets in it, drag to pan, scroll to zoom, `L` to force every province name
+on. The panel on the right has the province, its building, recruitment and
+shipbuilding options, diplomacy and the state of the realm.
+
+Select your army, press **March**, and click one of the highlighted provinces.
+Moving into a defended enemy province offers battle, which you can fight
+yourself or leave to your captains.
+
+At sea: lay down hulls at a harbour from the **Ships** tab, select the squadron
+and press **Sail**, then click a water or a harbour. Load an army with
+**Embark** and put it on a hostile coast with **Land at**. Sailing into water a
+hostile squadron holds brings on a sea battle. Keep a fleet at sea through the
+winter and the gales will take hulls from it.
 
 **Save** stores the campaign in the browser; **Export** downloads it as a file.
 Both are offered again on the faction select screen.
@@ -62,20 +79,21 @@ Both are offered again on the faction select screen.
 ## Development
 
 ```
-npm test           # vitest, 117 tests
+npm test           # vitest, 152 tests
 npm run typecheck  # tsc --noEmit, strict
 npm run build      # typecheck then bundle
 ```
 
 URL parameters open a known state without a sequence of clicks:
-`?faction=croatia`, `?turns=60`, `?tab=realm`, `?demo=battle&play=1`.
+`?faction=croatia`, `?turns=60`, `?tab=shipyard`, `?demo=battle&play=1`,
+`?demo=sea`.
 
 ## Layout
 
 ```
 src/core/            simulation: deterministic, no DOM
-  data/              factions, units, buildings, regions, adjacency
-  campaign/          turn loop, economy, recruitment, diplomacy, AI, saves
+  data/              factions, units, ships, buildings, regions, adjacency, seas
+  campaign/          turn loop, economy, recruitment, diplomacy, navy, AI, saves
   battle/            deployment, the tick simulation, battle AI, terrain
 src/render/          projection, campaign map, battlefield
 src/ui/              screens, panels, persistence
@@ -87,10 +105,12 @@ docs/                design notes
 
 Adding a faction is one entry in `src/core/data/factions.ts` plus, if it enters
 play after 1080, one line in `EMERGENCE_SEATS`. Adding a province is one row in
-`regions.ts` and its borders in `adjacency.ts`. The tests will tell you if the
-result is inconsistent: they assert that every faction can field melee, ranged,
-cavalry and siege troops, that the map is fully reachable, that sea crossings
-join two harbours, and that the island landmasses are exactly the expected ones.
+`regions.ts` and its borders in `adjacency.ts`; if it has a harbour, add it to a
+zone in `seas.ts`. The tests will tell you if the result is inconsistent: they
+assert that every faction can field melee, ranged, cavalry and siege troops,
+that the map is fully reachable, that sea crossings join two harbours, that the
+island landmasses are exactly the expected ones, that every harbour has water to
+sail into, and that a hull is never found in an army or on a town wall.
 
 See `docs/design.md` for how the simulation fits together and `docs/history.md`
 for the historical decisions behind the data.
