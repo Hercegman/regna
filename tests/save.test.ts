@@ -6,6 +6,7 @@ import {
   endTurn,
   factionState,
   provincesOf,
+  setGovernor,
   serialiseCampaign,
   deserialiseCampaign,
   strengthOf,
@@ -132,6 +133,10 @@ describe('saving a campaign', () => {
   it('keeps shared characters shared rather than copied', () => {
     const state = newCampaign({ seed: 'save-characters', player: CROATIA });
     const province = provincesOf(state, CROATIA)[0]!;
+    // The ruler rides with his army at the start, so a province is governed
+    // only once somebody posts a man to it.
+    const spare = factionState(state, CROATIA).characters[0]!;
+    expect(setGovernor(state, province.id, spare.id as string).ok).toBe(true);
     expect(province.governor).toBeDefined();
     const restored = deserialiseCampaign(serialiseCampaign(state));
     const restoredProvince = [...restored.regions.values()].find(

@@ -5,7 +5,7 @@
  */
 import type { ArmyId, BuildingId, FactionId, RegionId, UnitTypeId } from '../types';
 import { SETTLEMENT_ORDER } from '../types';
-import type { Army, CampaignState, Regiment, RegionState } from './state';
+import type { Army, CampaignState, Character, Regiment, RegionState } from './state';
 import {
   factionState,
   hasPort,
@@ -464,6 +464,57 @@ export function setGovernor(state: CampaignState, id: RegionId, character: strin
     if (other.governor && other.governor.id === found.id) other.governor = undefined;
   }
   region.governor = found;
+  return ok;
+}
+
+/**
+ * Characters with nothing to do.
+ *
+ * A man governs a province or commands an army, never both: he can only be in
+ * one place, and the whole point of a governor is that he is sitting in the
+ * province.
+ */
+export function unassignedCharacters(state: CampaignState, id: FactionId): readonly Character[] {
+  const faction = factionState(state, id);
+  const busy = new Set<string>();
+  for (const region of state.regions.values()) {
+    if (region.governor) busy.add(region.governor.id as string);
+  }
+  for (const army of state.armies.values()) {
+    if (army.general) busy.add(army.general.id as string);
+  }
+  return faction.characters.filter((character) => !busy.has(character.id as string));
+}
+
+/**
+ * Puts a man at the head of an army.
+ *
+ * Command feeds the battle model directly: a general raises the morale
+ * threshold of every regiment on his side. An army marching without one is an
+ * army that breaks sooner, which is why nobody sent one out that way.
+ */
+export function appointGeneral(state: CampaignState, id: ArmyId, character: string): Outcome {
+  const army = state.armies.get(id);
+  if (!army) return no('No such army.');
+  const faction = factionState(state, army.faction);
+  const found = faction.characters.find((c) => (c.id as string) === character);
+  if (!found) return no('No such character.');
+  // He leaves whatever he was doing before.
+  for (const region of state.regions.values()) {
+    if (region.governor?.id === found.id) region.governor = undefined;
+  }
+  for (const other of state.armies.values()) {
+    if (other.general?.id === found.id) other.general = undefined;
+  }
+  army.general = found;
+  return ok;
+}
+
+/** Sends the commander back to court, leaving the army to its captains. */
+export function dismissGeneral(state: CampaignState, id: ArmyId): Outcome {
+  const army = state.armies.get(id);
+  if (!army) return no('No such army.');
+  army.general = undefined;
   return ok;
 }
 

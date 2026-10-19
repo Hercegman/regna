@@ -14,6 +14,7 @@ import type {
   FleetId,
   BuildingId,
   CharacterId,
+  AgentId,
   DiplomaticStance,
   FactionId,
   RegionId,
@@ -22,6 +23,7 @@ import type {
   UnitTypeId,
 } from '../types';
 import {
+  agentId as toAgentId,
   armyId as toArmyId,
   fleetId as toFleetId,
   caravanId as toCaravanId,
@@ -32,6 +34,7 @@ import {
   unitTypeId as toUnitTypeId,
 } from '../types';
 import type {
+  Agent,
   Army,
   CampaignState,
   Caravan,
@@ -44,6 +47,7 @@ import type {
   Season,
 } from './state';
 import type { RngState } from '../rng';
+import type { AgentKind } from '../data/agents';
 import type { SeaZoneId } from '../data/seas';
 import type { TradeRouteId } from '../data/trade';
 
@@ -51,11 +55,11 @@ import type { TradeRouteId } from '../data/trade';
  * Bumped whenever the saved shape changes. Version 2 added fleets, the ships
  * building at a harbour, and the cargo a fleet is carrying. Version 3 added
  * the caravans on the trade roads, version 4 the mercenary pools and which
- * regiments are hired companies, and version 5 the standing of each ruler with
+ * regiments are hired companies, version 5 the standing of each ruler with
  * the authority of his faith, who is under censure, and the holy war being
- * preached.
+ * preached, and version 6 the agents in the field.
  */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 interface SavedRegiment {
   readonly t: string;
@@ -129,6 +133,18 @@ interface SavedCaravan {
   readonly stalled: number;
 }
 
+interface SavedAgent {
+  readonly id: string;
+  readonly faction: string;
+  readonly kind: string;
+  readonly name: string;
+  readonly skill: number;
+  readonly location: string;
+  readonly movement: number;
+  readonly age: number;
+  readonly missions: number;
+}
+
 interface SavedArmy {
   readonly id: string;
   readonly faction: string;
@@ -150,12 +166,14 @@ export interface SavedCampaign {
   readonly nextArmySerial: number;
   readonly nextFleetSerial: number;
   readonly nextCaravanSerial: number;
+  readonly nextAgentSerial: number;
   readonly nextCharacterSerial: number;
   readonly factions: readonly SavedFaction[];
   readonly regions: readonly SavedRegion[];
   readonly armies: readonly SavedArmy[];
   readonly fleets: readonly SavedFleet[];
   readonly caravans: readonly SavedCaravan[];
+  readonly agents: readonly SavedAgent[];
   readonly mercenaries: readonly [string, { available: number; countdown: number }][];
   readonly faith: {
     readonly standing: readonly [string, number][];
@@ -226,6 +244,7 @@ export function serialiseCampaign(state: CampaignState): SavedCampaign {
     nextArmySerial: state.nextArmySerial,
     nextFleetSerial: state.nextFleetSerial,
     nextCaravanSerial: state.nextCaravanSerial,
+    nextAgentSerial: state.nextAgentSerial,
     nextCharacterSerial: state.nextCharacterSerial,
     factions: [...state.factions.values()].map((faction) => ({
       id: faction.id as string,
@@ -288,6 +307,17 @@ export function serialiseCampaign(state: CampaignState): SavedCampaign {
       cargo: fleet.cargo.map(saveRegiment),
       admiral: (fleet.admiral?.id as string | undefined) ?? null,
       movement: fleet.movement,
+    })),
+    agents: [...state.agents.values()].map((agent) => ({
+      id: agent.id as string,
+      faction: agent.faction as string,
+      kind: agent.kind as string,
+      name: agent.name,
+      skill: agent.skill,
+      location: agent.location as string,
+      movement: agent.movement,
+      age: agent.age,
+      missions: agent.missions,
     })),
     caravans: [...state.caravans.values()].map((caravan) => ({
       id: caravan.id as string,
@@ -438,6 +468,22 @@ export function deserialiseCampaign(saved: SavedCampaign): CampaignState {
     });
   }
 
+  const agents = new Map<AgentId, Agent>();
+  for (const entry of saved.agents ?? []) {
+    const id = toAgentId(entry.id) as AgentId;
+    agents.set(id, {
+      id,
+      faction: toFactionId(entry.faction) as FactionId,
+      kind: entry.kind as AgentKind,
+      name: entry.name,
+      skill: entry.skill,
+      location: toRegionId(entry.location) as RegionId,
+      movement: entry.movement,
+      age: entry.age,
+      missions: entry.missions,
+    });
+  }
+
   const mercenaries = new Map<string, { available: number; countdown: number }>(
     (saved.mercenaries ?? []).map(([id, pool]) => [id, { ...pool }]),
   );
@@ -483,11 +529,13 @@ export function deserialiseCampaign(saved: SavedCampaign): CampaignState {
     armies,
     fleets,
     caravans,
+    agents,
     mercenaries,
     faith,
     nextArmySerial: saved.nextArmySerial,
     nextFleetSerial: saved.nextFleetSerial ?? 0,
     nextCaravanSerial: saved.nextCaravanSerial ?? 0,
+    nextAgentSerial: saved.nextAgentSerial ?? 0,
     nextCharacterSerial: saved.nextCharacterSerial,
     player: toFactionId(saved.player) as FactionId,
     log,

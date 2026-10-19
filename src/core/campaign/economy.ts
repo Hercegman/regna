@@ -10,6 +10,8 @@ import { clamp, SETTLEMENT_ORDER } from '../types';
 import type { CampaignState, Regiment, RegionState, Season } from './state';
 import { MERCENARY_UPKEEP_MULTIPLIER, isMercenary } from './mercenaries';
 import { censureUnrest, holyWarRelief } from './faith';
+import { merchantIncome } from './agents';
+import { getAgentType } from '../data/agents';
 import { factionState, hasPort, provincesOf, strengthOf, wallTier } from './state';
 import { getBuildingType } from '../data/buildings';
 import { getRegion } from '../data/regions';
@@ -175,6 +177,8 @@ export interface FactionFinances {
   readonly administration: number;
   /** What a hoard loses to display, officials and debasement. */
   readonly hoarding: number;
+  /** Spies, envoys, priests and factors, less what the factors send home. */
+  readonly agents: number;
   readonly stipend: number;
   readonly net: number;
 }
@@ -253,6 +257,13 @@ export function factionFinances(
   const stipend = tryGetFaction(id)?.traits.stipend ?? 0;
   const administration = administrationCost(provincesOf(state, id).length);
   const hoarding = hoardingCost(state.factions.get(id)?.treasury ?? 0);
+  // Agents are a net figure: a merchant on a foreign silver mine can pay for
+  // the whole establishment, and often did.
+  let agents = 0;
+  for (const agent of state.agents.values()) {
+    if (agent.faction !== id) continue;
+    agents += getAgentType(agent.kind).upkeep - merchantIncome(state, agent);
+  }
   // The reported components are rounded, and the total is computed from those
   // rounded figures rather than from the raw ones. A breakdown the player can
   // see must add up to the total the player is charged.
@@ -262,6 +273,7 @@ export function factionFinances(
     garrisonUpkeep: Math.round(garrisonUpkeep),
     administration,
     hoarding,
+    agents: Math.round(agents),
     stipend,
   };
   return {
@@ -272,7 +284,8 @@ export function factionFinances(
       reported.armyUpkeep -
       reported.garrisonUpkeep -
       reported.administration -
-      reported.hoarding +
+      reported.hoarding -
+      reported.agents +
       reported.stipend,
   };
 }

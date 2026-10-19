@@ -17,6 +17,7 @@ export type ArmyId = Branded<string, 'ArmyId'>;
 export type FleetId = Branded<string, 'FleetId'>;
 export type CaravanId = Branded<string, 'CaravanId'>;
 export type CharacterId = Branded<string, 'CharacterId'>;
+export type AgentId = Branded<string, 'AgentId'>;
 
 export const factionId = (value: string): FactionId => value as FactionId;
 export const regionId = (value: string): RegionId => value as RegionId;
@@ -26,6 +27,7 @@ export const armyId = (value: string): ArmyId => value as ArmyId;
 export const fleetId = (value: string): FleetId => value as FleetId;
 export const caravanId = (value: string): CaravanId => value as CaravanId;
 export const characterId = (value: string): CharacterId => value as CharacterId;
+export const agentId = (value: string): AgentId => value as AgentId;
 
 // ---------------------------------------------------------------------------
 // Cultural and religious model

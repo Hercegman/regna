@@ -130,7 +130,8 @@ export function emerge(state: CampaignState, id: FactionId, rng: Rng): boolean {
     leader: true,
   };
   faction.characters.push(leader);
-  seat.governor = leader;
+  // He rides with the founding army rather than sitting in the seat he has
+  // just taken; one man cannot do both, and the court will post a governor.
 
   // Land regiments only: a new state's founding army marches, it does not sail,
   // and the full roster includes its hulls.
@@ -177,6 +178,16 @@ export function reapDeadFactions(state: CampaignState): void {
     if (hasArmy) continue;
     faction.alive = false;
     faction.destroyedOn = state.turn;
+    // Everything the state was running stops with it. A man in the field for a
+    // prince who no longer exists has nobody to report to and nobody to pay
+    // him, and leaving him standing there was letting dead realms go on
+    // converting provinces and buying out merchants.
+    for (const [key, agent] of [...state.agents]) {
+      if (agent.faction === id) state.agents.delete(key);
+    }
+    for (const [key, caravan] of [...state.caravans]) {
+      if (caravan.faction === id) state.caravans.delete(key);
+    }
     logEvent(state, id, `${getFaction(id).name} ceases to exist.`);
   }
 }

@@ -160,6 +160,43 @@ even with nothing to sell, and worth cutting if your enemy depends on it. War
 shuts a road rather than taxing it, which is why a caravan that cannot pass
 waits, turns back, and is eventually lost.
 
+## Men who are not soldiers
+
+Everything else in the game moves soldiers. Most of what a medieval state
+actually did to its neighbours it did with four or five men and a purse.
+
+An agent belongs to a realm, stands in a province, and has one number that
+matters: his skill, from one to ten. He crosses any border, land or sea,
+whoever holds it and whatever the state of the war — that is the whole point of
+him. He travels three to five provinces a season, and travelling or acting
+uses him up for that season.
+
+| | |
+| :--- | :--- |
+| Spy | sets fire to what is being built, puts money about among the discontented, shortens a siege from the inside, kills a commander, and is the only man who can take somebody else's agent |
+| Envoy | makes a foreign court better disposed, by argument or by purse |
+| Priest | turns a province's faith, and quiets one that already shares it |
+| Merchant | posted on a foreign resource, sends home a share of it; can be bought out by a richer rival |
+
+Each kind is gated on the institution that produced it — a governor's
+household for a spy, a chancery in a governor's villa for an envoy, a parish
+church for a priest, a market for a factor — so the building tree pays for
+itself twice. A scriptorium, a university, a cathedral or a palace does not
+produce another kind of man but a better one: each adds a point of skill to
+anyone raised there.
+
+**One roll decides a mission.** The man's skill is tried against the watch on
+the province — its chancery, its owner's counter-spies, whether it is the
+capital, less whatever unrest is making people look the other way. The chance
+and the risk are both shown before the player commits, so a failed mission is
+a gamble lost rather than a surprise. On a failure he may be taken, and a man
+taken is gone: there is no ransom, no second attempt with the same man, and
+the court he was caught in does not forget it.
+
+Skill rises only by succeeding, so a veteran is a real asset and losing one
+hurts. There is no fog of war anywhere in this game, so a foreign agent is
+visible where he stands; taking him is still work, and only a spy can do it.
+
 ## Soldiers you do not own
 
 A realm raises troops from its own provinces, slowly, limited by what its
@@ -292,6 +329,9 @@ player zooms and pans from there.
   states of their own, all of which happened.
 - **No family trees.** Characters age, govern, command and die; they do not
   marry or inherit.
+- **No fog of war.** Every province, army, fleet and agent is visible to
+  everyone. A spy therefore sells sabotage and murder rather than information,
+  which is the honest way to price him in a game where nothing is hidden.
 - **Battle AI is a doctrine, not a search.** Hold a line with the heavy foot,
   shoot with everything, use cavalry against whatever is exposed.
 

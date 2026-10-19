@@ -699,3 +699,111 @@ export function drawCaravan(
 
   ctx.restore();
 }
+
+/**
+ * An agent, standing where he is standing.
+ *
+ * A hooded figure in his employer's colours, carrying the one thing that says
+ * what he is: a staff for a priest, a sealed letter for an envoy, a pack for a
+ * factor, and nothing at all for the man whose business is not being
+ * identifiable.
+ */
+export function drawAgent(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  colour: string,
+  dark: string,
+  kind: 'spy' | 'envoy' | 'priest' | 'merchant',
+): void {
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  ctx.globalAlpha = 0.22;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(x, y + size * 0.08, size * 0.55, size * 0.18, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // A cloak, narrow at the shoulders and spread at the hem.
+  ctx.beginPath();
+  ctx.moveTo(x, y - size * 1.25);
+  ctx.quadraticCurveTo(x + size * 0.55, y - size * 0.5, x + size * 0.46, y);
+  ctx.lineTo(x - size * 0.46, y);
+  ctx.quadraticCurveTo(x - size * 0.55, y - size * 0.5, x, y - size * 1.25);
+  ctx.closePath();
+  ctx.fillStyle = kind === 'spy' ? '#2b2822' : colour;
+  ctx.fill();
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = Math.max(0.5, size * 0.11);
+  ctx.stroke();
+
+  // The hood, which is a head for these purposes.
+  ctx.beginPath();
+  ctx.arc(x, y - size * 1.3, size * 0.28, 0, Math.PI * 2);
+  ctx.fillStyle = kind === 'spy' ? '#2b2822' : dark;
+  ctx.fill();
+
+  if (size < 4) {
+    ctx.restore();
+    return;
+  }
+
+  switch (kind) {
+    case 'priest': {
+      // A staff with a cross at the head of it.
+      ctx.strokeStyle = '#4a3b27';
+      ctx.lineWidth = Math.max(0.5, size * 0.12);
+      ctx.beginPath();
+      ctx.moveTo(x + size * 0.55, y + size * 0.1);
+      ctx.lineTo(x + size * 0.55, y - size * 1.6);
+      ctx.moveTo(x + size * 0.3, y - size * 1.35);
+      ctx.lineTo(x + size * 0.8, y - size * 1.35);
+      ctx.stroke();
+      break;
+    }
+    case 'envoy': {
+      // A letter under the arm, with a seal on it.
+      ctx.fillStyle = '#efe7d2';
+      ctx.fillRect(x + size * 0.28, y - size * 0.82, size * 0.5, size * 0.36);
+      ctx.strokeStyle = dark;
+      ctx.lineWidth = Math.max(0.4, size * 0.08);
+      ctx.strokeRect(x + size * 0.28, y - size * 0.82, size * 0.5, size * 0.36);
+      ctx.beginPath();
+      ctx.arc(x + size * 0.53, y - size * 0.64, size * 0.1, 0, Math.PI * 2);
+      ctx.fillStyle = '#b4423a';
+      ctx.fill();
+      break;
+    }
+    case 'merchant': {
+      // A pack on the back.
+      ctx.beginPath();
+      ctx.moveTo(x - size * 0.34, y - size * 0.95);
+      ctx.lineTo(x - size * 0.78, y - size * 0.86);
+      ctx.lineTo(x - size * 0.7, y - size * 0.34);
+      ctx.lineTo(x - size * 0.3, y - size * 0.44);
+      ctx.closePath();
+      ctx.fillStyle = '#c99a4e';
+      ctx.fill();
+      ctx.strokeStyle = '#6b4e32';
+      ctx.lineWidth = Math.max(0.4, size * 0.09);
+      ctx.stroke();
+      break;
+    }
+    case 'spy': {
+      // His employer's colour shows only as a thread at the collar, which is
+      // as much as he would want showing.
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = Math.max(0.5, size * 0.13);
+      ctx.beginPath();
+      ctx.moveTo(x - size * 0.26, y - size * 1.08);
+      ctx.lineTo(x + size * 0.26, y - size * 1.08);
+      ctx.stroke();
+      break;
+    }
+  }
+  ctx.restore();
+}

@@ -112,6 +112,8 @@ export class App {
     if (Number.isFinite(turns) && turns > 0) this.campaign.fastForward(Math.min(turns, 400));
     const tab = params.get('tab');
     if (tab) this.campaign.openTab(tab);
+    const planted = params.get('agents');
+    if (planted) this.campaign.planted(planted.split(','));
     const look = params.get('look');
     if (look) {
       const zoom = Number.parseFloat(params.get('zoom') ?? '');

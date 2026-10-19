@@ -24,6 +24,7 @@ import {
 import { factionFinances, growthRate, publicOrder, tierThreshold } from './economy';
 import { commissionShip, fleetMovementBudget, isBlockaded } from './naval';
 import { advanceCaravans } from './caravans';
+import { ageAgents, refreshAgents } from './agents';
 import { desertUnpaid, replenishMercenaries } from './mercenaries';
 import { considerHolyWar, driftStanding, notePiety, progressHolyWar } from './faith';
 import { getBuildingType } from '../data/buildings';
@@ -71,6 +72,7 @@ export function endTurn(state: CampaignState): TurnReport {
 
   weatherFleets(state, rng);
   advanceCaravans(state, rng);
+  ageAgents(state, rng);
   replenishMercenaries(state);
   progressHolyWar(state);
   considerHolyWar(state, rng);
@@ -96,6 +98,7 @@ export function endTurn(state: CampaignState): TurnReport {
   for (const fleet of state.fleets.values()) {
     fleet.movement = fleetMovementBudget(state, fleet);
   }
+  refreshAgents(state);
 
   commitRng(state, rng);
 

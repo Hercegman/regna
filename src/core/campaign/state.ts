@@ -6,6 +6,7 @@
  * snapshot, diff and serialise, and it keeps the rules testable in isolation.
  */
 import type {
+  AgentId,
   ArmyId,
   CaravanId,
   FleetId,
@@ -20,6 +21,7 @@ import type {
   WallTier,
 } from '../types';
 import { armyId, fleetId, caravanId, characterId } from '../types';
+import type { AgentKind } from '../data/agents';
 import { SETTLEMENT_ORDER } from '../types';
 import type { RngState } from '../rng';
 import { Rng } from '../rng';
@@ -28,7 +30,7 @@ import type { Region } from '../data/regions';
 import type { SeaZoneId } from '../data/seas';
 import type { TradeRouteId } from '../data/trade';
 import { getSeaZone, zonesOffPort } from '../data/seas';
-import { REGIONS } from '../data/regions';
+import { REGIONS, getRegion } from '../data/regions';
 import { getBuildingType } from '../data/buildings';
 import { generalUnitFor, navalRosterFor } from '../data/roster';
 import { getUnitType } from '../data/units';
@@ -132,6 +134,27 @@ export interface Caravan {
   stalled: number;
 }
 
+/**
+ * A man in somebody else's country.
+ *
+ * He has one number that matters — his skill — and it rises only by succeeding
+ * at something, so a veteran agent is a real asset and losing one hurts.
+ */
+export interface Agent {
+  readonly id: AgentId;
+  readonly faction: FactionId;
+  readonly kind: AgentKind;
+  name: string;
+  /** 1 to 10. Tried against the guard on whatever province he is standing in. */
+  skill: number;
+  location: RegionId;
+  /** Provinces he can still cross this turn; a mission spends the rest. */
+  movement: number;
+  age: number;
+  /** Missions attempted, for the panel and for nothing else. */
+  missions: number;
+}
+
 export interface Construction {
   readonly building: BuildingId;
   turnsLeft: number;
@@ -209,6 +232,12 @@ export interface CampaignState {
   fleets: Map<FleetId, Fleet>;
   caravans: Map<CaravanId, Caravan>;
   /**
+   * Spies, envoys, priests and merchants. Kept on the state rather than on the
+   * faction because where a man is standing matters to everyone, not only to
+   * whoever pays him.
+   */
+  agents: Map<AgentId, Agent>;
+  /**
    * How many companies are standing about in each mercenary pool. Keyed by
    * pool id, and part of the state because hiring one denies it to everybody
    * else until the country furnishes another.
@@ -237,6 +266,7 @@ export interface CampaignState {
   nextArmySerial: number;
   nextFleetSerial: number;
   nextCaravanSerial: number;
+  nextAgentSerial: number;
   nextCharacterSerial: number;
   player: FactionId;
   log: LogEntry[];
@@ -355,6 +385,48 @@ export function characterName(faction: FactionId, rng: Rng): string {
   const numeral = rng.int(1, 6);
   const numerals = ['I', 'II', 'III', 'IV', 'V', 'VI'];
   return `${given} ${numerals[numeral - 1]}`;
+}
+
+/**
+ * What to call an agent.
+ *
+ * Not a ruler, so no regnal number. A commoner in this period had one given
+ * name and, when more was needed, the place he came from — which is exactly
+ * what an agent's employer would have written in the accounts.
+ */
+export function agentName(
+  faction: FactionId,
+  home: RegionId,
+  rng: Rng,
+  taken: Iterable<string> = [],
+): string {
+  const culture = tryGetFaction(faction)?.culture ?? 'latin_west';
+  const pool =
+    FACTION_NAME_POOLS[faction as string] ?? NAME_POOLS[culture] ?? NAME_POOLS.latin_west!;
+  const already = new Set(taken);
+  const place = getRegion(home).settlement;
+  // Two men of one name in one service is confusing in a way the real
+  // accounts also had to solve. Try the pool at random, then walk it in order,
+  // and only then fall back to telling them apart by number — which is what
+  // the clerks ended up doing too.
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const name = `${rng.pick(pool)} of ${place}`;
+    if (!already.has(name)) return name;
+  }
+  for (const given of pool) {
+    const name = `${given} of ${place}`;
+    if (!already.has(name)) return name;
+  }
+  const base = `${rng.pick(pool)} of ${place}`;
+  const suffixes = ['the Younger', 'the Elder', 'the Third', 'the Fourth', 'the Fifth'];
+  for (const suffix of suffixes) {
+    const name = `${base} ${suffix}`;
+    if (!already.has(name)) return name;
+  }
+  for (let n = 6; ; n++) {
+    const name = `${base} (${n})`;
+    if (!already.has(name)) return name;
+  }
 }
 
 /**
@@ -501,11 +573,13 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
     armies: new Map(),
     fleets: new Map(),
     caravans: new Map(),
+    agents: new Map(),
     mercenaries: initialMercenaryPools(),
     faith: { standing: new Map(), censured: new Map(), holyWar: undefined, lastWarEnded: -99 },
     nextArmySerial: 0,
     nextFleetSerial: 0,
     nextCaravanSerial: 0,
+    nextAgentSerial: 0,
     nextCharacterSerial: 0,
     player: options.player ?? (getFaction('croatia' as FactionId).id),
     log: [],
@@ -585,8 +659,10 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
 
     const capital = faction.capital;
     if (capital) {
-      const capitalState = state.regions.get(capital)!;
-      capitalState.governor = leader;
+      // The ruler rides with his own army, which is where a ruler was in 1080.
+      // He cannot also be sitting in the capital governing it: the capital
+      // waits for an officer, and the court posts one as soon as it has a man
+      // to spare.
       const general = generalUnitFor(getFaction(id));
       const army: Army = {
         id: newArmyId(state),

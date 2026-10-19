@@ -12,8 +12,11 @@ import type { Army, CampaignState, RegionState } from './state';
 import type { Fleet } from './state';
 import { factionState, fleetCapacity, fleetsInZone, fleetsOf, isAtWar, provincesOf, strengthOf } from './state';
 import {
+  appointGeneral,
   availableBuildings,
   mergeArmies,
+  setGovernor,
+  unassignedCharacters,
   sortieFromGarrison,
   militaryStrength,
   moveArmy,
@@ -61,6 +64,22 @@ import {
 import type { SeaZoneId } from '../data/seas';
 import { SEA_ZONE_IDS, getSeaZone, zonesOffPort, zoneServesPort } from '../data/seas';
 import { canHire, hireMercenary, isMercenary, offersAt } from './mercenaries';
+import type { Agent } from './state';
+import type { AgentKind } from '../data/agents';
+import { getAgentType } from '../data/agents';
+import type { MissionKind, MissionOffer } from './agents';
+import {
+  MAX_AGENTS,
+  agentsAt,
+  agentsOf,
+  attemptMission,
+  canRecruitAgent,
+  merchantIncome,
+  missionsFor,
+  moveAgent,
+  victimAt,
+  recruitAgent,
+} from './agents';
 import {
   absolutionPrice,
   canJoinHolyWar,
@@ -91,6 +110,333 @@ export function takeAiTurn(state: CampaignState, id: FactionId, rng: Rng): void 
   manageNavy(state, id, rng);
   manageMercenaries(state, id, rng);
   manageFaith(state, id, rng);
+  manageCourt(state, id);
+  manageAgents(state, id, rng);
+}
+
+// ---------------------------------------------------------------------------
+// The court
+// ---------------------------------------------------------------------------
+
+/**
+ * Giving the king's men something to do.
+ *
+ * Characters existed from the first commit and were almost never posted
+ * anywhere: one army in seventy-five had a commander and one province in two
+ * hundred had a governor, so command and governance ratings were being rolled,
+ * saved and ignored. A man is worth more at the head of a field army than
+ * sitting at court, and worth more governing a rich province than a poor one,
+ * so that is the order they go out in.
+ */
+function manageCourt(state: CampaignState, id: FactionId): void {
+  const armies = [...state.armies.values()]
+    .filter((army) => army.faction === id && !army.general)
+    .sort((a, b) => strengthOf(b.regiments) - strengthOf(a.regiments));
+  const provinces = provincesOf(state, id)
+    .filter((province) => !province.governor)
+    .sort((a, b) => b.population - a.population);
+
+  for (const army of armies) {
+    // A escort of two regiments does not need a king's son at its head.
+    if (army.regiments.length < 3) continue;
+    const free = unassignedCharacters(state, id);
+    if (free.length === 0) return;
+    const best = [...free].sort((a, b) => b.command - a.command)[0]!;
+    // A man with no talent for it is better left governing.
+    if (best.command < 3 && provinces.length > 0) break;
+    appointGeneral(state, army.id, best.id as string);
+  }
+
+  for (const province of provinces) {
+    const free = unassignedCharacters(state, id);
+    if (free.length === 0) return;
+    const best = [...free].sort((a, b) => b.governance - a.governance)[0]!;
+    setGovernor(state, province.id, best.id as string);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Men who are not soldiers
+// ---------------------------------------------------------------------------
+
+/**
+ * The establishment abroad.
+ *
+ * A ruler raises a few men when he can afford them, sends each towards the
+ * work his kind is for, and uses him when he gets there. The doctrine is
+ * deliberately plain, because what makes agents interesting is not clever play
+ * but that both sides are doing it: the player's spy is caught by somebody's
+ * counter-spy, not by a die roll.
+ */
+function manageAgents(state: CampaignState, id: FactionId, rng: Rng): void {
+  const faction = factionState(state, id);
+  const provinces = provincesOf(state, id);
+  if (provinces.length === 0) return;
+
+  const mine = agentsOf(state, id);
+  // A realm keeps roughly one man abroad for every three provinces, and never
+  // starves its army to do it.
+  const wanted = Math.min(MAX_AGENTS, 1 + Math.floor(provinces.length / 3));
+  if (mine.length < wanted) raiseAgent(state, id, provinces, rng);
+
+  for (const agent of agentsOf(state, id)) {
+    employAgent(state, faction.id, agent, rng);
+  }
+}
+
+/**
+ * Whether the realm can carry one more man.
+ *
+ * An agent is not judged the way a regiment is. A regiment is a standing
+ * charge against a revenue; an agent is a purchase out of the treasury with a
+ * small charge after it, and in the case of a factor a charge that is
+ * negative — he sends home more than he costs. Running agents through the
+ * army's reserve test is what kept all but a handful of realms out of the
+ * business entirely.
+ */
+function canCarryAgent(state: CampaignState, id: FactionId, kind: AgentKind): boolean {
+  const faction = factionState(state, id);
+  const type = getAgentType(kind);
+  // The purchase, with something left over afterwards.
+  if (faction.treasury < type.cost + 250) return false;
+  if (kind === 'merchant') return true;
+  // The charge, against a year's revenue. A small deficit is survivable; the
+  // retrenchment pass will pay off a regiment before it dismisses a priest.
+  return annualNet(state, id) - type.upkeep > -25;
+}
+
+function raiseAgent(
+  state: CampaignState,
+  id: FactionId,
+  provinces: readonly RegionState[],
+  rng: Rng,
+): void {
+  const have = agentsOf(state, id);
+  // What the realm is short of. A state with a province of the wrong faith
+  // wants a priest; one with neighbours wants an envoy and a spy; everybody
+  // wants a merchant, because a merchant pays for himself.
+  const want: AgentKind[] = [];
+  const own = tryGetFaction(id)?.religion;
+  const has = (kind: AgentKind): boolean => have.some((agent) => agent.kind === kind);
+
+  if (own && provinces.some((province) => province.religion !== own) && !has('priest')) {
+    want.push('priest');
+  }
+  // An envoy is worth having the moment somebody is ill disposed towards us,
+  // which is almost always.
+  if (!has('envoy') && illDisposed(state, id)) want.push('envoy');
+  if (!has('spy') && countWars(state, id) > 0) want.push('spy');
+  if (!has('merchant')) want.push('merchant');
+  if (own && provinces.some((province) => province.religion !== own)) want.push('priest');
+  if (!has('spy')) want.push('spy');
+  // Factors pay for themselves, so without a check a realm ends up with
+  // nothing else. No prince staffed his whole establishment with merchants.
+  const factors = have.filter((agent) => agent.kind === 'merchant').length;
+  if (factors <= have.length / 2) want.push('merchant');
+  want.push('spy', 'envoy');
+
+  for (const kind of want) {
+    if (!canCarryAgent(state, id, kind)) continue;
+    for (const province of provinces) {
+      if (!canRecruitAgent(state, province.id, kind).ok) continue;
+      recruitAgent(state, province.id, kind, rng);
+      return;
+    }
+  }
+}
+
+/** True when some realm we can reach thinks ill of us. */
+function illDisposed(state: CampaignState, id: FactionId): boolean {
+  for (const [other, faction] of state.factions) {
+    if (other === id || other === INDEPENDENT_ID || !faction.alive) continue;
+    if (relation(state, other, id).attitude < 0) return true;
+  }
+  return false;
+}
+
+/** Sends one man one step towards his work, and sets him to it when he arrives. */
+function employAgent(state: CampaignState, id: FactionId, agent: Agent, rng: Rng): void {
+  // First, do whatever can be done where he stands.
+  const here = missionsFor(state, agent.id);
+  const choice = chooseMission(state, agent, here, rng);
+  if (choice) {
+    attemptMission(state, agent.id, choice, rng);
+    return;
+  }
+
+  // Otherwise walk towards somewhere he would be useful. One step a turn
+  // towards the nearest province that wants his trade is enough: agents are
+  // slow on purpose, and a man in transit is a commitment already made.
+  const target = postingFor(state, id, agent);
+  if (!target) return;
+  while (agent.movement > 0 && agent.location !== target) {
+    const step = agentStep(agent.location, target);
+    if (!step) return;
+    if (!moveAgent(state, agent.id, step).ok) return;
+  }
+  const arrived = missionsFor(state, agent.id);
+  const next = chooseMission(state, agent, arrived, rng);
+  if (next) attemptMission(state, agent.id, next, rng);
+}
+
+function chooseMission(
+  state: CampaignState,
+  agent: Agent,
+  offers: readonly MissionOffer[],
+  rng: Rng,
+): MissionKind | undefined {
+  if (offers.length === 0) return undefined;
+  const faction = factionState(state, agent.faction);
+  const region = state.regions.get(agent.location);
+  if (!region) return undefined;
+  const atWar = region.owner !== agent.faction && isAtWar(state, agent.faction, region.owner);
+
+  const worth = (offer: MissionOffer): number => {
+    if (offer.cost > faction.treasury) return -1;
+    // Nobody spends a man on a long shot.
+    if (offer.chance < 0.35) return -1;
+    let value = offer.chance * 100;
+    switch (offer.kind) {
+      case 'unmask':
+      case 'preach':
+        break;
+      case 'sabotage':
+        value += region.siege?.besieger === agent.faction ? 60 : atWar ? 20 : -40;
+        break;
+      case 'incite': {
+        // There is no point stirring a province that is already in uproar.
+        const room = Math.max(0, 85 - region.unrest) / 85;
+        value += (atWar ? 35 : -45) * room - (1 - room) * 25;
+        break;
+      }
+      case 'assassinate': {
+        const victim = victimAt(state, region);
+        if (!victim) {
+          value -= 80;
+          break;
+        }
+        // Killing the man commanding an army in the field is worth the risk
+        // and the insult; murdering a governor in peacetime is not.
+        value += atWar ? (victim.commanding ? 70 : 25) : -70;
+        break;
+      }
+      case 'treat':
+        value += 20;
+        break;
+      case 'bribe':
+        // Buying goodwill is for a realm that has money to spare for it.
+        value += faction.treasury > offer.cost * 6 ? 10 : -50;
+        break;
+      case 'buy_out':
+        value += faction.treasury > offer.cost * 5 ? 25 : -40;
+        break;
+    }
+    // A man sent on a mission that is likely to lose him is a man wasted.
+    value -= offer.peril * (1 - offer.chance) * 120;
+    return value;
+  };
+
+  const ranked = offers
+    .map((offer) => ({ offer, score: worth(offer) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const best = ranked[0];
+  if (!best) return undefined;
+  // A little hesitation, so two realms with the same doctrine do not act in
+  // lockstep every single turn.
+  if (rng.next() > 0.8) return undefined;
+  return best.offer.kind;
+}
+
+/**
+ * One step along the shortest way there, over any border at all.
+ *
+ * Deliberately not the army pathfinder: an agent crosses a closed frontier,
+ * takes passage on somebody else's ship, and walks through a war. That is what
+ * he is for.
+ */
+function agentStep(from: RegionId, goal: RegionId): RegionId | undefined {
+  if (from === goal) return undefined;
+  const seen = new Set<RegionId>([from]);
+  let frontier: { id: RegionId; first: RegionId }[] = [];
+  for (const id of anyNeighbours(from)) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    frontier.push({ id, first: id });
+  }
+  for (let depth = 0; depth < 14 && frontier.length > 0; depth++) {
+    for (const entry of frontier) if (entry.id === goal) return entry.first;
+    const next: { id: RegionId; first: RegionId }[] = [];
+    for (const entry of frontier) {
+      for (const neighbour of anyNeighbours(entry.id)) {
+        if (seen.has(neighbour)) continue;
+        seen.add(neighbour);
+        next.push({ id: neighbour, first: entry.first });
+      }
+    }
+    frontier = next;
+  }
+  return undefined;
+}
+
+function anyNeighbours(id: RegionId): readonly RegionId[] {
+  return [...landNeighbours(id), ...seaNeighbours(id)];
+}
+
+/**
+ * Roughly how far apart two provinces are, in degrees of travel. Good enough
+ * to rank postings, and far cheaper than a search from every candidate.
+ */
+function apart(a: RegionId, b: RegionId): number {
+  const from = getRegion(a);
+  const to = getRegion(b);
+  const scale = Math.cos(((from.lat + to.lat) / 2) * (Math.PI / 180));
+  return Math.hypot((from.lon - to.lon) * scale, from.lat - to.lat);
+}
+
+/** Where this man ought to be standing. */
+function postingFor(state: CampaignState, id: FactionId, agent: Agent): RegionId | undefined {
+  const own = tryGetFaction(id)?.religion;
+  let best: RegionId | undefined;
+  let bestScore = 0;
+  for (const region of state.regions.values()) {
+    const foreign = region.owner !== id;
+    let score = 0;
+    switch (agent.kind) {
+      case 'priest':
+        // The nearest province of the wrong faith, ours first.
+        if (own && region.religion !== own) score = foreign ? 40 : 70;
+        break;
+      case 'merchant': {
+        const worth = merchantIncome(state, { ...agent, location: region.id });
+        score = worth;
+        break;
+      }
+      case 'spy': {
+        if (region.siege?.besieger === id) score = 120;
+        else if (foreign && isAtWar(state, id, region.owner)) score = 60;
+        else if (!foreign && agentsAt(state, region.id).some((a) => a.faction !== id)) score = 80;
+        // An enemy commander standing somewhere reachable is the one target
+        // worth crossing a kingdom for.
+        const victim = victimAt(state, region);
+        if (victim && victim.commanding && isAtWar(state, id, victim.faction)) score += 90;
+        break;
+      }
+      case 'envoy':
+        if (foreign && region.owner !== INDEPENDENT_ID && state.factions.get(region.owner)?.capital === region.id) {
+          score = 40 + Math.max(0, -relation(state, id, region.owner).attitude);
+        }
+        break;
+    }
+    if (score <= 0) continue;
+    // Distance is the whole cost of an agent's life, so it dominates.
+    score -= apart(agent.location, region.id) * 3.5;
+    if (score > bestScore) {
+      bestScore = score;
+      best = region.id;
+    }
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------------------

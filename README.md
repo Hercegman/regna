@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-d9b55f?style=flat-square&labelColor=12161a)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white&labelColor=12161a)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-6-646cff?style=flat-square&logo=vite&logoColor=white&labelColor=12161a)](https://vite.dev)
-[![Tests](https://img.shields.io/badge/tests-270%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
+[![Tests](https://img.shields.io/badge/tests-304%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
 [![Runtime deps](https://img.shields.io/badge/runtime%20dependencies-none-8b91a0?style=flat-square&labelColor=12161a)](#architecture)
 
 [Why](#why-regna) · [The world](#the-world) · [Features](#features) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Playing](#playing) · [Architecture](#architecture) · [Roadmap](#roadmap)
@@ -113,6 +113,23 @@ play in the year it actually rose, at the place it rose from.
   could excommunicate a Greek emperor in any sense the Greek emperor noticed,
   and no crusade is preached against Constantinople while a Christian holds it.
 
+- **Four men and a purse.** A spy, an envoy, a priest and a factor go where an
+  army cannot and nobody declares war over them. They cross any border in any
+  state of war, and what they risk is themselves: a mission on foreign ground
+  can end with the man taken, and a man taken is gone for good.
+
+  | | |
+  | :--- | :--- |
+  | Spy | fires the works, puts money about among the discontented, shortens a siege from the inside, kills a commander — and is the only man who can take somebody else's agent |
+  | Envoy | makes a foreign court better disposed, by argument or by purse |
+  | Priest | turns a province's faith, which is most of what makes a conquest hold |
+  | Merchant | posted on a foreign resource, sends home a share of it, and can be bought out by a richer rival |
+
+  Each is gated on the institution that produced him, so the building tree pays
+  for itself twice; a university or a cathedral turns out a better man rather
+  than another kind of one. Every mission is one roll, with the odds and the
+  risk shown before you commit, and skill rises only by succeeding.
+
 - **Mercenaries are found, not raised.** A company exists in the country that
   bred it, in limited numbers. Hiring one ignores your own roster entirely and
   denies it to everyone else until the country furnishes another. It joins at
@@ -212,6 +229,10 @@ realm.
   it is expected to fetch, and sends one.
 - **For hire.** Companies appear on the province panel wherever any are standing
   about, including in towns you do not own.
+- **Abroad.** The **Agents** tab raises a spy, an envoy, a priest or a factor
+  where the institution for him exists, lists everyone you have and everyone
+  standing in the province you are looking at, and offers each man the missions
+  he could attempt from where he stands, with the odds on the button.
 - **The faith.** The **Realm** tab holds your standing with the authority of
   your own faith, the price of absolution if you are under censure, and the
   crusade or jihad now being preached. Taking the vow relieves a quarter of
@@ -229,12 +250,12 @@ Both are offered again on the faction select screen.
 | Layer | What it does |
 | :--- | :--- |
 | `src/core/data/` | Factions, units, ships, mercenaries, buildings, provinces, borders, seas, trade roads. Tables, with no logic in them. |
-| `src/core/campaign/` | The turn loop, economy, public order, recruitment, diplomacy, faction emergence, the navy, trade, hiring, the AI, and saves. |
+| `src/core/campaign/` | The turn loop, economy, public order, recruitment, diplomacy, faction emergence, the navy, trade, hiring, agents, the court, the AI, and saves. |
 | `src/core/battle/` | Deployment, the fixed-timestep simulation, the battle AI and the ground. |
 | `src/render/` | The Mercator projection and camera, the province geometry, the vector art, the campaign map, the battlefield. |
 | `src/ui/` | Screens, panels, persistence. Plain DOM, no framework. |
 | `tools/` | `build-geography.py`, which turns Natural Earth's vectors into the checked-in coastline. |
-| `tests/` | 270 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
+| `tests/` | 304 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
 
 Nothing in `src/core/` touches the DOM or calls `Math.random`. Randomness comes
 from a xoshiro128\*\* generator whose state is saved with the campaign, which is
@@ -268,6 +289,7 @@ URL parameters open a known state without a sequence of clicks:
 ?faction=venice&look=venice&zoom=40      the map, over a given province, close in
 ?demo=battle&at=255                      a land battle four minutes in
 ?demo=battle&at=255&bzoom=3              the same battle, close enough to see the men
+?faction=venice&agents=spy,priest        a campaign with a few men already in service
 ?demo=siege&at=240                       an assault on a walled town
 ?demo=sea&play=1                         a sea fight, running
 ?demo=end&faction=croatia                the closing reckoning
@@ -275,7 +297,7 @@ URL parameters open a known state without a sequence of clicks:
 
 ## Roadmap
 
-- [ ] Agents — spies, envoys, priests and merchants
+- [x] Agents — spies, envoys, priests and merchants
 - [ ] Dynasties: marriage, legitimacy, and a disputed succession worth fighting
 - [ ] An opening tutorial, because the interface is dense and says nothing
 - [ ] Mercenary politics: companies that change sides, or take a city instead of a contract

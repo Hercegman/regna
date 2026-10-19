@@ -25,7 +25,9 @@ import { SEA_ZONES, getSeaZone } from '../core/data/seas';
 import type { Camera, Viewport } from './projection';
 import { mercatorY, project, viewTransform } from './projection';
 import { provinceShapes, landInMercator, terrainScatter, toMercator, cellExtent } from './provinces';
+import type { AgentKind } from '../core/data/agents';
 import {
+  drawAgent,
   drawArmy,
   drawCaravan,
   drawSettlement,
@@ -179,6 +181,7 @@ export function drawMap(
   drawSettlements(ctx, state, view, t);
   drawForces(ctx, state, view, t);
   drawCaravans(ctx, state, view);
+  drawAgents(ctx, state, view);
   drawHolyWar(ctx, state, view);
   drawLabels(ctx, state, view, t);
   drawSelection(ctx, state, view, t);
@@ -743,6 +746,41 @@ function drawCaravans(ctx: CanvasRenderingContext2D, state: CampaignState, view:
     const point = screenPositionOf(view, id);
     colours.forEach((colour, index) => {
       drawCaravan(ctx, point.x - size * 2.6, point.y - size * (2.2 + index * 1.4), size, colour);
+    });
+  }
+}
+
+/**
+ * The men who are not soldiers, posted to the right of the settlement they
+ * stand in so that they do not collide with the armies below it or the
+ * caravans above it.
+ */
+function drawAgents(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
+  if (view.camera.zoom < DETAIL_ZOOM) return;
+  const size = Math.max(2.6, Math.min(8, view.camera.zoom * 0.2));
+  const byRegion = new Map<RegionId, { colour: string; dark: string; kind: AgentKind }[]>();
+  for (const agent of state.agents.values()) {
+    const faction = tryGetFaction(agent.faction);
+    const list = byRegion.get(agent.location) ?? [];
+    list.push({
+      colour: faction?.colour ?? INDEPENDENT_COLOUR,
+      dark: faction?.colourDark ?? '#5c564d',
+      kind: agent.kind,
+    });
+    byRegion.set(agent.location, list);
+  }
+  for (const [id, agents] of byRegion) {
+    const point = screenPositionOf(view, id);
+    agents.forEach((agent, index) => {
+      drawAgent(
+        ctx,
+        point.x + size * (2.4 + index * 1.3),
+        point.y - size * 0.6,
+        size,
+        agent.colour,
+        agent.dark,
+        agent.kind,
+      );
     });
   }
 }

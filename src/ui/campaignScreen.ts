@@ -5,9 +5,9 @@
  * then re-renders from the returned state, so the interface cannot drift out of
  * step with the simulation or quietly do something the AI could not.
  */
-import type { ArmyId, BuildingId, FactionId, FleetId, RegionId, UnitTypeId } from '../core/types';
+import type { AgentId, ArmyId, BuildingId, FactionId, FleetId, RegionId, UnitTypeId } from '../core/types';
 import { SETTLEMENT_ORDER } from '../core/types';
-import type { Army, CampaignState, Fleet, FleetLocation, RegionState } from '../core/campaign';
+import type { Agent, Army, CampaignState, Fleet, FleetLocation, RegionState } from '../core/campaign';
 import {
   availableBuildings,
   cancelConstruction,
@@ -88,6 +88,24 @@ import {
   startShipbuilding,
   type BattlePlan,
 } from '../core/campaign';
+import {
+  agentDestinations,
+  agentsAt,
+  agentsOf,
+  attemptMission,
+  canRecruitAgent,
+  dismissAgent,
+  guard,
+  merchantIncome,
+  missionsFor,
+  moveAgent,
+  recruitAgent,
+  MAX_AGENTS,
+} from '../core/campaign/agents';
+import type { MissionOffer } from '../core/campaign/agents';
+import { AGENT_TYPES, getAgentType } from '../core/data/agents';
+import { Rng } from '../core/rng';
+import { commitRng, rngFor } from '../core/campaign';
 import { getBuildingType } from '../core/data/buildings';
 import { getUnitType } from '../core/data/units';
 import { getRegion } from '../core/data/regions';
@@ -113,6 +131,7 @@ type PanelTab =
   | 'shipyard'
   | 'trade'
   | 'diplomacy'
+  | 'agents'
   | 'realm';
 
 export class CampaignScreen {
@@ -125,7 +144,9 @@ export class CampaignScreen {
   private tab: PanelTab = 'province';
   private selectedArmy: ArmyId | undefined;
   private selectedFleet: FleetId | undefined;
+  private selectedAgent: AgentId | undefined;
   private moveMode = false;
+  private travelMode = false;
   private sailMode = false;
   private busy = false;
 
@@ -193,7 +214,7 @@ export class CampaignScreen {
    */
   openTab(tab: string): void {
     const known: readonly PanelTab[] = [
-      'province', 'build', 'recruit', 'shipyard', 'trade', 'diplomacy', 'realm',
+      'province', 'build', 'recruit', 'shipyard', 'trade', 'diplomacy', 'agents', 'realm',
     ];
     if ((known as readonly string[]).includes(tab)) {
       this.tab = tab as PanelTab;
@@ -318,6 +339,18 @@ export class CampaignScreen {
     const id = provinceAt(this.view, this.state, x, y);
 
     if (id) {
+      if (this.travelMode && this.selectedAgent && this.view.reachable.has(id)) {
+        moveAgent(this.state, this.selectedAgent, id);
+        const agent = this.state.agents.get(this.selectedAgent);
+        this.view.reachable = new Set(
+          agent ? agentDestinations(this.state, this.selectedAgent) : [],
+        );
+        this.travelMode = Boolean(agent && agent.movement > 0);
+        this.selectProvince(id);
+        this.tab = 'agents';
+        this.renderAll();
+        return;
+      }
       if (this.moveMode && this.selectedArmy && this.view.reachable.has(id)) {
         this.orderMove(this.selectedArmy, id);
         return;
@@ -350,12 +383,15 @@ export class CampaignScreen {
     this.selectedFleet = id
       ? fleetsInZone(this.state, id, this.state.player)[0]?.id
       : undefined;
-    if (this.tab !== 'diplomacy' && this.tab !== 'realm') this.tab = 'province';
+    if (this.tab !== 'diplomacy' && this.tab !== 'realm' && this.tab !== 'agents') {
+      this.tab = 'province';
+    }
   }
 
   private clearMovementHighlights(): void {
     this.moveMode = false;
     this.sailMode = false;
+    this.travelMode = false;
     this.view.reachable.clear();
     this.view.reachableZones.clear();
   }
@@ -387,6 +423,25 @@ export class CampaignScreen {
       if (!region || region.owner !== this.state.player) this.tab = 'province';
       else if (this.tab === 'shipyard' && !getRegion(region.id).port) this.tab = 'province';
     }
+  }
+
+  /**
+   * Development aid: put a few men in the player's service, so the agents
+   * panel can be looked at without first playing to a chancery.
+   */
+  planted(kinds: readonly string[]): void {
+    for (const kind of kinds) {
+      const type = AGENT_TYPES.find((candidate) => candidate.kind === kind);
+      if (!type) continue;
+      const home = provincesOf(this.state, this.state.player).find((province) =>
+        province.buildings.has(type.requires),
+      );
+      if (!home) continue;
+      this.roll((rng) => recruitAgent(this.state, home.id, type.kind, rng));
+    }
+    this.selectedAgent = agentsOf(this.state, this.state.player)[0]?.id;
+    this.tab = 'agents';
+    this.renderAll();
   }
 
   /** Development aid: put the camera somewhere specific at a given zoom. */
@@ -542,6 +597,9 @@ export class CampaignScreen {
       case 'diplomacy':
         this.renderDiplomacyTab(body);
         break;
+      case 'agents':
+        this.renderAgentsTab(body, region);
+        break;
       case 'realm':
         this.renderRealmTab(body);
         break;
@@ -580,6 +638,7 @@ export class CampaignScreen {
       make('shipyard', 'Ships', harbour),
       make('trade', 'Trade'),
       make('diplomacy', 'Diplomacy'),
+      make('agents', 'Agents'),
       make('realm', 'Realm'),
     );
   }
@@ -1346,6 +1405,185 @@ export class CampaignScreen {
 
   // --- realm tab
 
+  // --- agents
+
+  /**
+   * The establishment abroad.
+   *
+   * Everything about an agent is shown before he is committed: the odds on
+   * every mission, the chance of losing him, and what it costs. A failed
+   * mission should be a gamble the player took, never a surprise.
+   */
+  /**
+   * Draws on the campaign's own generator and puts the advanced state back.
+   *
+   * A player's action that needs a die must use the same stream the turn loop
+   * uses, or a save taken afterwards would no longer continue identically —
+   * which is the one property the whole save model rests on.
+   */
+  private roll<T>(act: (rng: Rng) => T): T {
+    const rng = rngFor(this.state);
+    const result = act(rng);
+    commitRng(this.state, rng);
+    return result;
+  }
+
+  private renderAgentsTab(body: HTMLElement, region: RegionState): void {
+    const me = this.state.player;
+    const mine = agentsOf(this.state, me);
+
+    body.appendChild(el('p', { class: 'muted' },
+      'A spy, an envoy, a priest and a factor go where an army cannot, and nobody ' +
+      'declares war over them. What they risk is themselves.',
+    ));
+
+    // Whoever is standing on the province in view, ours and anyone else's,
+    // because the man you want to act on is nearly always one of those.
+    const here = agentsAt(this.state, region.id);
+    if (here.length > 0) {
+      body.appendChild(el('h3', {}, `Standing in ${getRegion(region.id).settlement}`));
+      for (const agent of here) this.renderAgentRow(body, agent, true);
+    }
+
+    const elsewhere = mine.filter((agent) => !here.some((other) => other.id === agent.id));
+    body.appendChild(el('h3', {}, `Our people (${mine.length}/${MAX_AGENTS})`));
+    if (mine.length === 0) {
+      body.appendChild(el('p', { class: 'muted' }, 'Nobody abroad.'));
+    } else if (elsewhere.length === 0) {
+      body.appendChild(el('p', { class: 'muted' }, 'All of them are here.'));
+    }
+    for (const agent of elsewhere) this.renderAgentRow(body, agent, false);
+
+    // Raising one is the thing you do least often, so it goes last.
+    body.appendChild(el('h3', {}, `Raise in ${getRegion(region.id).settlement}`));
+    if (region.owner !== me) {
+      body.appendChild(el('p', { class: 'muted' }, 'Not our ground: no one can be raised here.'));
+      return;
+    }
+    for (const type of AGENT_TYPES) {
+      const allowed = canRecruitAgent(this.state, region.id, type.kind);
+      body.appendChild(el('div', { class: 'offer' },
+        el('div', { class: 'offer-main' },
+          el('strong', {}, type.name),
+          el('p', { class: 'offer-text' }, type.description),
+          el('p', { class: 'offer-meta' },
+            `${count(type.cost)} florins · ${type.upkeep}/turn · ` +
+              `travels ${type.movement} provinces a season · ` +
+              `from the ${getBuildingType(type.requires).name.toLowerCase()}`,
+          ),
+          !allowed.ok && el('p', { class: 'offer-meta' }, allowed.reason),
+        ),
+        el('button', {
+          class: 'small',
+          disabled: !allowed.ok,
+          title: allowed.ok ? `Raise a ${type.name.toLowerCase()} here` : allowed.reason,
+          onClick: () => {
+            this.roll((rng) => recruitAgent(this.state, region.id, type.kind, rng));
+            this.renderAll();
+          },
+        }, 'Raise'),
+      ));
+    }
+  }
+
+  private renderAgentRow(body: HTMLElement, agent: Agent, local: boolean): void {
+    const mine = agent.faction === this.state.player;
+    const selected = this.selectedAgent === agent.id;
+    const type = getAgentType(agent.kind);
+    const where = getRegion(agent.location).settlement;
+
+    const header = el('div', { class: `army-header${selected ? ' selected' : ''}` },
+      swatch(tryGetFaction(agent.faction)?.colour ?? '#888'),
+      el('span', {}, `${agent.name} · ${type.name.toLowerCase()}`),
+      el('span', { class: 'muted', title: 'Skill' }, '★'.repeat(Math.max(1, Math.round(agent.skill / 2)))),
+      !local && el('span', { class: 'muted' }, where),
+    );
+    if (mine) {
+      header.addEventListener('click', () => {
+        this.selectedAgent = selected ? undefined : agent.id;
+        this.travelMode = false;
+        this.view.reachable.clear();
+        // Looking at a man should not throw away the panel you are looking at.
+        const tab = this.tab;
+        this.selectProvince(agent.location);
+        this.tab = tab;
+        this.renderAll();
+      });
+    }
+    body.appendChild(header);
+    if (!mine || !selected) return;
+
+    const region = regionState(this.state, agent.location);
+    body.appendChild(el('p', { class: 'offer-meta' },
+      `Skill ${agent.skill}/10 · ${agent.missions} missions · travel ${agent.movement}/${type.movement}` +
+      (agent.kind === 'merchant' && merchantIncome(this.state, agent) > 0
+        ? ` · sends home ${count(merchantIncome(this.state, agent))} ƒ a turn`
+        : ''),
+    ));
+    body.appendChild(el('p', { class: 'offer-meta' },
+      `${getRegion(region.id).settlement} is watched at ${guard(this.state, region).toFixed(1)}.`,
+    ));
+
+    const controls = el('div', { class: 'army-controls' });
+    controls.appendChild(el('button', {
+      class: this.travelMode ? 'small active' : 'small',
+      disabled: agent.movement <= 0,
+      onClick: () => {
+        this.travelMode = !this.travelMode;
+        this.view.reachable = this.travelMode
+          ? new Set(agentDestinations(this.state, agent.id))
+          : new Set();
+        this.renderAll();
+      },
+    }, this.travelMode ? 'Choose a province…' : 'Travel'));
+    controls.appendChild(el('button', {
+      class: 'danger small',
+      onClick: () => {
+        dismissAgent(this.state, agent.id);
+        this.selectedAgent = undefined;
+        this.renderAll();
+      },
+    }, 'Dismiss'));
+    body.appendChild(controls);
+
+    const offers = missionsFor(this.state, agent.id);
+    if (offers.length === 0) {
+      body.appendChild(el('p', { class: 'muted' },
+        agent.movement <= 0
+          ? 'He has done his work for the season.'
+          : 'There is nothing for him to do here.',
+      ));
+      return;
+    }
+    for (const offer of offers) this.renderMission(body, agent, offer);
+  }
+
+  private renderMission(body: HTMLElement, agent: Agent, offer: MissionOffer): void {
+    const purse = factionState(this.state, this.state.player).treasury;
+    body.appendChild(el('div', { class: 'offer' },
+      el('div', { class: 'offer-main' },
+        el('strong', {}, offer.name),
+        el('p', { class: 'offer-text' }, offer.description),
+        el('p', { class: 'offer-meta' },
+          `${Math.round(offer.chance * 100)}% to succeed` +
+            (offer.peril > 0
+              ? ` · ${Math.round(offer.peril * 100)}% to lose him if it fails`
+              : ' · no risk to him') +
+            (offer.cost > 0 ? ` · ${count(offer.cost)} florins` : ''),
+        ),
+      ),
+      el('button', {
+        class: 'small',
+        disabled: offer.cost > purse,
+        title: offer.cost > purse ? 'Not enough money for it' : 'Send him',
+        onClick: () => {
+          this.roll((rng) => attemptMission(this.state, agent.id, offer.kind, rng));
+          this.renderAll();
+        },
+      }, 'Send him'),
+    ));
+  }
+
   private renderRealmTab(body: HTMLElement): void {
     const me = this.state.player;
     const finances = factionFinances(this.state, me);
@@ -1358,6 +1596,8 @@ export class CampaignScreen {
       row('Administration', `-${count(finances.administration)}`),
       finances.hoarding > 0 && row('Hoarding', `-${count(finances.hoarding)}`,
         'Idle treasure lost to display, officials and debasement'),
+      finances.agents !== 0 && row('Agents', money(-finances.agents),
+        'What the establishment abroad costs, less what the factors send home'),
       finances.stipend > 0 && row('Stipend', money(finances.stipend)),
       mercenaryCompanies(this.state, me) > 0 &&
         row('Hired companies', String(mercenaryCompanies(this.state, me))),
