@@ -60,6 +60,14 @@ import {
   reachableWaters,
   sameWater,
   scrapShip,
+  activeRoutesThrough,
+  canDispatch,
+  caravanLocation,
+  caravanOutlay,
+  caravansIn,
+  caravansOf,
+  dispatchCaravan,
+  expectedReturn,
   shipBuildTurns,
   shipCost,
   startShipbuilding,
@@ -71,6 +79,7 @@ import { getRegion } from '../core/data/regions';
 import { FACTIONS, factionName, tryGetFaction, INDEPENDENT_ID } from '../core/data/factions';
 import type { SeaZoneId } from '../core/data/seas';
 import { getSeaZone, zonesOffPort } from '../core/data/seas';
+import { getTradeRoute } from '../core/data/trade';
 import type { MapView } from '../render/map';
 import { drawMap, provinceAt, zoneAt } from '../render/map';
 import { createCamera, panCamera, zoomCamera } from '../render/projection';
@@ -82,7 +91,14 @@ export interface CampaignScreenHooks {
   readonly onBattle: (plan: BattlePlan) => void;
 }
 
-type PanelTab = 'province' | 'build' | 'recruit' | 'shipyard' | 'diplomacy' | 'realm';
+type PanelTab =
+  | 'province'
+  | 'build'
+  | 'recruit'
+  | 'shipyard'
+  | 'trade'
+  | 'diplomacy'
+  | 'realm';
 
 export class CampaignScreen {
   private readonly canvas: HTMLCanvasElement;
@@ -133,6 +149,7 @@ export class CampaignScreen {
       hoveredZone: undefined,
       reachableZones: new Set(),
       alwaysLabel: false,
+      showRoutes: false,
     };
 
     this.attachInput();
@@ -161,7 +178,7 @@ export class CampaignScreen {
    */
   openTab(tab: string): void {
     const known: readonly PanelTab[] = [
-      'province', 'build', 'recruit', 'shipyard', 'diplomacy', 'realm',
+      'province', 'build', 'recruit', 'shipyard', 'trade', 'diplomacy', 'realm',
     ];
     if ((known as readonly string[]).includes(tab)) {
       this.tab = tab as PanelTab;
@@ -271,6 +288,9 @@ export class CampaignScreen {
         this.renderAll();
       } else if (event.key === 'l' || event.key === 'L') {
         this.view.alwaysLabel = !this.view.alwaysLabel;
+        this.draw();
+      } else if (event.key === 't' || event.key === 'T') {
+        this.view.showRoutes = !this.view.showRoutes;
         this.draw();
       }
     });
@@ -467,6 +487,9 @@ export class CampaignScreen {
       case 'shipyard':
         this.renderShipyardTab(body, region);
         break;
+      case 'trade':
+        this.renderTradeTab(body, region);
+        break;
       case 'diplomacy':
         this.renderDiplomacyTab(body);
         break;
@@ -506,6 +529,7 @@ export class CampaignScreen {
       make('build', 'Build', mine),
       make('recruit', 'Recruit', mine),
       make('shipyard', 'Ships', harbour),
+      make('trade', 'Trade'),
       make('diplomacy', 'Diplomacy'),
       make('realm', 'Realm'),
     );
@@ -693,6 +717,76 @@ export class CampaignScreen {
     }
 
     return controls;
+  }
+
+  // --- trade
+
+  private renderTradeTab(body: HTMLElement, region: RegionState): void {
+    const mine = region.owner === this.state.player;
+    const roads = activeRoutesThrough(this.state, region.id);
+
+    const passing = caravansIn(this.state, region.id);
+    if (passing.length > 0) {
+      body.appendChild(el('h3', {}, 'Caravans here'));
+      for (const caravan of passing) {
+        const route = getTradeRoute(caravan.route);
+        body.appendChild(row(
+          `${factionName(caravan.faction)} · ${route.name}`,
+          `${count(caravan.value)} florins`,
+        ));
+      }
+    }
+
+    if (roads.length === 0) {
+      body.appendChild(el('p', { class: 'muted' },
+        'No trade road passes through this province.',
+      ));
+      return;
+    }
+
+    body.appendChild(el('h3', {}, 'Roads through here'));
+    body.appendChild(el('p', { class: 'muted' },
+      'A caravan costs money now and pays more on arrival, less a toll to every ' +
+        'lord whose land it crosses. Press T to see every road on the map.',
+    ));
+
+    const treasury = factionState(this.state, this.state.player).treasury;
+    for (const route of roads) {
+      const outlay = caravanOutlay(route);
+      const expected = expectedReturn(this.state, this.state.player, route, region.id);
+      const held = route.path.filter(
+        (id) => this.state.regions.get(id)?.owner === this.state.player,
+      ).length;
+      const allowed = canDispatch(this.state, region.id, route.id);
+      const ours = caravansOf(this.state, this.state.player).filter(
+        (caravan) => caravan.route === route.id,
+      ).length;
+
+      body.appendChild(el('div', { class: 'offer' },
+        el('div', { class: 'offer-main' },
+          el('strong', {}, route.name),
+          el('p', { class: 'offer-text' }, route.description),
+          el('p', { class: 'offer-meta' },
+            `${pretty(route.commodity)} · ${route.path.length} stages · ` +
+              `we hold ${held} of them · ${ours} of ours on the road`,
+          ),
+          el('p', { class: 'offer-meta' },
+            `outlay ${count(outlay)} · expected return ` +
+              (expected > 0 ? count(expected) : 'nothing, the road is shut'),
+          ),
+        ),
+        mine && el('button', {
+          class: 'small',
+          disabled: !allowed.ok || treasury < outlay,
+          title: allowed.ok ? 'Load a caravan here' : allowed.reason,
+          onClick: () => {
+            const result = dispatchCaravan(this.state, region.id, route.id);
+            if (!result.ok) this.flash(result.reason);
+            this.renderAll();
+          },
+        }, 'Send caravan'),
+      ));
+    }
   }
 
   // --- shipyard
@@ -1164,6 +1258,8 @@ export class CampaignScreen {
       row('Army upkeep', `-${count(finances.armyUpkeep)}`),
       row('Garrison upkeep', `-${count(finances.garrisonUpkeep)}`),
       row('Administration', `-${count(finances.administration)}`),
+      finances.hoarding > 0 && row('Hoarding', `-${count(finances.hoarding)}`,
+        'Idle treasure lost to display, officials and debasement'),
       finances.stipend > 0 && row('Stipend', money(finances.stipend)),
       row('Balance', money(finances.net), 'emphasis'),
     ));
@@ -1215,6 +1311,30 @@ export class CampaignScreen {
           el('span', { class: 'realm-name' }, where),
           el('span', { class: 'muted' }, `${fleet.ships.length} ships`),
           fleet.cargo.length > 0 && el('span', { class: 'muted' }, `${fleet.cargo.length} aboard`),
+        ));
+      }
+    }
+
+    const caravans = caravansOf(this.state, me);
+    if (caravans.length > 0) {
+      body.appendChild(el('h3', {}, 'Caravans on the road'));
+      for (const caravan of caravans) {
+        const route = getTradeRoute(caravan.route);
+        const where = caravanLocation(caravan);
+        body.appendChild(el('div', {
+          class: 'realm-row',
+          onClick: () => {
+            if (!where) return;
+            this.selectProvince(where);
+            this.focusOn(where);
+            this.tab = 'trade';
+            this.renderAll();
+          },
+        },
+          el('span', { class: 'realm-name' }, route.name),
+          el('span', { class: 'muted' }, where ? getRegion(where).settlement : '—'),
+          el('span', { class: 'good' }, count(caravan.value)),
+          caravan.stalled > 0 && el('span', { class: 'bad' }, 'held up'),
         ));
       }
     }

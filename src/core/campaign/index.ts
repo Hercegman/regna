@@ -30,5 +30,6 @@ export * from './resolve';
 export * from './emergence';
 export * from './turn';
 export * from './naval';
+export * from './caravans';
 export * from './save';
 export { takeAiTurn } from './ai';

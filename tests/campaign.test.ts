@@ -177,10 +177,12 @@ describe('economy', () => {
         finances.provinceNet -
           finances.armyUpkeep -
           finances.garrisonUpkeep -
-          finances.administration +
+          finances.administration -
+          finances.hoarding +
           finances.stipend,
       );
       expect(finances.administration).toBeGreaterThanOrEqual(0);
+      expect(finances.hoarding).toBeGreaterThanOrEqual(0);
       expect(Number.isFinite(finances.net)).toBe(true);
     }
   });

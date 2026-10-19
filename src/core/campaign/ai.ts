@@ -59,19 +59,85 @@ import {
 } from './naval';
 import type { SeaZoneId } from '../data/seas';
 import { SEA_ZONE_IDS, getSeaZone, zonesOffPort, zoneServesPort } from '../data/seas';
+import type { TradeRoute } from '../data/trade';
+import {
+  activeRoutesThrough,
+  canDispatch,
+  caravanOutlay,
+  dispatchCaravan,
+  expectedReturn,
+} from './caravans';
 import { getRegion } from '../data/regions';
 import type { Rng } from '../rng';
 
 export function takeAiTurn(state: CampaignState, id: FactionId, rng: Rng): void {
   manageEconomy(state, id, rng);
+  manageTrade(state, id, rng);
   manageDiplomacy(state, id, rng);
   manageArmies(state, id, rng);
   manageNavy(state, id, rng);
 }
 
 // ---------------------------------------------------------------------------
+// Trade
+// ---------------------------------------------------------------------------
+
+/**
+ * Sending a caravan is an investment: money now against more money later, if
+ * the road holds. The AI takes the wager when the odds are clearly in its
+ * favour and leaves it alone when the road is cut, which is the same judgement
+ * the player is being asked to make.
+ */
+function manageTrade(state: CampaignState, id: FactionId, rng: Rng): void {
+  const faction = factionState(state, id);
+  const provinces = provincesOf(state, id);
+  if (provinces.length === 0) return;
+
+  const reserve = Math.max(400, annualNet(state, id) * 2);
+  let sent = 0;
+  const limit = 2;
+
+  // Consider the best wager available in each province, richest road first.
+  const offers: { region: RegionId; route: TradeRoute; gain: number; outlay: number }[] = [];
+  for (const province of provinces) {
+    for (const route of activeRoutesThrough(state, province.id)) {
+      if (!canDispatch(state, province.id, route.id).ok) continue;
+      const outlay = caravanOutlay(route);
+      const gain = expectedReturn(state, id, route, province.id);
+      if (gain <= outlay * 1.35) continue;
+      offers.push({ region: province.id, route, gain, outlay });
+    }
+  }
+  offers.sort((a, b) => b.gain - b.outlay - (a.gain - a.outlay));
+
+  for (const offer of offers) {
+    if (sent >= limit) break;
+    if (faction.treasury - offer.outlay < reserve) continue;
+    // A merchant state trades more readily than a landed one.
+    const appetite = (tryGetFaction(id)?.traits.trade ?? 0) > 0.2 ? 0.9 : 0.55;
+    if (!rng.chance(appetite)) continue;
+    if (dispatchCaravan(state, offer.region, offer.route.id).ok) sent += 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Economy
 // ---------------------------------------------------------------------------
+
+/**
+ * What a realm can commit to this turn beyond its income.
+ *
+ * A prince with a full treasury can keep a larger establishment than his
+ * annual revenue supports, for as long as the hoard lasts. Without this the AI
+ * spent income only and never capital, so a rich state sat on its money while
+ * its neighbours out-built it.
+ */
+function spendingPower(state: CampaignState, id: FactionId, reserve: number): number {
+  const treasury = factionState(state, id).treasury;
+  const spare = Math.max(0, treasury - reserve);
+  // Willing to fund about twenty-five turns of extra upkeep out of savings.
+  return annualNet(state, id) + spare / 25;
+}
 
 /**
  * What the AI wants to spend on. It keeps a reserve proportional to its army,
@@ -229,7 +295,7 @@ function buildSomething(
   // what it has left to spend as it commits, instead of judging every project
   // against the same untouched balance and then finding it cannot pay for any
   // of them.
-  let headroom = annualNet(state, id);
+  let headroom = spendingPower(state, id, reserve);
   for (const entry of ranked) {
     const type = getBuildingType(entry.building);
     if (faction.treasury - type.cost < reserve) continue;
@@ -251,7 +317,7 @@ function recruitWhereNeeded(
   // Affordable means more than having the cash today: a regiment is a standing
   // charge, and raising one that tips the realm into deficit only leads to
   // disbanding it again a few turns later.
-  let headroom = annualNet(state, id);
+  let headroom = spendingPower(state, id, reserve);
 
   const targets = [...provinces]
     .filter(
@@ -311,7 +377,11 @@ function desiredHulls(state: CampaignState, id: FactionId): number {
   const traits = tryGetFaction(id)?.traits ?? {};
   const maritime = (traits.trade ?? 0) >= 0.25;
   const base = Math.min(10, 1 + Math.floor(harbours.length / 2));
-  return maritime ? base + 4 : base;
+  // A rich thalassocracy spends its money on hulls. Without this a merchant
+  // republic with one province and a fortune has nothing at all to buy, and
+  // simply accumulates.
+  const wealth = Math.floor(factionState(state, id).treasury / 4000);
+  return Math.min(24, (maritime ? base + 4 : base) + (maritime ? wealth : Math.floor(wealth / 2)));
 }
 
 function manageNavy(state: CampaignState, id: FactionId, rng: Rng): void {
@@ -332,7 +402,7 @@ function buildShips(state: CampaignState, id: FactionId, rng: Rng): void {
   if (have >= want) return;
 
   const faction = factionState(state, id);
-  let headroom = annualNet(state, id);
+  let headroom = spendingPower(state, id, 400);
   const harbours = provincesOf(state, id)
     .filter((province) => getRegion(province.id).port && !province.siege)
     .sort((a, b) => b.population - a.population);

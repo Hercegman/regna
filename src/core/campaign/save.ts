@@ -10,6 +10,7 @@
  */
 import type {
   ArmyId,
+  CaravanId,
   FleetId,
   BuildingId,
   CharacterId,
@@ -23,6 +24,7 @@ import type {
 import {
   armyId as toArmyId,
   fleetId as toFleetId,
+  caravanId as toCaravanId,
   buildingId as toBuildingId,
   characterId as toCharacterId,
   factionId as toFactionId,
@@ -32,6 +34,7 @@ import {
 import type {
   Army,
   CampaignState,
+  Caravan,
   Fleet,
   Character,
   FactionState,
@@ -42,12 +45,14 @@ import type {
 } from './state';
 import type { RngState } from '../rng';
 import type { SeaZoneId } from '../data/seas';
+import type { TradeRouteId } from '../data/trade';
 
 /**
  * Bumped whenever the saved shape changes. Version 2 added fleets, the ships
- * building at a harbour, and the cargo a fleet is carrying.
+ * building at a harbour, and the cargo a fleet is carrying. Version 3 added
+ * the caravans on the trade roads.
  */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 interface SavedRegiment {
   readonly t: string;
@@ -108,6 +113,17 @@ interface SavedFleet {
   readonly movement: number;
 }
 
+interface SavedCaravan {
+  readonly id: string;
+  readonly faction: string;
+  readonly route: string;
+  readonly position: number;
+  readonly direction: number;
+  readonly destination: number;
+  readonly value: number;
+  readonly stalled: number;
+}
+
 interface SavedArmy {
   readonly id: string;
   readonly faction: string;
@@ -128,11 +144,13 @@ export interface SavedCampaign {
   readonly player: string;
   readonly nextArmySerial: number;
   readonly nextFleetSerial: number;
+  readonly nextCaravanSerial: number;
   readonly nextCharacterSerial: number;
   readonly factions: readonly SavedFaction[];
   readonly regions: readonly SavedRegion[];
   readonly armies: readonly SavedArmy[];
   readonly fleets: readonly SavedFleet[];
+  readonly caravans: readonly SavedCaravan[];
   readonly log: readonly {
     readonly turn: number;
     readonly year: number;
@@ -186,6 +204,7 @@ export function serialiseCampaign(state: CampaignState): SavedCampaign {
     player: state.player as string,
     nextArmySerial: state.nextArmySerial,
     nextFleetSerial: state.nextFleetSerial,
+    nextCaravanSerial: state.nextCaravanSerial,
     nextCharacterSerial: state.nextCharacterSerial,
     factions: [...state.factions.values()].map((faction) => ({
       id: faction.id as string,
@@ -248,6 +267,16 @@ export function serialiseCampaign(state: CampaignState): SavedCampaign {
       cargo: fleet.cargo.map(saveRegiment),
       admiral: (fleet.admiral?.id as string | undefined) ?? null,
       movement: fleet.movement,
+    })),
+    caravans: [...state.caravans.values()].map((caravan) => ({
+      id: caravan.id as string,
+      faction: caravan.faction as string,
+      route: caravan.route as string,
+      position: caravan.position,
+      direction: caravan.direction,
+      destination: caravan.destination,
+      value: caravan.value,
+      stalled: caravan.stalled,
     })),
     log: state.log.map((entry) => ({
       turn: entry.turn,
@@ -358,6 +387,20 @@ export function deserialiseCampaign(saved: SavedCampaign): CampaignState {
     });
   }
 
+  const caravans = new Map<CaravanId, Caravan>();
+  for (const entry of saved.caravans ?? []) {
+    caravans.set(toCaravanId(entry.id) as CaravanId, {
+      id: toCaravanId(entry.id) as CaravanId,
+      faction: toFactionId(entry.faction) as FactionId,
+      route: entry.route as TradeRouteId,
+      position: entry.position,
+      direction: entry.direction === -1 ? -1 : 1,
+      destination: entry.destination,
+      value: entry.value,
+      stalled: entry.stalled,
+    });
+  }
+
   const log: LogEntry[] = saved.log.map((entry) => ({
     turn: entry.turn,
     year: entry.year,
@@ -375,8 +418,10 @@ export function deserialiseCampaign(saved: SavedCampaign): CampaignState {
     regions,
     armies,
     fleets,
+    caravans,
     nextArmySerial: saved.nextArmySerial,
     nextFleetSerial: saved.nextFleetSerial ?? 0,
+    nextCaravanSerial: saved.nextCaravanSerial ?? 0,
     nextCharacterSerial: saved.nextCharacterSerial,
     player: toFactionId(saved.player) as FactionId,
     log,

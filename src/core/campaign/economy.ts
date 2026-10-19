@@ -171,6 +171,8 @@ export interface FactionFinances {
   readonly garrisonUpkeep: number;
   /** Court, chancery, couriers and the price of keeping distant lords loyal. */
   readonly administration: number;
+  /** What a hoard loses to display, officials and debasement. */
+  readonly hoarding: number;
   readonly stipend: number;
   readonly net: number;
 }
@@ -185,6 +187,23 @@ export interface FactionFinances {
 export function administrationCost(provinces: number): number {
   if (provinces <= 0) return 0;
   return Math.round(18 * Math.pow(provinces, 1.25));
+}
+
+/** A treasury this size is a working reserve and nobody notices it. */
+export const HOARD_THRESHOLD = 5000;
+
+/**
+ * What a hoard costs to keep.
+ *
+ * Medieval treasuries leaked. Money sitting in a vault was spent on display,
+ * siphoned by the officials guarding it, lent to favourites who did not repay,
+ * or quietly debased. Mechanically this is the brake that stops a small state
+ * sitting on a rich trade road from accumulating a fortune it has no use for,
+ * while leaving a prudent reserve untouched.
+ */
+export function hoardingCost(treasury: number): number {
+  if (treasury <= HOARD_THRESHOLD) return 0;
+  return Math.round((treasury - HOARD_THRESHOLD) * 0.03);
 }
 
 /** Upkeep of one regiment, after the faction's upkeep trait. */
@@ -220,6 +239,7 @@ export function factionFinances(
   }
   const stipend = tryGetFaction(id)?.traits.stipend ?? 0;
   const administration = administrationCost(provincesOf(state, id).length);
+  const hoarding = hoardingCost(state.factions.get(id)?.treasury ?? 0);
   // The reported components are rounded, and the total is computed from those
   // rounded figures rather than from the raw ones. A breakdown the player can
   // see must add up to the total the player is charged.
@@ -228,6 +248,7 @@ export function factionFinances(
     armyUpkeep: Math.round(armyUpkeep),
     garrisonUpkeep: Math.round(garrisonUpkeep),
     administration,
+    hoarding,
     stipend,
   };
   return {
@@ -237,7 +258,8 @@ export function factionFinances(
       reported.provinceNet -
       reported.armyUpkeep -
       reported.garrisonUpkeep -
-      reported.administration +
+      reported.administration -
+      reported.hoarding +
       reported.stipend,
   };
 }

@@ -16,7 +16,8 @@ import { BORDERS } from '../core/data/adjacency';
 import { tryGetFaction, INDEPENDENT_ID } from '../core/data/factions';
 import type { SeaZoneId } from '../core/data/seas';
 import { SEA_ZONES, getSeaZone } from '../core/data/seas';
-import { seaLaneClosed } from '../core/campaign';
+import { caravanLocation, seaLaneClosed } from '../core/campaign';
+import { TRADE_ROUTES, routesThrough } from '../core/data/trade';
 import type { Camera, Viewport } from './projection';
 import { project } from './projection';
 
@@ -35,6 +36,8 @@ export interface MapView {
   reachableZones: Set<SeaZoneId>;
   /** Draw province names regardless of zoom. */
   alwaysLabel: boolean;
+  /** Draw every trade road, not only the ones through the selection. */
+  showRoutes: boolean;
 }
 
 const INDEPENDENT_COLOUR = '#8d8578';
@@ -99,10 +102,12 @@ export function drawMap(
   drawLandWash(ctx, state, view);
   drawSeaZones(ctx, state, view);
   drawBorders(ctx, state, view);
+  drawTradeRoutes(ctx, state, view);
   drawReachable(ctx, state, view);
   drawProvinces(ctx, state, view);
   drawArmies(ctx, state, view);
   drawFleets(ctx, state, view);
+  drawCaravans(ctx, state, view);
   drawLabels(ctx, state, view);
   drawSelection(ctx, state, view);
 
@@ -347,6 +352,95 @@ function drawBorders(ctx: CanvasRenderingContext2D, state: CampaignState, view: 
     ctx.stroke();
   }
   ctx.restore();
+}
+
+/**
+ * The trade roads, drawn as thin gold threads along their paths.
+ *
+ * Every road at once would bury the map, so by default only the roads through
+ * the selected province are drawn in full; the rest are a hint. `T` shows them
+ * all.
+ */
+function drawTradeRoutes(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
+  const selected = view.selected;
+  const highlighted = new Set(selected ? routesThrough(selected) : []);
+  ctx.save();
+  for (const route of TRADE_ROUTES) {
+    if (state.year < (route.fromYear ?? -Infinity)) continue;
+    if (state.year > (route.untilYear ?? Infinity)) continue;
+    const strong = highlighted.has(route.id);
+    if (!strong && !view.showRoutes) continue;
+
+    ctx.beginPath();
+    route.path.forEach((region, index) => {
+      const point = screenPositionOf(view, region);
+      if (index === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    });
+    ctx.setLineDash(strong ? [] : [2, 7]);
+    ctx.lineWidth = strong ? 2.4 : 1;
+    ctx.strokeStyle = strong ? 'rgba(217, 181, 95, 0.85)' : 'rgba(217, 181, 95, 0.3)';
+    ctx.stroke();
+
+    if (strong && view.camera.zoom >= 12) {
+      const middle = route.path[Math.floor(route.path.length / 2)]!;
+      const point = screenPositionOf(view, middle);
+      ctx.setLineDash([]);
+      ctx.font = 'italic 500 11px ui-sans-serif, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(12, 16, 20, 0.85)';
+      ctx.strokeText(route.name, point.x, point.y - 14);
+      ctx.fillStyle = '#d9b55f';
+      ctx.fillText(route.name, point.x, point.y - 14);
+    }
+  }
+  ctx.restore();
+}
+
+/** Caravans, as small laden marks beside the province they are passing through. */
+function drawCaravans(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {
+  const byRegion = new Map<RegionId, { colour: string; value: number }[]>();
+  for (const caravan of state.caravans.values()) {
+    const where = caravanLocation(caravan);
+    if (!where) continue;
+    const list = byRegion.get(where) ?? [];
+    list.push({
+      colour: tryGetFaction(caravan.faction)?.colour ?? INDEPENDENT_COLOUR,
+      value: caravan.value,
+    });
+    byRegion.set(where, list);
+  }
+
+  for (const [region, caravans] of byRegion) {
+    const province = state.regions.get(region);
+    if (!province) continue;
+    const point = screenPositionOf(view, region);
+    const radius = radiusFor(province, view.camera.zoom);
+    caravans.forEach((caravan, index) => {
+      const angle = Math.PI * 1.25 - index * 0.5;
+      const x = point.x + Math.cos(angle) * (radius + 8);
+      const y = point.y + Math.sin(angle) * (radius + 8);
+      const size = 2.4 + Math.min(2.2, caravan.value / 400);
+      // A pack-load: a small square with a strap across it.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x - size, y - size * 0.8, size * 2, size * 1.6);
+      ctx.fillStyle = caravan.colour;
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(14, 18, 22, 0.9)';
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x - size, y);
+      ctx.lineTo(x + size, y);
+      ctx.strokeStyle = '#d9b55f';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.restore();
+    });
+  }
 }
 
 function drawReachable(ctx: CanvasRenderingContext2D, state: CampaignState, view: MapView): void {

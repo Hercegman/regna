@@ -23,6 +23,7 @@ import {
 } from './state';
 import { factionFinances, growthRate, publicOrder, tierThreshold } from './economy';
 import { commissionShip, fleetMovementBudget, isBlockaded } from './naval';
+import { advanceCaravans } from './caravans';
 import { getBuildingType } from '../data/buildings';
 import { getUnitType } from '../data/units';
 import { getRegion } from '../data/regions';
@@ -67,6 +68,7 @@ export function endTurn(state: CampaignState): TurnReport {
   }
 
   weatherFleets(state, rng);
+  advanceCaravans(state, rng);
 
   // 4. Money, after the provinces have been updated.
   settleFinances(state);

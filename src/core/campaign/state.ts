@@ -7,6 +7,7 @@
  */
 import type {
   ArmyId,
+  CaravanId,
   FleetId,
   BuildingId,
   CharacterId,
@@ -18,13 +19,14 @@ import type {
   UnitTypeId,
   WallTier,
 } from '../types';
-import { armyId, fleetId, characterId } from '../types';
+import { armyId, fleetId, caravanId, characterId } from '../types';
 import { SETTLEMENT_ORDER } from '../types';
 import type { RngState } from '../rng';
 import { Rng } from '../rng';
 import { FACTIONS, INDEPENDENT_ID, getFaction, tryGetFaction } from '../data/factions';
 import type { Region } from '../data/regions';
 import type { SeaZoneId } from '../data/seas';
+import type { TradeRouteId } from '../data/trade';
 import { getSeaZone, zonesOffPort } from '../data/seas';
 import { REGIONS } from '../data/regions';
 import { getBuildingType } from '../data/buildings';
@@ -96,6 +98,30 @@ export interface Fleet {
   admiral: Character | undefined;
   /** Movement points left this turn, counted in sea zones. */
   movement: number;
+}
+
+/**
+ * A caravan on the road.
+ *
+ * It belongs to the faction that paid to send it, carries a cargo worth more
+ * than the outlay, pays a toll to every lord whose land it crosses, and is
+ * fair game for any army at war with its owner. Trade in this period was a
+ * calculated risk, not a passive income.
+ */
+export interface Caravan {
+  readonly id: CaravanId;
+  readonly faction: FactionId;
+  readonly route: TradeRouteId;
+  /** Index into the route's path. */
+  position: number;
+  /** +1 towards the far end of the route, -1 back towards the near one. */
+  direction: 1 | -1;
+  /** The index it is making for. */
+  destination: number;
+  /** Cargo value left after the tolls paid so far. */
+  value: number;
+  /** Turns it has stood still because the road ahead is shut. */
+  stalled: number;
 }
 
 export interface Construction {
@@ -173,8 +199,10 @@ export interface CampaignState {
   regions: Map<RegionId, RegionState>;
   armies: Map<ArmyId, Army>;
   fleets: Map<FleetId, Fleet>;
+  caravans: Map<CaravanId, Caravan>;
   nextArmySerial: number;
   nextFleetSerial: number;
+  nextCaravanSerial: number;
   nextCharacterSerial: number;
   player: FactionId;
   log: LogEntry[];
@@ -356,6 +384,12 @@ export function newFleetId(state: CampaignState): FleetId {
   return fleetId(`fleet-${state.nextFleetSerial}`);
 }
 
+/** Allocates a fresh caravan id. */
+export function newCaravanId(state: CampaignState): CaravanId {
+  state.nextCaravanSerial += 1;
+  return caravanId(`caravan-${state.nextCaravanSerial}`);
+}
+
 function startingBuildings(tier: SettlementTier, port: boolean): BuildingId[] {
   // Every settlement starts with what its size implies it must already have:
   // somewhere to muster, somewhere to trade, somewhere to pray, and walls
@@ -418,8 +452,10 @@ export function createCampaign(options: CampaignOptions = {}): CampaignState {
     regions: new Map(),
     armies: new Map(),
     fleets: new Map(),
+    caravans: new Map(),
     nextArmySerial: 0,
     nextFleetSerial: 0,
+    nextCaravanSerial: 0,
     nextCharacterSerial: 0,
     player: options.player ?? (getFaction('croatia' as FactionId).id),
     log: [],
@@ -618,6 +654,14 @@ export function armiesOf(state: CampaignState, id: FactionId): Army[] {
 export function fleetsOf(state: CampaignState, id: FactionId): Fleet[] {
   const result: Fleet[] = [];
   for (const fleet of state.fleets.values()) if (fleet.faction === id) result.push(fleet);
+  return result;
+}
+
+export function caravansOf(state: CampaignState, id: FactionId): Caravan[] {
+  const result: Caravan[] = [];
+  for (const caravan of state.caravans.values()) {
+    if (caravan.faction === id) result.push(caravan);
+  }
   return result;
 }
 

@@ -15,6 +15,7 @@ export type UnitTypeId = Branded<string, 'UnitTypeId'>;
 export type BuildingId = Branded<string, 'BuildingId'>;
 export type ArmyId = Branded<string, 'ArmyId'>;
 export type FleetId = Branded<string, 'FleetId'>;
+export type CaravanId = Branded<string, 'CaravanId'>;
 export type CharacterId = Branded<string, 'CharacterId'>;
 
 export const factionId = (value: string): FactionId => value as FactionId;
@@ -23,6 +24,7 @@ export const unitTypeId = (value: string): UnitTypeId => value as UnitTypeId;
 export const buildingId = (value: string): BuildingId => value as BuildingId;
 export const armyId = (value: string): ArmyId => value as ArmyId;
 export const fleetId = (value: string): FleetId => value as FleetId;
+export const caravanId = (value: string): CaravanId => value as CaravanId;
 export const characterId = (value: string): CharacterId => value as CharacterId;
 
 // ---------------------------------------------------------------------------
