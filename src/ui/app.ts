@@ -192,9 +192,7 @@ export class App {
     const plan = planBattle(state, attacker.location, [attacker], [defender]);
     this.state = state;
     const screen = new BattleScreen(this.host, plan, 'france', () => this.showFactionSelect());
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('play') === '1') screen.start();
-    if (params.get('resolve') === '1') screen.resolveNow();
+    applyBattleParams(screen);
   }
 
   /** A set-piece sea fight, for looking at the naval battle on its own. */
@@ -217,9 +215,7 @@ export class App {
     const plan = planNavalBattle(state, 'adriatic_sea' as never, [venetian], [genoese]);
     this.state = state;
     const screen = new BattleScreen(this.host, plan, 'venice', () => this.showFactionSelect());
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('play') === '1') screen.start();
-    if (params.get('resolve') === '1') screen.resolveNow();
+    applyBattleParams(screen);
   }
 
   private checkEnd(): void {
@@ -251,6 +247,19 @@ export class App {
       ),
     );
   }
+}
+
+/**
+ * Development parameters that open a battle at a chosen moment: `at=180`
+ * advances three minutes before drawing, `play=1` starts the clock, and
+ * `resolve=1` runs the whole thing at once.
+ */
+function applyBattleParams(screen: BattleScreen): void {
+  const params = new URLSearchParams(window.location.search);
+  const at = Number.parseInt(params.get('at') ?? '', 10);
+  if (Number.isFinite(at) && at > 0) screen.advanceTo(Math.min(at, 2700));
+  if (params.get('play') === '1') screen.start();
+  if (params.get('resolve') === '1') screen.resolveNow();
 }
 
 function sideStrength(plan: BattlePlan, side: 'attacker' | 'defender'): number {

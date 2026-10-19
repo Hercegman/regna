@@ -227,6 +227,20 @@ export class BattleScreen {
     this.finishNow();
   }
 
+  /**
+   * Advances the battle by a number of seconds and redraws, without running
+   * the clock. Used to open a battle at a chosen moment rather than at its
+   * first tick, which is how the screenshots in the README are taken.
+   */
+  advanceTo(seconds: number): void {
+    const ticks = Math.max(0, Math.floor(seconds / TICK));
+    for (let i = 0; i < ticks && !this.battle.finished; i++) stepBattle(this.battle);
+    this.draw();
+    this.renderHeader();
+    this.renderSidebar();
+    if (this.battle.finished) this.conclude();
+  }
+
   private finishNow(): void {
     this.pause();
     let guard = 0;
