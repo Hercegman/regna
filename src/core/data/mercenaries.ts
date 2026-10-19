@@ -173,7 +173,8 @@ export const MERCENARY_POOLS: readonly MercenaryPool[] = [
   p({
     id: 'cuman', name: 'Cuman Clans', unit: 'cuman_mercenaries', capacity: 3, replenish: 3,
     premium: 1.0, untilYear: 1300,
-    regions: ['podolia', 'donets', 'azov', 'targoviste', 'suceava', 'szeged', 'tarnovo', 'kiev'],
+    regions: ['podolia', 'donets', 'azov', 'targoviste', 'suceava', 'szeged', 'tarnovo', 'vidin',
+              'belgrade', 'kiev'],
     description:
       'A whole clan takes service together, with its herds and its women, and leaves the same ' +
       'way. They are the cheapest horse archers in the world and the least reliable.',
@@ -228,14 +229,16 @@ export const MERCENARY_POOLS: readonly MercenaryPool[] = [
   p({
     id: 'stradiot', name: 'Stradioti', unit: 'stratioti', capacity: 3, replenish: 3,
     premium: 1.15, fromYear: 1400,
-    regions: ['kruje', 'durres', 'kotor', 'dubrovnik', 'corinth', 'candia', 'venice', 'ioannina'],
+    regions: ['kruje', 'durres', 'kotor', 'dubrovnik', 'split', 'zadar', 'corinth', 'candia',
+              'venice', 'ioannina'],
     description:
       'Albanian and Greek light horse who took Venetian pay when the Ottomans took their land. ' +
       'Europe copies their equipment for the next two centuries.',
   }),
   p({
     id: 'jinete', name: 'Jinetes', unit: 'jinetes', capacity: 3, replenish: 3, premium: 1.1,
-    regions: ['granada', 'malaga', 'cordoba', 'seville', 'toledo', 'valencia', 'ceuta', 'tangier'],
+    regions: ['granada', 'malaga', 'cordoba', 'seville', 'toledo', 'valencia', 'zaragoza',
+              'badajoz', 'ceuta', 'tangier'],
     description:
       'Light horse of the Spanish frontier, hired across it in both directions without anyone ' +
       'feeling the need to explain themselves.',
@@ -243,8 +246,9 @@ export const MERCENARY_POOLS: readonly MercenaryPool[] = [
   p({
     id: 'crossbow_companies', name: 'Hired Crossbowmen', unit: 'hired_crossbowmen', capacity: 4,
     replenish: 2, premium: 1.0, fromYear: 1120,
-    regions: ['london', 'paris', 'cologne', 'prague', 'krakow', 'esztergom', 'venice', 'constantinople',
-              'burgos', 'rome', 'thessaloniki', 'bruges'],
+    regions: ['london', 'paris', 'cologne', 'prague', 'krakow', 'esztergom', 'venice',
+              'constantinople', 'burgos', 'rome', 'thessaloniki', 'bruges', 'split', 'palermo',
+              'lisbon', 'hamburg'],
     description:
       'Professional bolt-shooters available in any large town for the campaign season. The ' +
       'crossbow needs money rather than a lifetime of practice, and money is what cities have.',
