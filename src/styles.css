@@ -107,28 +107,287 @@ select.select {
 .row-label { color: var(--text-muted); }
 .row-value { text-align: right; }
 
-/* ---------------- faction select ---------------- */
+/* ---------------- the front of the game ----------------
+ *
+ * A wall of shields, and a sheet of parchment laid on it. The shields are
+ * the seventy-three realms in their own colours, which is both the backdrop
+ * and the argument: this is a game about all of them.
+ */
 
-.select-screen { display: flex; flex-direction: column; height: 100%; }
-.select-header { padding: 1.6rem 2rem 0.8rem; border-bottom: 1px solid var(--line); }
-.select-header h1 { color: var(--accent); }
-.select-header p { color: var(--text-muted); margin: 0; }
-.select-body { display: grid; grid-template-columns: minmax(0, 1fr) 24rem; flex: 1; min-height: 0; }
-.faction-list { overflow-y: auto; padding: 1rem 1.5rem 3rem; }
-.group-title { margin-top: 1.4em; }
-.faction-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr)); gap: 0.4rem; }
-.faction-chip { display: flex; align-items: center; gap: 0.3em; text-align: left; font-size: 0.86rem; }
+.menu-screen {
+  position: relative;
+  display: grid;
+  /* One row of exactly the screen's height, so a sheet taller than the
+   * screen is bounded by it and scrolls inside itself rather than running
+   * off the bottom with its own footer below the fold. */
+  grid-template-rows: minmax(0, 1fr);
+  place-items: center;
+  height: 100%;
+  overflow: hidden;
+  padding: 1.5rem;
+  background:
+    radial-gradient(ellipse at 50% 35%, #2b2419 0%, #15110d 68%, #0c0a07 100%);
+}
+
+.menu-heraldry {
+  position: absolute;
+  inset: -22%;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  justify-content: center;
+  gap: 0.5rem;
+  opacity: 0.34;
+  transform: rotate(-7deg);
+  pointer-events: none;
+}
+/* A vignette over the wall, so the sheet is the only thing lit. */
+.menu-screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 45%, rgba(10, 8, 6, 0.3) 0%, rgba(10, 8, 6, 0.78) 58%, #0a0806 100%);
+  pointer-events: none;
+}
+.menu-plate, .setup-sheet { z-index: 2; }
+.menu-shield {
+  width: 1.9rem;
+  height: 2.3rem;
+  background: var(--banner, #888);
+  clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.3);
+}
+
+/* The parchment every sheet at the front of the game is written on. */
+.menu-plate, .setup-sheet, .result-card {
+  position: relative;
+  color: var(--ink);
+  background:
+    linear-gradient(180deg, rgba(120, 92, 48, 0.2), rgba(120, 92, 48, 0) 6rem),
+    linear-gradient(0deg, rgba(120, 92, 48, 0.2), rgba(120, 92, 48, 0) 6rem),
+    linear-gradient(90deg, #d4c294 0%, #ecdfbb 11%, #f2e8ca 50%, #ecdfbb 89%, #d4c294 100%);
+  border: 1px solid #6b5833;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(201, 168, 76, 0.45), 0 14px 44px rgba(0, 0, 0, 0.66);
+}
+/* The rollers it is wound on. */
+.menu-plate::before, .menu-plate::after,
+.setup-sheet::before, .setup-sheet::after {
+  content: "";
+  position: absolute;
+  left: -0.5rem;
+  right: -0.5rem;
+  height: 0.85rem;
+  background: linear-gradient(180deg, #6a5632, #3d3019 55%, #241c10);
+  border-radius: 2px;
+  box-shadow: inset 0 1px 0 rgba(224, 198, 138, 0.5), 0 2px 6px rgba(0, 0, 0, 0.5);
+  z-index: 2;
+}
+.menu-plate::before, .setup-sheet::before { top: -0.3rem; }
+.menu-plate::after, .setup-sheet::after { bottom: -0.3rem; }
+
+.menu-plate {
+  z-index: 1;
+  width: min(34rem, 100%);
+  padding: 2.2rem 2.4rem 1.6rem;
+  text-align: center;
+}
+.menu-title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 3.4rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #3a2b14;
+  text-shadow: 0 1px 0 rgba(255, 250, 230, 0.6);
+}
+.menu-sub {
+  margin: 0 0 0.3em;
+  font-family: var(--display);
+  font-size: 1rem;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: #8a6f3c;
+}
+.menu-blurb {
+  margin: 0 auto 1.3em;
+  max-width: 24rem;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: #5e4e32;
+}
+.menu-foot { margin: 1.1em 0 0; font-size: 0.74rem; color: #8a7a5a; }
+
+.menu-options { display: flex; flex-direction: column; gap: 0.45rem; }
+button.menu-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding: 0.6em 0.9em;
+  text-align: left;
+  color: #33270f;
+  background: linear-gradient(180deg, #e3d2a4, #c9b57f);
+  border: 1px solid #8a7343;
+  border-radius: 2px;
+  box-shadow: inset 0 1px 0 rgba(255, 250, 230, 0.75);
+}
+button.menu-option:hover:not(:disabled) {
+  background: linear-gradient(180deg, #f1e3b9, #d4c18c);
+  border-color: #6b5227;
+}
+button.menu-option.strong {
+  background: linear-gradient(180deg, #e2c877, #c9a84c 55%, #a8872f);
+  border-color: #6b5227;
+}
+button.menu-option.strong:hover:not(:disabled) {
+  background: linear-gradient(180deg, #f3e0a0, #d9b85c 55%, #b5922f);
+}
+.menu-option-label { font-family: var(--display); font-size: 1.05rem; letter-spacing: 0.05em; }
+.menu-option-note { font-size: 0.76rem; color: #6a5a3c; }
+button.menu-option.strong .menu-option-note { color: #4a3a16; }
+
+/* ---- a sheet you choose something on ---- */
+
+.setup-sheet {
+  z-index: 1;
+  display: flex;
+  width: min(42rem, 100%);
+  max-height: 100%;
+}
+.setup-sheet.wide { width: min(70rem, 100%); }
+.sheet-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 1.4rem 1.6rem 1.2rem;
+}
+.sheet-inner h1 {
+  margin: 0 0 0.1em;
+  font-family: var(--display);
+  font-size: 1.9rem;
+  letter-spacing: 0.05em;
+  color: #3a2b14;
+}
+.sheet-sub { margin: 0 0 1em; color: #6a5a3c; font-size: 0.88rem; }
+.sheet-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  padding-top: 0.9rem;
+  margin-top: auto;
+  border-top: 1px solid rgba(107, 82, 39, 0.3);
+}
+
+.setup-choices { display: flex; flex-direction: column; gap: 0.5rem; }
+button.setup-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  padding: 0.7em 0.9em;
+  text-align: left;
+  color: #33270f;
+  background: rgba(107, 82, 39, 0.1);
+  border: 1px solid rgba(107, 82, 39, 0.4);
+  border-radius: 2px;
+}
+button.setup-choice:hover { background: rgba(107, 82, 39, 0.18); }
+button.setup-choice.chosen {
+  border-color: #8a6f3c;
+  background: rgba(201, 168, 76, 0.26);
+  box-shadow: inset 0 0 0 1px rgba(138, 111, 60, 0.5);
+}
+button.setup-choice strong { font-family: var(--display); font-size: 1.05rem; letter-spacing: 0.03em; }
+.setup-choice-text { font-size: 0.82rem; line-height: 1.5; color: #5e4e32; }
+
+/* Every button on parchment, wherever it is. */
+.menu-screen button, .scroll-panel button:not(.tab):not(.scroll-close), .result-card button {
+  font: inherit;
+  color: #33270f;
+  background: linear-gradient(180deg, #e3d2a4, #c9b57f);
+  border: 1px solid #8a7343;
+  border-radius: 2px;
+  box-shadow: inset 0 1px 0 rgba(255, 250, 230, 0.7);
+  cursor: pointer;
+}
+.menu-screen button:hover:not(:disabled) {
+  background: linear-gradient(180deg, #f0e2b8, #d4c18c);
+  border-color: #6b5227;
+}
+.menu-screen button:disabled { opacity: 0.45; cursor: default; }
+.menu-screen button.primary, .scroll-panel button.primary, .result-card button {
+  background: linear-gradient(180deg, #d9b85c, #a8872f);
+  border-color: #6b5227;
+  font-weight: 700;
+}
+
+/* ---- the roster ---- */
+
+.select-header h1 { color: #3a2b14; }
+.select-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 21rem;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+}
+.faction-list {
+  overflow-y: auto;
+  padding-right: 0.6rem;
+  border-right: 1px solid rgba(107, 82, 39, 0.3);
+}
+.group-title {
+  margin: 1.2em 0 0.4em;
+  font-family: var(--display);
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #8a6f3c;
+  border-bottom: 1px solid rgba(107, 82, 39, 0.25);
+}
+.group-title:first-child { margin-top: 0; }
+.faction-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr)); gap: 0.25rem; }
+button.faction-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  padding: 0.25em 0.5em;
+  text-align: left;
+  font-size: 0.85rem;
+  background: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+button.faction-chip:hover:not(:disabled) { background: rgba(107, 82, 39, 0.14); border-color: transparent; }
 .faction-chip .chip-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.faction-chip .chip-year { color: var(--text-muted); font-size: 0.78rem; }
-.faction-chip.unavailable { opacity: 0.62; }
-.faction-chip.chosen { border-color: var(--accent); background: #232b25; }
-.faction-detail { border-left: 1px solid var(--line); overflow-y: auto; background: var(--bg-raised); }
-.faction-detail-inner { padding: 1.5rem; }
-.faction-meta { color: var(--text-muted); text-transform: capitalize; }
-.faction-text { line-height: 1.6; }
-.traits { margin: 0; padding-left: 1.2em; color: var(--text-muted); font-size: 0.88rem; }
+.faction-chip .chip-year { color: #8a7a5a; font-size: 0.76rem; }
+.faction-chip.unavailable { opacity: 0.55; }
+button.faction-chip.chosen {
+  border-color: #8a6f3c;
+  background: rgba(201, 168, 76, 0.3);
+}
+.faction-detail { overflow-y: auto; }
+.faction-detail-inner { padding: 0 0.2rem 1rem; }
+.faction-detail h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  font-family: var(--display);
+  font-size: 1.3rem;
+  color: #3a2b14;
+}
+.faction-meta { color: #8a6f3c; text-transform: capitalize; font-size: 0.82rem; }
+.faction-text { line-height: 1.65; font-size: 0.88rem; color: #4a3c24; }
+.faction-detail h3 {
+  margin-top: 1.2em;
+  color: #8a6f3c;
+  border-bottom: 1px solid rgba(107, 82, 39, 0.25);
+}
+.traits { margin: 0.3em 0 0; padding-left: 1.2em; color: #5e4e32; font-size: 0.85rem; }
 .traits li { text-transform: capitalize; }
-.select-footer { padding: 1rem 2rem; border-top: 1px solid var(--line); text-align: right; }
+.faction-detail .warning { color: #8a5a12; font-size: 0.84rem; }
 
 /* ---------------- campaign: the carved chrome ----------------
  *
@@ -419,38 +678,38 @@ button.end-turn:disabled { opacity: 0.55; }
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  top: 1.1rem;
-  bottom: 1.1rem;
+  top: 1.4rem;
+  bottom: 1.4rem;
   width: min(34rem, 86%);
   display: flex;
   flex-direction: column;
   color: var(--ink);
   background:
-    linear-gradient(180deg, rgba(120, 92, 48, 0.22), rgba(120, 92, 48, 0) 7rem),
-    linear-gradient(0deg, rgba(120, 92, 48, 0.22), rgba(120, 92, 48, 0) 7rem),
-    linear-gradient(90deg, #d9c89c 0%, #ecdfbb 12%, #f1e7c9 50%, #ecdfbb 88%, #d9c89c 100%);
+    linear-gradient(180deg, rgba(120, 92, 48, 0.2), rgba(120, 92, 48, 0) 6rem),
+    linear-gradient(0deg, rgba(120, 92, 48, 0.2), rgba(120, 92, 48, 0) 6rem),
+    linear-gradient(90deg, #d4c294 0%, #ecdfbb 11%, #f2e8ca 50%, #ecdfbb 89%, #d4c294 100%);
   border: 1px solid #6b5833;
   border-radius: 3px;
   box-shadow:
-    0 0 0 1px rgba(201, 168, 76, 0.5),
-    0 10px 34px rgba(0, 0, 0, 0.6);
-  overflow: hidden;
+    0 0 0 1px rgba(201, 168, 76, 0.45),
+    0 14px 44px rgba(0, 0, 0, 0.66);
   z-index: 4;
 }
 .scroll-panel.hidden { display: none; }
-/* The rollers a scroll is wound on, top and bottom. */
+/* The rollers it is wound on, standing a little proud of the paper. */
 .scroll-panel::before, .scroll-panel::after {
   content: "";
   position: absolute;
-  left: 0;
-  right: 0;
-  height: 0.7rem;
-  background: linear-gradient(180deg, #5c4a2c, #3a2e1b 55%, #241c10);
-  box-shadow: inset 0 1px 0 rgba(224, 198, 138, 0.5);
+  left: -0.5rem;
+  right: -0.5rem;
+  height: 0.85rem;
+  background: linear-gradient(180deg, #6a5632, #3d3019 55%, #241c10);
+  border-radius: 2px;
+  box-shadow: inset 0 1px 0 rgba(224, 198, 138, 0.5), 0 2px 6px rgba(0, 0, 0, 0.5);
   z-index: 2;
 }
-.scroll-panel::before { top: 0; }
-.scroll-panel::after { bottom: 0; }
+.scroll-panel::before { top: -0.3rem; }
+.scroll-panel::after { bottom: -0.3rem; }
 
 .scroll-inner {
   display: flex;
@@ -555,19 +814,30 @@ button.scroll-close:hover { color: #2e2419; border-color: #a98f5d; }
 
 /* ---- the guide and the log, which float over the map ---- */
 
+/* The guide is advice, and advice in this game is written on paper. */
 .guide-box {
   position: absolute;
-  right: 0.75rem;
-  top: 0.75rem;
+  right: 0.9rem;
+  top: 0.9rem;
   width: min(21rem, 42%);
-  background: linear-gradient(180deg, rgba(31, 26, 19, 0.94), rgba(17, 14, 10, 0.94));
-  border: 1px solid #4b3f2a;
-  border-radius: 3px;
-  box-shadow: inset 0 1px 0 rgba(201, 168, 76, 0.25), 0 4px 14px rgba(0, 0, 0, 0.5);
-  padding: 0.55rem 0.75rem 0.7rem;
+  color: var(--ink);
+  background:
+    linear-gradient(180deg, rgba(120, 92, 48, 0.16), rgba(120, 92, 48, 0) 3rem),
+    linear-gradient(90deg, #d4c294 0%, #ecdfbb 10%, #f2e8ca 50%, #ecdfbb 90%, #d4c294 100%);
+  border: 1px solid #6b5833;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(201, 168, 76, 0.4), 0 8px 24px rgba(0, 0, 0, 0.55);
+  padding: 0.6rem 0.8rem 0.75rem;
   font-size: 0.82rem;
   line-height: 1.45;
   z-index: 3;
+}
+.guide-box button {
+  font: inherit;
+  color: #33270f;
+  background: linear-gradient(180deg, #e3d2a4, #c9b57f);
+  border: 1px solid #8a7343;
+  border-radius: 2px;
 }
 .guide-box.hidden { display: none; }
 .guide-head {
@@ -577,16 +847,16 @@ button.scroll-close:hover { color: #2e2419; border-color: #a98f5d; }
   gap: 0.6rem;
   margin-bottom: 0.4rem;
 }
-.guide-head strong { font-family: var(--display); color: var(--gilt); letter-spacing: 0.04em; }
-.guide-step { display: flex; gap: 0.5em; align-items: baseline; color: var(--text-muted); }
-.guide-step.done .guide-title { text-decoration: line-through; opacity: 0.65; }
-.guide-step.done .guide-mark { color: var(--good); }
-.guide-step.current { color: var(--text); }
-.guide-step.current .guide-mark { color: var(--gilt); }
+.guide-head strong { font-family: var(--display); color: #3a2b14; letter-spacing: 0.03em; font-size: 0.95rem; }
+.guide-step { display: flex; gap: 0.5em; align-items: baseline; color: #7a6a4a; }
+.guide-step.done .guide-title { text-decoration: line-through; opacity: 0.6; }
+.guide-step.done .guide-mark { color: #4a7a32; }
+.guide-step.current { color: #33270f; }
+.guide-step.current .guide-mark { color: #8a6514; }
 .guide-step.current .guide-title { font-weight: 600; }
 .guide-mark { width: 1em; text-align: center; }
-.guide-why { margin: 0.35rem 0 0.2rem 1.5em; }
-.guide-where { margin: 0 0 0.3rem 1.5em; color: var(--gilt); }
+.guide-why { margin: 0.35rem 0 0.2rem 1.5em; color: #5e4e32; }
+.guide-where { margin: 0 0 0.3rem 1.5em; color: #8a6514; font-weight: 600; }
 
 .log-box {
   position: absolute;
@@ -742,12 +1012,52 @@ button.speed.active { border-color: var(--gilt); color: var(--gilt); }
 
 /* ---------------- modal and end ---------------- */
 
-.modal { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8, 11, 14, 0.7); z-index: 10; }
-.modal-card { background: var(--bg-raised); border: 1px solid var(--line); border-radius: 6px; padding: 1.4rem 1.6rem; max-width: 26rem; }
+.modal { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8, 11, 14, 0.72); z-index: 10; }
+.modal-card {
+  max-width: 27rem;
+  padding: 1.5rem 1.7rem 1.4rem;
+  color: var(--ink);
+  background: linear-gradient(90deg, #d4c294 0%, #ecdfbb 11%, #f2e8ca 50%, #ecdfbb 89%, #d4c294 100%);
+  border: 1px solid #6b5833;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(201, 168, 76, 0.45), 0 14px 44px rgba(0, 0, 0, 0.66);
+}
+.modal-card h2 { font-family: var(--display); font-size: 1.3rem; color: #3a2b14; }
+.modal-card .muted, .modal-card .row-label { color: #6a5a3c; }
 .modal-actions { display: flex; gap: 0.5em; margin-top: 1rem; }
+.modal-card button {
+  font: inherit;
+  color: #33270f;
+  background: linear-gradient(180deg, #e3d2a4, #c9b57f);
+  border: 1px solid #8a7343;
+  border-radius: 2px;
+  box-shadow: inset 0 1px 0 rgba(255, 250, 230, 0.7);
+}
+.modal-card button.primary { background: linear-gradient(180deg, #d9b85c, #a8872f); border-color: #6b5227; font-weight: 700; }
 
-.end-screen { max-width: 34rem; margin: 0 auto; padding: 4rem 2rem; }
-.end-screen h1 { color: var(--accent); }
-.ranking { color: var(--text-muted); line-height: 1.7; }
-.ranking .ours { color: var(--accent); font-weight: 600; }
+/* The closing reckoning, on the last sheet of the chronicle. */
+.end-screen {
+  max-width: 36rem;
+  margin: 2.5rem auto;
+  padding: 2rem 2.2rem;
+  color: var(--ink);
+  background: linear-gradient(90deg, #d4c294 0%, #ecdfbb 11%, #f2e8ca 50%, #ecdfbb 89%, #d4c294 100%);
+  border: 1px solid #6b5833;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(201, 168, 76, 0.45), 0 14px 44px rgba(0, 0, 0, 0.66);
+}
+.end-screen h1 { font-family: var(--display); color: #3a2b14; }
+.end-screen h3 { color: #8a6f3c; border-bottom: 1px solid rgba(107, 82, 39, 0.3); }
+.end-screen .row-label, .end-screen .muted { color: #6a5a3c; }
+.end-screen button {
+  font: inherit;
+  color: #33270f;
+  background: linear-gradient(180deg, #d9b85c, #a8872f);
+  border: 1px solid #6b5227;
+  border-radius: 2px;
+  font-weight: 700;
+}
+.ranking { color: #5e4e32; line-height: 1.7; }
+.ranking .ours { color: #8a6514; font-weight: 700; }
 .reckoning { margin: 1.2rem 0; max-width: 24rem; }
+.reckoning .bar { background: rgba(60, 46, 20, 0.3); }

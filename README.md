@@ -37,8 +37,14 @@ neighbours. Nothing is backdated: a state that did not exist in 1080 enters
 play in the year it actually rose, at the place it rose from.
 
 <div align="center">
+<img src="docs/screenshots/menu.png" alt="The front of the game: a sheet of parchment on a wall of seventy-three shields" width="860" />
 <img src="docs/screenshots/factions.png" alt="Choosing from seventy-three historical powers" width="860" />
 </div>
+
+The front of the game is a wall of their shields with a sheet of parchment laid
+on it. From there: a grand campaign, a campaign already in progress, a saved
+file, or one battle fought on its own — a field, an assault on a town, or a
+fight at sea.
 
 ## The world
 
@@ -75,8 +81,11 @@ play in the year it actually rose, at the place it rose from.
   | Height | has the last word on the ground: above the treeline it is bare rock and above that snow, and the line wanders, because one drawn straight across a continent is a contour and not a treeline |
   | The shore | a shelf of pale water wherever the sea touches land, a strand of sand wherever the land touches sea, and the real Natural Earth coast drawn over the join |
   | Rivers | the great ones, drawn: the Rhine, the Danube, the Dnieper, the Volga, the Nile. A river is the strongest line in a landscape and the eye finds everything else from it |
+  | Frontiers | chained into continuous runs before they are stroked, so a corner is a corner, and the whole lot drawn on its own plate and cut to the coastline — a border running across open water is the one thing that most gives away a map drawn from a diagram |
   | Ownership | a weak wash on the tile tops, a band of the owner's colour laid inside his own frontier, and his shield beside the name of every town he holds — because the first question anyone asks of a map like this is whose |
   | Settlements | sized against the zoom and not against the tile, so a town covers a fixed piece of ground: pull back and Verona is a mark on Italy rather than a model sitting on top of it |
+  | Position | every sprite records where its own model stood, and is stamped by that point rather than by the middle of its frame — so a town lands on its coordinates and a spear leaning out of the frame does not move the settlement carrying it |
+  | Armies | the man in command. An army with a general is a horseman with his standard planted beside him, one without is a captain on foot; either way what is standing in the province is a person, not a counter |
   | Sprites | one sheet; anything belonging to an owner is rendered in pure magenta and swapped for his colour, which is how one drawing serves seventy-three realms |
   | Battles | the same picture at the scale of one field — pulled back a regiment is a body of men under a standard, closed in it is the men themselves in their ranks and files |
   | Names | drawn afterwards at the screen's own resolution, because a place name in six-pixel type is not a style, it is unreadable |
@@ -98,10 +107,31 @@ play in the year it actually rose, at the place it rose from.
   battlefield that decides battles and the one thing a picture taken from the
   side will not show you.
 
+  Everything written rather than ordered is on paper: the province and its
+  works, the other crowns, the roads, the house, the faith, the front of the
+  game and the reckoning at the end of it. One sheet, unrolled over the map
+  and rolled away again.
+
+  <div align="center">
+  <img src="docs/screenshots/build.png" alt="Building in a province, on the scroll" width="430" /> <img src="docs/screenshots/diplomacy.png" alt="Diplomacy, on the scroll" width="430" />
+  </div>
+
 - **A map with two layers.** Provinces are the land; sea zones are the water. A
   harbour opens onto one or more zones, and fleets move from zone to zone. Great
   rivers are zones too, because the Nile, the Danube, the Dnieper, the Volga and
   the Rhine carried more medieval traffic than most coastlines.
+
+- **Every man, on both screens.** The figures are modelled and rendered the
+  same way the towns are: legs apart, a torso in his lord's colours, arms, a
+  helmet, a shield and a spear — a dozen boxes where it used to be four, which
+  at the size a battle draws him is the difference between a man and a domino.
+  A regiment is the men in it at every zoom the camera will give you, in ranks,
+  each rank offset by a share of his own height so the ranks read as ranks; and
+  the camera goes close enough that every man in the line is a man.
+
+  <div align="center">
+  <img src="docs/screenshots/battle.png" alt="A French line and an Imperial one, every man drawn" width="860" />
+  </div>
 
 - **One battle model, two presentations.** The battle you watch and the battle
   the campaign resolves without you are the same simulation at the same

@@ -140,7 +140,7 @@ import type { SeaZoneId } from '../core/data/seas';
 import { getSeaZone, zonesOffPort } from '../core/data/seas';
 import { getTradeRoute } from '../core/data/trade';
 import type { MapView } from '../render/map';
-import { drawMap, provinceAt, viewCorners, zoneAt } from '../render/map';
+import { drawMap, provinceAt, viewCorners, whenMapReady, zoneAt } from '../render/map';
 import { drawMinimap, fitMinimap, minimapToWorld } from '../render/minimap';
 import { whenSpritesReady } from '../render/iso/sprites';
 import { createCamera, inverseMercator, panCamera, zoomCamera } from '../render/projection';
@@ -261,6 +261,7 @@ export class CampaignScreen {
 
     this.buildRadar();
     whenSpritesReady(() => this.draw());
+    whenMapReady(() => this.draw());
 
     // Start looking at the player's own capital.
     const capital = factionState(state, state.player).capital;

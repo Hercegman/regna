@@ -21,6 +21,7 @@ import { FACTIONS, factionName } from '../core/data/factions';
 import { CampaignScreen } from './campaignScreen';
 import { BattleScreen } from './battleScreen';
 import { renderFactionSelect } from './factionSelect';
+import { heraldry, renderBattleSetup, renderMainMenu, type BattleKind } from './menu';
 import { browserSaveMeta, loadFromBrowser, uploadSave } from './persistence';
 import { clear, count, el, row } from './dom';
 
@@ -54,18 +55,87 @@ export class App {
       this.openDemoEnding();
       return;
     }
+    // `?screen=roster` and `?screen=battles` open a page of the front of the
+    // game directly, which is how the screenshots in the README are taken.
+    const screen = new URLSearchParams(window.location.search).get('screen');
+    if (screen === 'roster') {
+      this.showFactionSelect();
+      return;
+    }
+    if (screen === 'battles') {
+      this.showBattleSetup();
+      return;
+    }
     if (known && known.appearsIn <= CAMPAIGN_START_YEAR) {
       const seed = new URLSearchParams(window.location.search).get('seed') ?? 'regna-direct';
       this.state = newCampaign({ seed, player: known.id });
       this.openCampaign();
       return;
     }
-    this.showFactionSelect();
+    this.showMenu();
+  }
+
+  /**
+   * The front of the game.
+   *
+   * Everything that is not already under way starts here: a campaign, a
+   * campaign in progress, a file, or one battle fought on its own.
+   */
+  private showMenu(): void {
+    const meta = browserSaveMeta();
+    renderMainMenu(this.host, {
+      onCampaign: () => this.showFactionSelect(),
+      ...(meta
+        ? {
+            onContinue: {
+              label: `${factionName(meta.faction as FactionId)}, ${meta.year}`,
+              act: () => {
+                const loaded = loadFromBrowser();
+                if (!loaded) return;
+                this.state = loaded;
+                this.openCampaign();
+              },
+            },
+          }
+        : {}),
+      onImport: () => this.importSave(),
+      onCustomBattle: (kind: BattleKind) => {
+        if (kind === 'siege') this.openDemoSiege();
+        else if (kind === 'sea') this.openDemoSeaBattle();
+        else this.openDemoBattle();
+      },
+    });
+  }
+
+  private showBattleSetup(): void {
+    renderBattleSetup(this.host, {
+      onCampaign: () => this.showFactionSelect(),
+      onImport: () => this.importSave(),
+      onCustomBattle: (kind: BattleKind) => {
+        if (kind === 'siege') this.openDemoSiege();
+        else if (kind === 'sea') this.openDemoSeaBattle();
+        else this.openDemoBattle();
+      },
+    });
+  }
+
+  private importSave(): void {
+    void uploadSave()
+      .then((loaded) => {
+        this.state = loaded;
+        this.openCampaign();
+      })
+      .catch(() => {
+        // A cancelled file dialog or an unreadable file leaves the player
+        // exactly where they were.
+      });
   }
 
   private showFactionSelect(): void {
     const meta = browserSaveMeta();
     renderFactionSelect(this.host, CAMPAIGN_START_YEAR, (id) => this.startCampaign(id), {
+      onBack: () => this.showMenu(),
+      backdrop: () => heraldry(),
       ...(meta
         ? {
             resume: {
@@ -79,17 +149,7 @@ export class App {
             },
           }
         : {}),
-      onImport: () => {
-        void uploadSave()
-          .then((loaded) => {
-            this.state = loaded;
-            this.openCampaign();
-          })
-          .catch(() => {
-            // A cancelled file dialog or an unreadable file leaves the player
-            // exactly where they were.
-          });
-      },
+      onImport: () => this.importSave(),
     });
   }
 
@@ -193,7 +253,7 @@ export class App {
     const attacker = [...state.armies.values()].find((army) => army.faction === ('france' as FactionId));
     const defender = [...state.armies.values()].find((army) => army.faction === ('hre' as FactionId));
     if (!attacker || !defender) {
-      this.showFactionSelect();
+      this.showMenu();
       return;
     }
     // Give both sides a proper order of battle rather than a starting escort.
@@ -214,7 +274,7 @@ export class App {
     defender.location = attacker.location;
     const plan = planBattle(state, attacker.location, [attacker], [defender]);
     this.state = state;
-    const screen = new BattleScreen(this.host, plan, 'france', () => this.showFactionSelect());
+    const screen = new BattleScreen(this.host, plan, 'france', () => this.showMenu());
     applyBattleParams(screen);
   }
 
@@ -228,14 +288,14 @@ export class App {
       (army) => army.faction === ('hre' as FactionId),
     );
     if (!besieger) {
-      this.showFactionSelect();
+      this.showMenu();
       return;
     }
     const target = [...state.regions.values()].find(
       (region) => region.owner !== besieger.faction && region.tier !== 'village',
     );
     if (!target) {
-      this.showFactionSelect();
+      this.showMenu();
       return;
     }
     for (const id of [
@@ -260,7 +320,7 @@ export class App {
     const venetian = [...state.fleets.values()].find((f) => f.faction === ('venice' as FactionId));
     const genoese = [...state.fleets.values()].find((f) => f.faction === ('genoa' as FactionId));
     if (!venetian || !genoese) {
-      this.showFactionSelect();
+      this.showMenu();
       return;
     }
     const stock = (fleet: typeof venetian, types: readonly string[]): void => {
@@ -273,7 +333,7 @@ export class App {
     stock(genoese, ['war_galley', 'war_galley', 'great_galley', 'great_galley', 'nef']);
     const plan = planNavalBattle(state, 'adriatic_sea' as never, [venetian], [genoese]);
     this.state = state;
-    const screen = new BattleScreen(this.host, plan, 'venice', () => this.showFactionSelect());
+    const screen = new BattleScreen(this.host, plan, 'venice', () => this.showMenu());
     applyBattleParams(screen);
   }
 

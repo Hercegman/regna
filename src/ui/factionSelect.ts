@@ -1,15 +1,21 @@
 /**
- * Faction selection.
+ * Choosing a realm.
  *
  * All 73 factions are offered, grouped by region, with the year each enters
  * play. Factions that do not exist in 1080 are shown but cannot be chosen for
  * a campaign that starts there, which is the honest way to present a roster
  * that spans four and a half centuries.
+ *
+ * It is laid out as a sheet of parchment rather than as a settings dialogue,
+ * which is the same argument as everywhere else in this interface: the game
+ * is about a map and a chronicle, and a page of one is a better place to
+ * pick a realm out of than a form.
  */
 import type { Faction } from '../core/data/factions';
 import { FACTIONS } from '../core/data/factions';
 import type { Culture, FactionId } from '../core/types';
-import { clear, el, swatch } from './dom';
+import { clear, el } from './dom';
+import { crest } from './hud';
 
 const GROUPS: readonly { readonly title: string; readonly cultures: readonly Culture[] }[] = [
   { title: 'Latin West', cultures: ['latin_west'] },
@@ -30,6 +36,10 @@ export interface SelectOptions {
   readonly resume?: { readonly label: string; readonly onResume: () => void };
   /** Loads a campaign from a file the player chooses. */
   readonly onImport?: () => void;
+  /** Back to the front of the game. */
+  readonly onBack?: () => void;
+  /** The shield wall the sheet is laid on, shared with the menu. */
+  readonly backdrop?: () => HTMLElement;
 }
 
 export function renderFactionSelect(
@@ -64,7 +74,7 @@ export function renderFactionSelect(
     });
     detail.appendChild(
       el('div', { class: 'faction-detail-inner' },
-        el('h2', {}, swatch(faction.colour), faction.name),
+        el('h2', {}, crest(faction.colour, faction.name), ' ', faction.name),
         el('p', { class: 'faction-meta' },
           `${faction.culture.replace(/_/g, ' ')} · ${faction.religion}` +
             (faction.appearsIn > startYear ? ` · enters play in ${faction.appearsIn}` : ''),
@@ -100,7 +110,7 @@ export function renderFactionSelect(
             showDetail(faction);
           },
         },
-        swatch(faction.colour),
+        crest(faction.colour, faction.name),
         el('span', { class: 'chip-name' }, faction.name),
         !available && el('span', { class: 'chip-year' }, String(faction.appearsIn)),
       );
@@ -110,20 +120,27 @@ export function renderFactionSelect(
   }
 
   host.appendChild(
-    el('div', { class: 'select-screen' },
-      el('header', { class: 'select-header' },
-        el('h1', {}, 'Regna'),
-        el('p', {},
-          `${FACTIONS.length} historical powers, ${startYear} to 1530. Choose one.`,
+    el('div', { class: 'menu-screen' },
+      options.backdrop ? options.backdrop() : el('div', { class: 'menu-heraldry' }),
+      el('div', { class: 'setup-sheet wide' },
+        el('div', { class: 'sheet-inner' },
+          el('header', { class: 'select-header' },
+            el('h1', {}, 'Choose a realm'),
+            el('p', { class: 'sheet-sub' },
+              `${FACTIONS.length} historical powers, ${startYear} to 1530. ` +
+              'Every one of them held the ground it starts on.',
+            ),
+          ),
+          el('div', { class: 'select-body' }, list, detail),
+          el('footer', { class: 'sheet-foot' },
+            options.onBack && el('button', { onClick: options.onBack }, 'Back'),
+            options.onImport && el('button', { onClick: options.onImport }, 'Load a file'),
+            options.resume && el('button', { onClick: options.resume.onResume },
+              options.resume.label,
+            ),
+            startButton,
+          ),
         ),
-      ),
-      el('div', { class: 'select-body' }, list, detail),
-      el('footer', { class: 'select-footer' },
-        options.onImport && el('button', { class: 'small', onClick: options.onImport }, 'Load a file'),
-        options.resume && el('button', { class: 'small', onClick: options.resume.onResume },
-          options.resume.label,
-        ),
-        startButton,
       ),
     ),
   );

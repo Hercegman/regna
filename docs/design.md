@@ -398,6 +398,25 @@ polygon floating over the sea. Fifteen harbours — Venice on its lagoon, Split
 under its mountain — fall just outside a coastline simplified this far, so the
 clip region is the land together with a small disc around every settlement.
 
+**A sprite is framed on what is in it, and stamped by where it stood.** The
+tool fits the camera to the model's own bounds rather than to a radius the
+model reports, so no sprite spends most of its pixels on air, and it records
+where the model's origin — the middle of the ground it was standing on — fell
+in the frame. The map stamps on that point. Framing on the radius and stamping
+on the bottom middle of the frame is why a town used to sit up and to the left
+of its own coordinates, and why a spear leaning out of a frame moved the whole
+settlement carrying it.
+
+**A figure is built like a person.** Legs apart, a torso in his lord's
+colours, two arms, a head with a helmet on it, a shield on the left and a
+spear in the right: a dozen boxes where it used to be four. It costs nothing —
+the sheet is rendered once, offline — and at the size a battle draws him it is
+the difference between a man and a domino. An army on the campaign map is now
+the man commanding it rather than a block of eight identical tokens: a general
+is a horseman with his standard planted beside him and a captain is the same
+man on foot, which is also the only honest way to show a thing the simulation
+already knows about.
+
 **One sheet, seventy-three realms.** Everything standing on the campaign map
 comes off a single sprite sheet, modelled and rendered by
 `tools/build-sprites.py` rather than drawn. Whatever belongs to an owner is
@@ -419,6 +438,16 @@ in its valleys, and the line between them wanders by the same hash.
 a land tile touching sea takes sand, and the real coastline is stroked over
 the join. The shelf is what makes a sea read as a sea from across the room:
 water that is all one colour has no edge, and the edge is the information.
+
+**A frontier is chained, banded, and cut to the coast.** The cells hand over a
+border as a heap of unordered segments; stroked like that every corner is two
+line ends meeting, which at any real width shows as a notch, and the band —
+which is the frontier stroked wide and clipped to the realm's own ground —
+comes out scalloped. So the segments are strung into continuous runs first.
+And the whole frontier is drawn on its own plate and then masked to the real
+coastline, because a province is the ground nearest its own town and that
+reaches well out to sea: a border running across open water is the single
+thing that most gives away a map drawn from a diagram.
 
 **A frontier is three things.** A band of the owner's colour laid inside his
 own ground, a dark line along the edge itself, and the colour again on top of
@@ -452,8 +481,13 @@ shape of the land appear, which is the whole point of fighting on a ridge.
 
 **A regiment is the men in it.** Ranks and files from the unit's own formation,
 as many figures as the block has room for, thinning from the back as it takes
-losses. Below about two pixels a man the renderer gives up and draws a bar,
-because a smear of dots reads worse than a block does. Arrows are drawn only
+losses. A man is drawn far larger than his share of the ground and on purpose:
+a field is 1400 metres across and a man is one, so at the ground's own scale
+he is a pixel. The rank behind is therefore offset by a share of his own
+height rather than by the metre and a half he is really standing back, or the
+ranks land on top of each other and a regiment is one row of heads. The
+threshold below which a regiment becomes a token is low, and the camera closes
+to eleven pixels the metre, so every man in a line is a man. Arrows are drawn only
 where the simulation would have that unit shooting this tick, and dust only
 where units are actually in contact: the picture does not say anything the
 model is not doing.
@@ -461,6 +495,18 @@ model is not doing.
 **The battle has its own camera.** A field 1400 m across and a man a metre
 wide do not share a scale. Untouched, the camera frames the two armies; the
 player zooms and pans from there.
+
+**The front of the game is made of its own data.** No illustration: a wall of
+the seventy-three realms' shields in their own colours, with a sheet of
+parchment laid on it. From there a campaign, a campaign already in progress, a
+file, or one battle on its own — the three kinds being the three shapes a
+medieval fight took, each of which the simulation already treats differently.
+
+**Everything written is on paper.** The province and its works, the other
+crowns, the roads, the house, the faith, the roster at the front and the
+reckoning at the end are one sheet of parchment on rollers, unrolled over the
+map and rolled away again. The stone frame is for what is ordered; the paper
+is for what is read, and nothing is on the wrong one.
 
 **The chrome is a frame, not a dashboard.** A plaque along the top, a band
 along the bottom and a parchment that unrolls over the map: the map is the
