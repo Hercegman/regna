@@ -111,12 +111,15 @@ function paintPortrait(canvas: HTMLCanvasElement, name: SpriteName, colour: stri
     if (!ctx) return;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    // A sprite now fills its own frame, so the card is the frame: no crop,
-    // no guessing where in the square the man ended up. It used to need
-    // both, which is why heads came off when the sheet was reframed.
+    // A sprite is cut down to what is in it, so it has to be put back where
+    // it was: centred across the card and standing on the bottom of it.
     const image = sprite(name, PORTRAIT, colour);
     if (!image) return;
-    ctx.drawImage(image, 0, 0);
+    ctx.drawImage(
+      image,
+      Math.round((PORTRAIT - image.width) / 2),
+      Math.max(0, PORTRAIT - image.height),
+    );
   };
   paint();
   void loadSprites().then(paint).catch(() => undefined);

@@ -138,7 +138,7 @@ fight at sea.
   medieval battlefield was read by. Behind each one lie its dead, a mark a man.
 
 - **And they move.** Every kind of soldier is rendered facing eight ways and in
-  four poses, so a line faces the line it is fighting — at whatever angle it
+  six poses, so a line faces the line it is fighting — at whatever angle it
   happens to be fighting it — and marches on its own legs: step, stand, other step, stand, with every man on his own beat so a
   block on the move is a crowd out of step rather than a chorus line. In contact
   the front rank swings and leans into it while the ranks behind stand and wait,
@@ -147,6 +147,11 @@ fight at sea.
   bow to the shoulder, a lance drops into the couch. The cloth on every standard
   waves. Nothing is a loop played at the picture: it is all read off the state
   the simulation is in this tick, so a regiment that stops moving stops walking.
+  When a regiment breaks, its men run: a longer stride, arms up, and nothing
+  in their hands, because the shield and the spear are the first things a man
+  throws away — which is the one thing that reads as a rout rather than as a
+  march in the wrong direction.
+
   Behind the fighting the dead lie where the regiment has been — a body a man,
   on his back with his shield where it fell, in his lord's colours still.
 

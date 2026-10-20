@@ -278,9 +278,19 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
     # The two stepping poses are mirrors of each other, and the game plays
     # them as step, stand, other step, stand — which is a four-beat cycle out
     # of three pictures, and the cheapest honest walk there is.
-    stride = {'step-a': 0.075, 'step-b': -0.075}.get(pose, 0.0)
-    lean = 0.055 if pose == 'fight' else abs(stride) * 0.25
-    crouch = 0.018 if pose == 'fight' else abs(stride) * 0.12
+    fleeing = pose.startswith('flee')
+    stride = {
+        'step-a': 0.075, 'step-b': -0.075,
+        'flee-a': 0.125, 'flee-b': -0.125,
+    }.get(pose, 0.0)
+    lean = 0.09 if fleeing else 0.055 if pose == 'fight' else abs(stride) * 0.25
+    crouch = 0.018 if pose == 'fight' else abs(stride) * 0.1
+    if fleeing:
+        # A man running for the treeline has thrown away what he was
+        # carrying. It is the one thing that reads as a rout rather than as
+        # a march in the wrong direction.
+        shield = False
+        spear = False
 
     box(f'{name}-leg-l', x - 0.045, y + stride, base, 0.055, 0.08, 0.17 - crouch, mail)
     box(f'{name}-leg-r', x + 0.045, y - stride, base, 0.055, 0.08, 0.17 - crouch, mail)
@@ -295,9 +305,13 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
     else:
         box(f'{name}-torso', x, y + lean, base + 0.17 - crouch, 0.17, 0.11, 0.2, cloth)
     # Arms swing against the legs, which is the thing that makes a walk a
-    # walk rather than a hop.
-    box(f'{name}-arm-l', x - 0.105, y - stride * 0.8, base + 0.2 - crouch, 0.05, 0.09, 0.16, mail)
-    box(f'{name}-arm-r', x + 0.105, y + stride * 0.8 + lean, base + 0.2 - crouch, 0.05, 0.09, 0.16, mail)
+    # walk rather than a hop. In a rout they go up instead.
+    swing = 0.4 if fleeing else 0.8
+    raised = 0.1 if fleeing else 0.0
+    box(f'{name}-arm-l', x - 0.105, y - stride * swing, base + 0.2 + raised - crouch,
+        0.05, 0.09, 0.16, mail)
+    box(f'{name}-arm-r', x + 0.105, y + stride * swing + lean, base + 0.2 + raised - crouch,
+        0.05, 0.09, 0.16, mail)
     if cloak:
         # Hung off the shoulders and down the back, which is the one thing
         # that says a man is somebody at this size.
@@ -733,6 +747,65 @@ def shrink_and_quantise(width, height, raw, cell):
     return out
 
 
+def trim(cell, size):
+    """Cuts a rendered cell down to what is actually in it.
+
+    Every render comes back as a square of the same side, and most of that
+    square is air: a man occupies about a third of his, a tree less. Kept
+    square, five hundred sprites are twenty megabytes of texture once the
+    browser has decoded them, and nine tenths of the work drawing one is
+    scaling transparent pixels.
+
+    Returns where the content started, so the anchor — the point the model
+    was standing on — can be moved with it.
+    """
+    left, top, right, bottom = size, size, -1, -1
+    for y in range(size):
+        row = y * size
+        for x in range(size):
+            if cell[(row + x) * 4 + 3]:
+                if x < left:
+                    left = x
+                if x > right:
+                    right = x
+                if y < top:
+                    top = y
+                if y > bottom:
+                    bottom = y
+    if right < 0:
+        return 0, 0, 1, 1, bytearray(4)
+    width = right - left + 1
+    height = bottom - top + 1
+    out = bytearray(width * height * 4)
+    for y in range(height):
+        start = ((top + y) * size + left) * 4
+        out[y * width * 4:(y + 1) * width * 4] = cell[start:start + width * 4]
+    return left, top, width, height, out
+
+
+def shelve(sizes, limit=2048):
+    """Lays the pieces out in rows, tallest first.
+
+    A shelf packer, which is the simplest thing that works and leaves little
+    enough air that nothing more clever is worth the lines it would take.
+    """
+    order = sorted(range(len(sizes)), key=lambda i: -sizes[i][1])
+    places = {}
+    x = y = shelf = 0
+    used = 0
+    for i in order:
+        width, height = sizes[i]
+        if x + width > limit:
+            x = 0
+            y += shelf
+            shelf = 0
+        places[i] = (x, y)
+        x += width
+        shelf = max(shelf, height)
+        used = max(used, x)
+    return used, y + shelf, places
+
+
 def write_png(path, width, height, rgba):
     rows = bytearray()
     for y in range(height):
@@ -764,10 +837,11 @@ def main():
     wanted.append(('rider', lambda: oneMan(True)))
     wanted.append(('captain', lambda: general(False)))
     wanted.append(('general', lambda: general(True)))
-    # Every kind of soldier, in two kits, eight directions and four poses.
-    # Five hundred and twelve renders and about four hundred kilobytes: the
-    # price of a battle in which the men face the men they are fighting, move
-    # their legs on the way there, and are not all the same man.
+    # Every kind of soldier, in two kits, eight directions and six poses.
+    # Seven hundred and sixty-eight renders: the price of a battle in which
+    # the men face the men they are fighting, move their legs on the way
+    # there, are not all the same man, and throw away their shields when
+    # they break.
     kinds = (
         ('spearman', dict(weapon='spear')),
         ('swordsman', dict(weapon='sword')),
@@ -781,7 +855,7 @@ def main():
     for kind, options in kinds:
         for kit in range(2):
             for facing in range(8):
-                for pose in ('idle', 'step-a', 'step-b', 'fight'):
+                for pose in ('idle', 'step-a', 'step-b', 'fight', 'flee-a', 'flee-b'):
                     label = f'{kind}_{kit}_{facing}_{pose.replace("-", "")}'
                     wanted.append((
                         label,
@@ -797,34 +871,41 @@ def main():
     wanted.append(('tree', lambda: tree(True)))
     wanted.append(('scrub', lambda: tree(False)))
 
-    columns = 16
-    rows = (len(wanted) + columns - 1) // columns
-    sheet = bytearray(columns * CELL * rows * CELL * 4)
-    index = []
-
-    for i, (name, build) in enumerate(wanted):
+    pieces = []
+    for name, build in wanted:
         radius = build()
         across, down = render(camera, radius, scratch)
         width, height, raw = read_png_pixels(scratch)
         cell = shrink_and_quantise(width, height, raw, CELL)
-        column, row = i % columns, i // columns
-        for y in range(CELL):
-            start = ((row * CELL + y) * columns * CELL + column * CELL) * 4
-            sheet[start:start + CELL * 4] = cell[y * CELL * 4:(y + 1) * CELL * 4]
-        index.append((name, column * CELL, row * CELL,
-                      round(across * CELL, 1), round(down * CELL, 1)))
+        left, top, piece_w, piece_h, bits = trim(cell, CELL)
+        pieces.append((
+            name, piece_w, piece_h, bits,
+            round(across * CELL - left, 1),
+            round(down * CELL - top, 1),
+        ))
         print(f'  {name}', flush=True)
 
+    sheet_w, sheet_h, places = shelve([(p[1], p[2]) for p in pieces])
+    sheet = bytearray(sheet_w * sheet_h * 4)
+    index = []
+    for i, (name, piece_w, piece_h, bits, ax, ay) in enumerate(pieces):
+        x, y = places[i]
+        for row in range(piece_h):
+            start = ((y + row) * sheet_w + x) * 4
+            sheet[start:start + piece_w * 4] = bits[row * piece_w * 4:(row + 1) * piece_w * 4]
+        index.append((name, x, y, piece_w, piece_h, ax, ay))
+
     os.makedirs(os.path.dirname(OUT_PNG), exist_ok=True)
-    write_png(OUT_PNG, columns * CELL, rows * CELL, sheet)
+    write_png(OUT_PNG, sheet_w, sheet_h, sheet)
     if os.path.exists(scratch):
         os.remove(scratch)
 
     entries = ',\n'.join(
-        f"  {name}: {{ x: {x}, y: {y}, width: {CELL}, height: {CELL}, "
+        f"  {name}: {{ x: {x}, y: {y}, width: {w}, height: {h}, "
         f"anchorX: {ax}, anchorY: {ay} }}"
-        for name, x, y, ax, ay in index
+        for name, x, y, w, h, ax, ay in index
     )
+    cell = CELL
     with open(OUT_TS, 'w') as handle:
         handle.write(f'''/**
  * Where each sprite sits on the sheet.
@@ -843,9 +924,17 @@ def main():
  * the ground it stands on — fell in its frame. The map stamps a sprite by
  * that point rather than by the middle of the frame, which is what puts a
  * town on its own coordinates instead of up and to the left of them.
+ *
+ * Every sprite is cut down to what is actually in it, so `width` and
+ * `height` differ from one to the next. `SPRITE_CELL` is the square they
+ * were all rendered in: a caller asking for a sprite at a size means that
+ * square, and what it gets back is the piece of it that was not air.
  */
 
 export const SPRITE_MARKER = {{ r: 255, g: 0, b: 255 }} as const;
+
+/** The square every sprite was rendered in, before it was cut down. */
+export const SPRITE_CELL = {cell};
 
 /** Where the sheet is served from. */
 export const SPRITE_SHEET = 'sprites.png';

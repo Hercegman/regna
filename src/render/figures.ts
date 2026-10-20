@@ -14,8 +14,16 @@ export type Figure =
   | 'spearman' | 'swordsman' | 'pikeman' | 'archer'
   | 'crossbowman' | 'gunner' | 'knight' | 'lighthorse';
 
-/** What he is doing. The two steps are mirrors and play either side of idle. */
-export type Pose = 'idle' | 'stepa' | 'stepb' | 'fight';
+/**
+ * What he is doing.
+ *
+ * The two steps are mirrors and play either side of idle, which is a
+ * four-beat walk out of three pictures. The two flights are mirrors too and
+ * play straight against each other, because a man running has no moment of
+ * standing still in him — and he has thrown away his shield, which is the
+ * one thing that reads as a rout rather than as a march the wrong way.
+ */
+export type Pose = 'idle' | 'stepa' | 'stepb' | 'fight' | 'fleea' | 'fleeb';
 
 export function figureFor(unitClass: UnitClass): Figure {
   switch (unitClass) {
@@ -104,7 +112,11 @@ export function poseFor(
     // Not all at once: a line in contact has men swinging and men recovering.
     return Math.floor(seconds * 2.2 + index * 0.41) % 2 === 0 ? 'fight' : 'idle';
   }
-  if (stance === 'advancing' || stance === 'charging' || stance === 'routing') {
+  if (stance === 'routing') {
+    // Faster than a march and with no stand in it: he is running.
+    return Math.floor(seconds * 5.5 + index * 0.43) % 2 === 0 ? 'fleea' : 'fleeb';
+  }
+  if (stance === 'advancing' || stance === 'charging') {
     const beat = Math.floor(seconds * (stance === 'charging' ? 4.5 : 2.8) + index * 0.37) % 4;
     return beat === 0 ? 'stepa' : beat === 2 ? 'stepb' : 'idle';
   }

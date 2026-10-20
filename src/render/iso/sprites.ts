@@ -11,7 +11,7 @@
  * why a settlement here can belong to any of seventy-three realms without
  * seventy-three sheets.
  */
-import { SPRITES, SPRITE_MARKER, SPRITE_SHEET } from '../../core/data/sprites';
+import { SPRITES, SPRITE_CELL, SPRITE_MARKER, SPRITE_SHEET } from '../../core/data/sprites';
 import type { SpriteName } from '../../core/data/sprites';
 
 export type { SpriteName };
@@ -101,12 +101,16 @@ export function sprite(
 
   if (colour) recolour(cutting, box.width, box.height, colour);
 
+  // A sprite is cut down to what is in it, so it is not square and the size
+  // asked for is the square it was rendered in. Scaling by that keeps every
+  // caller's numbers meaning what they always meant.
+  const scale = pixels / SPRITE_CELL;
   const out = document.createElement('canvas');
-  out.width = pixels;
-  out.height = pixels;
+  out.width = Math.max(1, Math.round(box.width * scale));
+  out.height = Math.max(1, Math.round(box.height * scale));
   const drawing = out.getContext('2d')!;
   drawing.imageSmoothingEnabled = false;
-  drawing.drawImage(cut, 0, 0, box.width, box.height, 0, 0, pixels, pixels);
+  drawing.drawImage(cut, 0, 0, box.width, box.height, 0, 0, out.width, out.height);
   if (cache.size >= CACHE_LIMIT) cache.clear();
   cache.set(key, out);
   return out;

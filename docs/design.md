@@ -514,7 +514,8 @@ shape of the land appear, which is the whole point of fighting on a ridge.
 **The men move, and the sheet is how.** The camera cannot move — the whole
 picture depends on it not moving — so a man who faces a different way is a
 man built facing a different way. Every kind of soldier is rendered in eight
-directions, four poses and two kits: idle, two mirrored steps and a fight,
+directions, six poses and two kits: idle, two mirrored steps, a fight and two
+mirrored flights,
 worn either as a surcoat of his lord's colours over a kite shield under a
 flat helm or as mail with a coloured band over a round shield under a
 conical one. Eight directions rather than four, because four means a
@@ -522,8 +523,21 @@ regiment wheeling turns in right angles and a line of battle spends most of
 its time at an angle to the line it is fighting; two kits because the
 cheapest variety there is — one more render — is the difference between a
 body of men and the same man stamped a hundred and twenty times, and which
-kit a man wears is fixed to where he stands in his own block. Five hundred
-and thirty-two renders, four hundred kilobytes, and offline. What the
+kit a man wears is fixed to where he stands in his own block. A man running
+has thrown away his shield and his spear, which is what reads as a rout
+rather than as a march in the wrong direction, and his two flights play
+straight against each other because there is no moment of standing still in
+a man who is running. Seven hundred and eighty-eight renders, and offline.
+
+**And the sheet is cut to fit.** Every render comes back as a square of the
+same side and most of that square is air — a man occupies about a third of
+his. Kept square, this sheet would be five megabytes of texture before the
+browser had drawn anything, and nine tenths of the work of drawing a man
+would be scaling transparent pixels. Each sprite is trimmed to what is
+actually in it and the pieces are shelved into an atlas, tallest first; the
+anchor moves with the trim, so the point a model was standing on is still
+the point the map stamps it by. Half again as many sprites as before, in two
+thirds of the area. What the
 renderer does with them is read the unit's stance and the clock: advancing
 plays step, stand, other step, stand, with a phase per man so a block on the
 move is a crowd out of step; in melee the front rank alternates between the
