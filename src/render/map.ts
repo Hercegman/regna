@@ -343,9 +343,9 @@ function gather(
     if (!canSeeAgent(state, state.player, agent.id, watched)) continue;
     const geography = getRegion(agent.location);
     add(geography.lon, mercatorY(geography.lat), {
-      sprite: 'scrub',
-      size: Math.max(6, unitSize * 0.5),
-      colour: undefined,
+      sprite: 'agent',
+      size: Math.max(6, unitSize * 0.7),
+      colour: tryGetFaction(agent.faction)?.colour ?? '#8d8578',
       offsetX: -Math.round(transform.halfWidth * 0.9),
       offsetY: -Math.round(transform.halfHeight * 0.4),
     });
@@ -357,9 +357,9 @@ function gather(
     if (!where) continue;
     const geography = getRegion(where);
     add(geography.lon, mercatorY(geography.lat), {
-      sprite: 'scrub',
-      size: Math.max(6, unitSize * 0.45),
-      colour: undefined,
+      sprite: 'caravan',
+      size: Math.max(6, unitSize * 0.7),
+      colour: tryGetFaction(caravan.faction)?.colour ?? '#8d8578',
       offsetX: Math.round(transform.halfWidth * 0.3),
       offsetY: -Math.round(transform.halfHeight * 0.8),
     });

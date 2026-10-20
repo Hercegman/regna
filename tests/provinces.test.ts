@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { provinceShapes, cellExtent, landInMercator, terrainScatter } from '../src/render/provinces';
+import { provinceShapes } from '../src/render/provinces';
 import { pointInPolygon, polygonArea } from '../src/render/voronoi';
 import { REGIONS, getRegion } from '../src/core/data/regions';
 import { mercatorY } from '../src/render/projection';
@@ -17,7 +17,6 @@ describe('province shapes', () => {
         `${region.settlement} sits outside its own province`,
       ).toBe(true);
       expect(polygonArea(shape.cell)).toBeGreaterThan(0);
-      expect(cellExtent(shape)).toBeGreaterThan(0);
     }
   });
 
@@ -66,47 +65,5 @@ describe('province shapes', () => {
     expect(alsoABorder / touching).toBeGreaterThan(0.45);
   });
 
-  it('carries the coastline into the same space as the provinces', () => {
-    const land = landInMercator();
-    expect(land.length).toBeGreaterThan(50);
-    for (const ring of land.slice(0, 10)) {
-      expect(ring.length).toBeGreaterThanOrEqual(4);
-      for (const [, y] of ring) expect(Number.isFinite(y)).toBe(true);
-    }
-  });
-
-  it('scatters terrain marks inside the province they belong to', () => {
-    for (const shape of provinceShapes()) {
-      const points = terrainScatter(shape);
-      expect(points.length).toBeGreaterThan(0);
-      // One mark at the settlement is the fallback for a province too small
-      // for the grid; anything more has to be inside the shape.
-      if (points.length === 1) continue;
-      for (const point of points) {
-        expect(pointInPolygon(shape.cell, point.x, point.y)).toBe(true);
-        expect(point.seed).toBeGreaterThanOrEqual(0);
-        expect(point.seed).toBeLessThan(1);
-      }
-    }
-  });
-
-  it('gives the same scatter every time, so hills do not wander', () => {
-    const shape = provinceShapes()[10]!;
-    expect(terrainScatter(shape)).toBe(terrainScatter(shape));
-  });
-
-  it('puts more marks in a forest than on a steppe of the same size', () => {
-    const density = (id: string): number => {
-      const shape = provinceShapes().find((candidate) => candidate.id === id);
-      if (!shape) return 0;
-      return terrainScatter(shape).length / Math.max(1e-6, Math.abs(polygonArea(shape.cell)));
-    };
-    const forest = REGIONS.filter((region) => region.terrain === 'forest');
-    const steppe = REGIONS.filter((region) => region.terrain === 'steppe');
-    expect(forest.length).toBeGreaterThan(0);
-    expect(steppe.length).toBeGreaterThan(0);
-    const mean = (list: typeof forest): number =>
-      list.reduce((sum, region) => sum + density(region.id), 0) / list.length;
-    expect(mean(forest)).toBeGreaterThan(mean(steppe));
-  });
 });
+

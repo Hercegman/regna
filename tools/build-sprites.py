@@ -232,23 +232,81 @@ def settlement(rank, walls):
     return spread + 0.75
 
 
-def soldiers(count, mounted):
-    """A body of men, as a token: a rank of figures behind a shield."""
+def man(name, x, y, mail, cloth, spear_mat, mounted=False):
+    """One figure: legs, a surcoat in his lord's colours, a helmet, a spear.
+
+    Small enough that at map size he is three pixels, which is the whole
+    point: a body of men is a lot of these, not one big token.
+    """
+    base = 0.0
+    if mounted:
+        box(f'{name}-horse', x, y, 0, 0.17, 0.42, 0.24, spear_mat)
+        box(f'{name}-neck', x, y + 0.17, 0.24, 0.12, 0.12, 0.14, spear_mat)
+        base = 0.26
+    box(f'{name}-legs', x, y, base, 0.14, 0.12, 0.16, mail)
+    box(f'{name}-body', x, y, base + 0.16, 0.19, 0.15, 0.2, cloth)
+    box(f'{name}-head', x, y, base + 0.36, 0.13, 0.13, 0.12, mail)
+    # Short enough to read as a spear rather than as a thicket: at map size
+    # a tall one is all you can see of the men carrying it.
+    box(f'{name}-spear', x + 0.11, y - 0.02, base + 0.1, 0.03, 0.03, 0.46, spear_mat)
+
+
+def soldiers(mounted):
+    """A body of men as the map shows one: ranks of figures under a standard.
+
+    Ranks rather than a row, because a row of figures seen from this angle is
+    a picket fence. Two ranks with the back one offset reads as a crowd at
+    any size.
+    """
     clear()
-    mail = material('mail', srgb('#5c5a53'))
+    mail = material('mail', srgb('#55534c'))
     cloth = material('cloth', MARKER, emissive=True)
-    horse = material('horse', srgb('#4a3222'))
-    across = min(5, count)
-    for i in range(across):
-        x = (i - (across - 1) / 2) * 0.3
-        if mounted:
-            box(f'horse-{i}', x, 0, 0, 0.22, 0.46, 0.26, horse)
-            box(f'rider-{i}', x, 0, 0.26, 0.16, 0.16, 0.3, mail)
-        else:
-            box(f'man-{i}', x, 0, 0, 0.16, 0.16, 0.42, mail)
-        box(f'helm-{i}', x, 0, 0.42 if not mounted else 0.56, 0.14, 0.14, 0.1, mail)
-    banner('standard', 0, -0.35, 0, 1.0, mail, cloth)
-    return 1.3
+    timber = material('timber', srgb('#4a3222'))
+    across, deep = (3, 2) if mounted else (4, 2)
+    pitch = 0.34 if mounted else 0.24
+    for row in range(deep):
+        for i in range(across):
+            x = (i - (across - 1) / 2) * pitch + (0.5 * pitch if row else 0)
+            y = -row * (0.42 if mounted else 0.26)
+            man(f'm{row}-{i}', x, y, mail, cloth, timber, mounted)
+    banner('standard', 0, -deep * 0.3 - 0.2, 0, 0.95, timber, cloth)
+    return 0.95 if not mounted else 1.15
+
+
+def oneMan(mounted):
+    """A single figure, for the battlefield, where there are hundreds."""
+    clear()
+    mail = material('mail', srgb('#55534c'))
+    cloth = material('cloth', MARKER, emissive=True)
+    timber = material('timber', srgb('#4a3222'))
+    man('one', 0, 0, mail, cloth, timber, mounted)
+    return 0.62 if not mounted else 0.74
+
+
+def agent():
+    """A hooded man on foot: no banner, no mail, nothing to identify him."""
+    clear()
+    cloak = material('cloak', MARKER, emissive=True)
+    dark = material('dark', srgb('#3b372f'))
+    box('legs', 0, 0, 0, 0.12, 0.1, 0.12, dark)
+    box('cloak', 0, 0, 0.12, 0.2, 0.17, 0.26, cloak)
+    cone('hood', 0, 0, 0.36, 0.1, 0.14, dark, 6)
+    box('staff', 0.12, -0.02, 0, 0.03, 0.03, 0.62, dark)
+    return 0.5
+
+
+def caravan():
+    """A pack animal under its load, with the load in the owner's colours."""
+    clear()
+    beast = material('beast', srgb('#5b452c'))
+    load = material('load', MARKER, emissive=True)
+    box('body', 0, 0, 0.14, 0.18, 0.46, 0.18, beast)
+    box('neck', 0, 0.24, 0.26, 0.12, 0.14, 0.16, beast)
+    box('head', 0, 0.3, 0.4, 0.11, 0.16, 0.1, beast)
+    for i, (dx, dy) in enumerate(((-0.07, 0.17), (0.07, 0.17), (-0.07, -0.17), (0.07, -0.17))):
+        box(f'leg-{i}', dx, dy, 0, 0.05, 0.05, 0.15, beast)
+    box('pack', 0, -0.02, 0.32, 0.24, 0.3, 0.16, load)
+    return 0.55
 
 
 def vessel(oared):
@@ -268,11 +326,15 @@ def vessel(oared):
             box(f'oar-l{i}', -beam * 0.8, y, 0.1, beam * 0.9, 0.03, 0.03, oak)
             box(f'oar-r{i}', beam * 0.8, y, 0.1, beam * 0.9, 0.03, 0.03, oak)
     box('mast', 0, 0, 0.18, 0.05, 0.05, 0.8, oak)
-    sail = mesh_from('sail', [
+    mesh_from('sail', [
         (-beam * 1.1, 0.02, 0.4), (beam * 1.1, 0.02, 0.4),
         (beam * 1.1, 0.02, 0.92), (-beam * 1.1, 0.02, 0.92),
     ], [(0, 1, 2, 3)], pale if oared else cloth)
-    return 1.1
+    # The frame has to follow the model. Returning the same radius for a
+    # forty-metre galley and a short round ship drew the round ship at a
+    # third of its size, because the sprite is framed on this number and the
+    # game stamps every sprite as a square of the same side.
+    return max(length, 1.0) * 0.72
 
 
 def tree(tall):
@@ -417,10 +479,14 @@ def main():
     for rank in range(6):
         walls = 0 if rank == 0 else 1 if rank == 1 else 2 if rank < 4 else 3
         wanted.append((f'town{rank}', lambda r=rank, w=walls: settlement(r, w)))
-    wanted.append(('footmen', lambda: soldiers(5, False)))
-    wanted.append(('horsemen', lambda: soldiers(4, True)))
+    wanted.append(('footmen', lambda: soldiers(False)))
+    wanted.append(('horsemen', lambda: soldiers(True)))
+    wanted.append(('soldier', lambda: oneMan(False)))
+    wanted.append(('rider', lambda: oneMan(True)))
     wanted.append(('galley', lambda: vessel(True)))
     wanted.append(('roundship', lambda: vessel(False)))
+    wanted.append(('agent', lambda: agent()))
+    wanted.append(('caravan', lambda: caravan()))
     wanted.append(('tree', lambda: tree(True)))
     wanted.append(('scrub', lambda: tree(False)))
 

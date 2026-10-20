@@ -26,10 +26,14 @@ export const SPRITES = {
   town5: { x: 64, y: 64, width: 64, height: 64 },
   footmen: { x: 128, y: 64, width: 64, height: 64 },
   horsemen: { x: 192, y: 64, width: 64, height: 64 },
-  galley: { x: 0, y: 128, width: 64, height: 64 },
-  roundship: { x: 64, y: 128, width: 64, height: 64 },
-  tree: { x: 128, y: 128, width: 64, height: 64 },
-  scrub: { x: 192, y: 128, width: 64, height: 64 },
+  soldier: { x: 0, y: 128, width: 64, height: 64 },
+  rider: { x: 64, y: 128, width: 64, height: 64 },
+  galley: { x: 128, y: 128, width: 64, height: 64 },
+  roundship: { x: 192, y: 128, width: 64, height: 64 },
+  agent: { x: 0, y: 192, width: 64, height: 64 },
+  caravan: { x: 64, y: 192, width: 64, height: 64 },
+  tree: { x: 128, y: 192, width: 64, height: 64 },
+  scrub: { x: 192, y: 192, width: 64, height: 64 },
 } as const;
 
 export type SpriteName = keyof typeof SPRITES;

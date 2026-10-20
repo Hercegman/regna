@@ -11,6 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   MAX_BATTLE_ZOOM,
+  fieldToScreen,
   fitBattleCamera,
   fitZoom,
   frameBattleCamera,
@@ -109,14 +110,14 @@ describe('the battle camera', () => {
     const v = view();
     frameBattleCamera(v, setup.units);
     expect(v.zoom).toBeGreaterThanOrEqual(fitZoom(v) * 0.9);
-    // Every regiment is somewhere on screen.
+    // Every regiment is somewhere on screen, asked through the projection
+    // itself rather than through a copy of it.
     for (const unit of setup.units) {
-      const x = (unit.position.x - v.centre.x) * v.zoom + v.width / 2;
-      const y = (unit.position.y - v.centre.y) * v.zoom + v.height / 2;
-      expect(x).toBeGreaterThan(-40);
-      expect(x).toBeLessThan(v.width + 40);
-      expect(y).toBeGreaterThan(-40);
-      expect(y).toBeLessThan(v.height + 40);
+      const at = fieldToScreen(v, unit.position);
+      expect(at.x).toBeGreaterThan(-40);
+      expect(at.x).toBeLessThan(v.width + 40);
+      expect(at.y).toBeGreaterThan(-40);
+      expect(at.y).toBeLessThan(v.height + 40);
     }
   });
 
