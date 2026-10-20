@@ -129,9 +129,13 @@ function recolour(
 /**
  * Stamps a sprite standing on a point of the ground.
  *
- * Anchored at the bottom middle, because that is where a thing meets the tile
- * it is standing on, and rounded to whole pixels so it never lands between
- * two of them.
+ * Anchored on the model's own origin — the middle of the ground it was
+ * modelled standing on — which the sheet records for every sprite. The
+ * bottom middle of the frame is not that point: a model is framed on what it
+ * actually occupies, so a town anchored by its frame sits up and to the left
+ * of the place it belongs to, and a spear or a standard leaning out of the
+ * frame moves the whole settlement. Rounded to whole pixels so it never
+ * lands between two of them.
  */
 export function stamp(
   ctx: CanvasRenderingContext2D,
@@ -143,7 +147,13 @@ export function stamp(
 ): void {
   const image = sprite(name, size, colour);
   if (!image) return;
-  ctx.drawImage(image, Math.round(x - image.width / 2), Math.round(y - image.height));
+  const box = SPRITES[name];
+  const scale = image.width / box.width;
+  ctx.drawImage(
+    image,
+    Math.round(x - box.anchorX * scale),
+    Math.round(y - box.anchorY * scale),
+  );
 }
 
 void SPRITE_MARKER;

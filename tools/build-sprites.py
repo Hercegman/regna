@@ -38,7 +38,7 @@ AZIMUTH = 45.0
 
 # Rendered at four times the size the map uses and shrunk with hard edges,
 # which is how a render becomes pixel art rather than a small photograph.
-CELL = 64
+CELL = 96
 SUPERSAMPLE = 4
 
 #: Stands in for whatever the owner's colour is. Pure magenta appears nowhere
@@ -167,11 +167,17 @@ def church(name, cx, cy, cz, height, stone_mat, roof_mat):
           side * 1.1, side * 2.4, height * 0.2, roof_mat)
 
 
-def banner(name, cx, cy, cz, height, pole_mat, cloth_mat):
-    box(f'{name}-pole', cx, cy, cz, 0.08, 0.08, height, pole_mat)
+def banner(name, cx, cy, cz, height, pole_mat, cloth_mat, width=0.34):
+    """A pole with cloth on it.
+
+    The width is worth a parameter. A standard planted over a body of men is
+    meant to be the biggest thing in the frame; one carried beside a single
+    man is not, and sized the same it makes him an accessory to his own flag.
+    """
+    box(f'{name}-pole', cx, cy, cz, 0.07, 0.07, height, pole_mat)
     verts = [
         (cx, cy, cz + height * 0.58), (cx, cy, cz + height),
-        (cx + 0.34, cy, cz + height * 0.92), (cx + 0.34, cy, cz + height * 0.66),
+        (cx + width, cy, cz + height * 0.92), (cx + width, cy, cz + height * 0.66),
     ]
     return mesh_from(f'{name}-cloth', verts, [(0, 1, 2, 3)], cloth_mat)
 
@@ -232,23 +238,60 @@ def settlement(rank, walls):
     return spread + 0.75
 
 
-def man(name, x, y, mail, cloth, spear_mat, mounted=False):
-    """One figure: legs, a surcoat in his lord's colours, a helmet, a spear.
+def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
+        spear=True, cloak=False):
+    """One figure, built like a person rather than like a token.
 
-    Small enough that at map size he is three pixels, which is the whole
-    point: a body of men is a lot of these, not one big token.
+    Legs apart, a torso in his lord's colours, two arms, a head with a helmet
+    on it, a shield on the left arm and a spear in the right. It is a dozen
+    boxes where it used to be four, and at the size the battlefield draws him
+    that is the difference between a man and a domino: you can see which way
+    he is facing, where his shield is, and whether he is on a horse.
+
+    Everything is in units where a man is about six tenths tall, which is
+    what the rest of the file is built in.
     """
     base = 0.0
     if mounted:
-        box(f'{name}-horse', x, y, 0, 0.17, 0.42, 0.24, spear_mat)
-        box(f'{name}-neck', x, y + 0.17, 0.24, 0.12, 0.12, 0.14, spear_mat)
-        base = 0.26
-    box(f'{name}-legs', x, y, base, 0.14, 0.12, 0.16, mail)
-    box(f'{name}-body', x, y, base + 0.16, 0.19, 0.15, 0.2, cloth)
-    box(f'{name}-head', x, y, base + 0.36, 0.13, 0.13, 0.12, mail)
-    # Short enough to read as a spear rather than as a thicket: at map size
-    # a tall one is all you can see of the men carrying it.
-    box(f'{name}-spear', x + 0.11, y - 0.02, base + 0.1, 0.03, 0.03, 0.46, spear_mat)
+        # The horse: a barrel on four legs with a neck and a head, which is
+        # all there is room for and all a horse needs to read as one.
+        hide = spear_mat
+        box(f'{name}-barrel', x, y, 0.22, 0.17, 0.44, 0.19, hide)
+        for i, (dx, dy) in enumerate(((-0.065, 0.16), (0.065, 0.16),
+                                      (-0.065, -0.16), (0.065, -0.16))):
+            box(f'{name}-hoof-{i}', x + dx, y + dy, 0, 0.05, 0.05, 0.23, hide)
+        box(f'{name}-neck', x, y + 0.2, 0.34, 0.1, 0.12, 0.16, hide)
+        box(f'{name}-head', x, y + 0.25, 0.46, 0.09, 0.16, 0.09, hide)
+        box(f'{name}-tail', x, y - 0.23, 0.3, 0.05, 0.05, 0.12, hide)
+        base = 0.41
+
+    # Legs apart, because one block of legs is a plinth.
+    box(f'{name}-leg-l', x - 0.045, y, base, 0.055, 0.08, 0.17, mail)
+    box(f'{name}-leg-r', x + 0.045, y, base, 0.055, 0.08, 0.17, mail)
+    box(f'{name}-torso', x, y, base + 0.17, 0.17, 0.11, 0.2, cloth)
+    box(f'{name}-arm-l', x - 0.105, y, base + 0.2, 0.05, 0.09, 0.16, mail)
+    box(f'{name}-arm-r', x + 0.105, y, base + 0.2, 0.05, 0.09, 0.16, mail)
+    if cloak:
+        # Hung off the shoulders and down the back, which is the one thing
+        # that says a man is somebody at this size.
+        box(f'{name}-cloak', x, y - 0.062, base + 0.14, 0.165, 0.04, 0.24, cloth)
+    box(f'{name}-neck', x, y, base + 0.37, 0.07, 0.07, 0.04, skin)
+    box(f'{name}-head', x, y, base + 0.41, 0.1, 0.1, 0.09, skin)
+    box(f'{name}-helm', x, y, base + 0.47, 0.115, 0.115, 0.06, mail)
+    if shield:
+        box(f'{name}-shield', x - 0.135, y - 0.01, base + 0.19, 0.03, 0.13, 0.17, cloth)
+    if spear:
+        box(f'{name}-spear', x + 0.14, y - 0.02, base + 0.08, 0.028, 0.028, 0.52, spear_mat)
+
+
+def palette_for_men():
+    """The materials every figure is made of, in one place."""
+    return (
+        material('mail', srgb('#5a5852')),
+        material('cloth', MARKER, emissive=True),
+        material('timber', srgb('#4a3222')),
+        material('skin', srgb('#b98f6a')),
+    )
 
 
 def soldiers(mounted):
@@ -259,40 +302,63 @@ def soldiers(mounted):
     any size.
     """
     clear()
-    mail = material('mail', srgb('#55534c'))
-    cloth = material('cloth', MARKER, emissive=True)
-    timber = material('timber', srgb('#4a3222'))
+    mail, cloth, timber, skin = palette_for_men()
     across, deep = (3, 2) if mounted else (4, 2)
-    pitch = 0.34 if mounted else 0.24
+    pitch = 0.4 if mounted else 0.27
     for row in range(deep):
         for i in range(across):
             x = (i - (across - 1) / 2) * pitch + (0.5 * pitch if row else 0)
-            y = -row * (0.42 if mounted else 0.26)
-            man(f'm{row}-{i}', x, y, mail, cloth, timber, mounted)
-    banner('standard', 0, -deep * 0.3 - 0.2, 0, 0.95, timber, cloth)
-    return 0.95 if not mounted else 1.15
+            y = -row * (0.5 if mounted else 0.3)
+            man(f'm{row}-{i}', x, y, mail, cloth, timber, skin, mounted)
+    banner('standard', 0, -deep * 0.32 - 0.22, 0, 1.05, timber, cloth)
+    return 1.0 if not mounted else 1.25
 
 
 def oneMan(mounted):
     """A single figure, for the battlefield, where there are hundreds."""
     clear()
-    mail = material('mail', srgb('#55534c'))
-    cloth = material('cloth', MARKER, emissive=True)
-    timber = material('timber', srgb('#4a3222'))
-    man('one', 0, 0, mail, cloth, timber, mounted)
-    return 0.62 if not mounted else 0.74
+    mail, cloth, timber, skin = palette_for_men()
+    man('one', 0, 0, mail, cloth, timber, skin, mounted)
+    return 0.62 if not mounted else 0.82
+
+
+def general(mounted):
+    """The man himself.
+
+    A captain is a regiment; a general is a person, and on a map of a
+    continent he is the only person drawn. So he gets what the others do not:
+    a cloak off the shoulders, a crest on the helmet, his own standard
+    planted beside him, and no spear, because what he is carrying is a sword
+    and at this size a sword is not worth a box.
+    """
+    clear()
+    mail, cloth, timber, skin = palette_for_men()
+    man('gen', 0, 0, mail, cloth, timber, skin, mounted,
+        shield=True, spear=False, cloak=True)
+    base = 0.41 if mounted else 0.0
+    # The crest, which is the only thing that distinguishes him in silhouette.
+    cone('crest', 0, 0, base + 0.53, 0.05, 0.1, cloth, 4)
+    # Well out to his left, not behind his head: planted close, the cloth and
+    # the crest run into one magenta smudge and the man disappears inside his
+    # own heraldry.
+    banner('standard', -0.32, 0.04, 0, 0.72 + base, timber, cloth, width=0.2)
+    return 0.72 if not mounted else 0.92
 
 
 def agent():
-    """A hooded man on foot: no banner, no mail, nothing to identify him."""
+    """A hooded man on foot: no mail, no banner, nothing to identify him."""
     clear()
     cloak = material('cloak', MARKER, emissive=True)
     dark = material('dark', srgb('#3b372f'))
-    box('legs', 0, 0, 0, 0.12, 0.1, 0.12, dark)
-    box('cloak', 0, 0, 0.12, 0.2, 0.17, 0.26, cloak)
-    cone('hood', 0, 0, 0.36, 0.1, 0.14, dark, 6)
-    box('staff', 0.12, -0.02, 0, 0.03, 0.03, 0.62, dark)
-    return 0.5
+    skin = material('skin', srgb('#b98f6a'))
+    box('leg-l', -0.04, 0, 0, 0.05, 0.07, 0.14, dark)
+    box('leg-r', 0.04, 0, 0, 0.05, 0.07, 0.14, dark)
+    box('cloak', 0, 0, 0.14, 0.2, 0.13, 0.26, cloak)
+    box('arm', 0.1, 0, 0.17, 0.05, 0.08, 0.16, cloak)
+    box('face', 0, 0.01, 0.4, 0.08, 0.07, 0.07, skin)
+    cone('hood', 0, 0, 0.38, 0.1, 0.16, dark, 6)
+    box('staff', 0.13, -0.02, 0, 0.026, 0.026, 0.62, dark)
+    return 0.52
 
 
 def caravan():
@@ -387,7 +453,7 @@ def setup_scene():
 
 def aim(camera, radius):
     """Points the camera at the model from the one angle the tiles allow."""
-    distance = max(6.0, radius * 4)
+    distance = max(8.0, radius * 6)
     azimuth = math.radians(AZIMUTH)
     elevation = math.radians(ELEVATION)
     camera.location = (
@@ -397,17 +463,54 @@ def aim(camera, radius):
     )
     direction = -mathutils.Vector(camera.location)
     camera.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
-    # The model is centred on the ground, so the frame is lifted to leave room
-    # for whatever stands up out of it.
-    # Room to spare: a frame that fits exactly clips whatever leans out of it.
-    camera.data.ortho_scale = radius * 2.05
-    camera.data.shift_y = -0.16
+
+
+def frame_model(camera):
+    """Fits the frame to the model and says where the model's feet landed.
+
+    Two things were wrong with framing every sprite on a radius the model
+    reports. A frame that is the same for a galley and a man spends most of
+    its pixels on air, which is resolution thrown away; and the thing never
+    sits in the middle of it, so the game, which stamps a sprite by its
+    frame, puts a town up and to the left of the place it is supposed to be
+    standing. Fitting the frame to what is actually there fixes the first,
+    and returning where the model's own origin fell in the frame fixes the
+    second: the game stamps on that point instead and a town lands on its
+    own coordinates.
+    """
+    bpy.context.view_layer.update()
+    inverse = camera.matrix_world.inverted()
+    xs, ys = [], []
+    for obj in bpy.data.objects:
+        if obj.type != 'MESH':
+            continue
+        for corner in obj.bound_box:
+            local = inverse @ (obj.matrix_world @ mathutils.Vector(corner))
+            xs.append(local.x)
+            ys.append(local.y)
+    if not xs:
+        return 0.5, 0.5
+    centre_x = (min(xs) + max(xs)) / 2
+    centre_y = (min(ys) + max(ys)) / 2
+    # A little room to spare: a frame that fits exactly clips the outermost
+    # pixel of whatever leans out of it once the render is box-filtered down.
+    extent = max(max(xs) - min(xs), max(ys) - min(ys)) * 1.06
+    camera.data.ortho_scale = extent
+    camera.data.shift_x = centre_x / extent
+    camera.data.shift_y = centre_y / extent
+
+    origin = inverse @ mathutils.Vector((0.0, 0.0, 0.0))
+    across = (origin.x - (centre_x - extent / 2)) / extent
+    down = ((centre_y + extent / 2) - origin.y) / extent
+    return across, down
 
 
 def render(camera, radius, path):
     aim(camera, radius)
+    anchor = frame_model(camera)
     bpy.context.scene.render.filepath = path
     bpy.ops.render.render(write_still=True)
+    return anchor
 
 
 def read_png_pixels(path):
@@ -483,6 +586,8 @@ def main():
     wanted.append(('horsemen', lambda: soldiers(True)))
     wanted.append(('soldier', lambda: oneMan(False)))
     wanted.append(('rider', lambda: oneMan(True)))
+    wanted.append(('captain', lambda: general(False)))
+    wanted.append(('general', lambda: general(True)))
     wanted.append(('galley', lambda: vessel(True)))
     wanted.append(('roundship', lambda: vessel(False)))
     wanted.append(('agent', lambda: agent()))
@@ -497,14 +602,15 @@ def main():
 
     for i, (name, build) in enumerate(wanted):
         radius = build()
-        render(camera, radius, scratch)
+        across, down = render(camera, radius, scratch)
         width, height, raw = read_png_pixels(scratch)
         cell = shrink_and_quantise(width, height, raw, CELL)
         column, row = i % columns, i // columns
         for y in range(CELL):
             start = ((row * CELL + y) * columns * CELL + column * CELL) * 4
             sheet[start:start + CELL * 4] = cell[y * CELL * 4:(y + 1) * CELL * 4]
-        index.append((name, column * CELL, row * CELL))
+        index.append((name, column * CELL, row * CELL,
+                      round(across * CELL, 1), round(down * CELL, 1)))
         print(f'  {name}', flush=True)
 
     os.makedirs(os.path.dirname(OUT_PNG), exist_ok=True)
@@ -513,7 +619,9 @@ def main():
         os.remove(scratch)
 
     entries = ',\n'.join(
-        f"  {name}: {{ x: {x}, y: {y}, width: {CELL}, height: {CELL} }}" for name, x, y in index
+        f"  {name}: {{ x: {x}, y: {y}, width: {CELL}, height: {CELL}, "
+        f"anchorX: {ax}, anchorY: {ay} }}"
+        for name, x, y, ax, ay in index
     )
     with open(OUT_TS, 'w') as handle:
         handle.write(f'''/**
@@ -528,6 +636,11 @@ def main():
  * swapped for the owner's colour when the sprite is first asked for. That is
  * how these games coloured a hundred companies from one drawing, and it is
  * why a settlement here can be any of seventy-three.
+ *
+ * `anchorX` and `anchorY` are where the model's own origin — the middle of
+ * the ground it stands on — fell in its frame. The map stamps a sprite by
+ * that point rather than by the middle of the frame, which is what puts a
+ * town on its own coordinates instead of up and to the left of them.
  */
 
 export const SPRITE_MARKER = {{ r: 255, g: 0, b: 255 }} as const;

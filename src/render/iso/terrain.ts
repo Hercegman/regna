@@ -263,7 +263,7 @@ export function drawGround(
         if (sea) {
           if (edged && jitter > 0.55) surf(ctx, cx, cy, halfWidth, jitter);
         } else {
-          dress(ctx, cx, cy, halfWidth, halfHeight, terrain, metres, tx, ty, jitter);
+          dressGround(ctx, cx, cy, halfWidth, halfHeight, terrain, metres, tx, ty, jitter);
         }
       }
 
@@ -289,12 +289,15 @@ export function drawGround(
  * Drawn here rather than handed to the caller because it has to go on
  * between this tile's top face and the next tile's, which is the only place
  * a tree can stand without something behind it being drawn over its head.
+ * Exported because the battlefield wants the same treatment: a battle on
+ * farmland should be fought across furrows and one in a wood among trees,
+ * and there is no reason for two kinds of ground in one game.
  *
  * Nothing here is random. Every position and every count comes out of the
  * tile's own coordinates, so a wood is in the same place on every frame and
  * panning the map does not make the forest crawl.
  */
-function dress(
+export function dressGround(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
@@ -380,8 +383,11 @@ function tree(
   broad: boolean,
   high: boolean,
 ): void {
-  const h = Math.max(3, Math.round(halfWidth * (broad ? 0.78 : 0.95)));
-  const w = Math.max(2, Math.round(halfWidth * (broad ? 0.52 : 0.38)));
+  // Kept well under a tile. A tree the height of a tile is a tree the height
+  // of the village next to it, and then the map is a forest with some
+  // buildings lost in it.
+  const h = Math.max(3, Math.round(halfWidth * (broad ? 0.5 : 0.62)));
+  const w = Math.max(1, Math.round(halfWidth * (broad ? 0.34 : 0.24)));
   const palette = high ? DECOR.conifer : broad ? DECOR.leaf : DECOR.conifer;
 
   ctx.fillStyle = palette[2]!;

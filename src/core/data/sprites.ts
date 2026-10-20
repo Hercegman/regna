@@ -10,6 +10,11 @@
  * swapped for the owner's colour when the sprite is first asked for. That is
  * how these games coloured a hundred companies from one drawing, and it is
  * why a settlement here can be any of seventy-three.
+ *
+ * `anchorX` and `anchorY` are where the model's own origin — the middle of
+ * the ground it stands on — fell in its frame. The map stamps a sprite by
+ * that point rather than by the middle of the frame, which is what puts a
+ * town on its own coordinates instead of up and to the left of them.
  */
 
 export const SPRITE_MARKER = { r: 255, g: 0, b: 255 } as const;
@@ -18,22 +23,24 @@ export const SPRITE_MARKER = { r: 255, g: 0, b: 255 } as const;
 export const SPRITE_SHEET = 'sprites.png';
 
 export const SPRITES = {
-  town0: { x: 0, y: 0, width: 64, height: 64 },
-  town1: { x: 64, y: 0, width: 64, height: 64 },
-  town2: { x: 128, y: 0, width: 64, height: 64 },
-  town3: { x: 192, y: 0, width: 64, height: 64 },
-  town4: { x: 0, y: 64, width: 64, height: 64 },
-  town5: { x: 64, y: 64, width: 64, height: 64 },
-  footmen: { x: 128, y: 64, width: 64, height: 64 },
-  horsemen: { x: 192, y: 64, width: 64, height: 64 },
-  soldier: { x: 0, y: 128, width: 64, height: 64 },
-  rider: { x: 64, y: 128, width: 64, height: 64 },
-  galley: { x: 128, y: 128, width: 64, height: 64 },
-  roundship: { x: 192, y: 128, width: 64, height: 64 },
-  agent: { x: 0, y: 192, width: 64, height: 64 },
-  caravan: { x: 64, y: 192, width: 64, height: 64 },
-  tree: { x: 128, y: 192, width: 64, height: 64 },
-  scrub: { x: 192, y: 192, width: 64, height: 64 },
+  town0: { x: 0, y: 0, width: 96, height: 96, anchorX: 41.4, anchorY: 71.2 },
+  town1: { x: 96, y: 0, width: 96, height: 96, anchorX: 48.0, anchorY: 53.1 },
+  town2: { x: 192, y: 0, width: 96, height: 96, anchorX: 49.8, anchorY: 55.8 },
+  town3: { x: 288, y: 0, width: 96, height: 96, anchorX: 49.5, anchorY: 57.8 },
+  town4: { x: 0, y: 96, width: 96, height: 96, anchorX: 48.0, anchorY: 56.6 },
+  town5: { x: 96, y: 96, width: 96, height: 96, anchorX: 48.0, anchorY: 56.2 },
+  footmen: { x: 192, y: 96, width: 96, height: 96, anchorX: 58.5, anchorY: 61.0 },
+  horsemen: { x: 288, y: 96, width: 96, height: 96, anchorX: 53.0, anchorY: 63.6 },
+  soldier: { x: 0, y: 192, width: 96, height: 96, anchorX: 51.0, anchorY: 86.6 },
+  rider: { x: 96, y: 192, width: 96, height: 96, anchorX: 45.6, anchorY: 84.0 },
+  captain: { x: 192, y: 192, width: 96, height: 96, anchorX: 54.9, anchorY: 88.9 },
+  general: { x: 288, y: 192, width: 96, height: 96, anchorX: 47.3, anchorY: 86.1 },
+  galley: { x: 0, y: 288, width: 96, height: 96, anchorX: 48.0, anchorY: 69.8 },
+  roundship: { x: 96, y: 288, width: 96, height: 96, anchorX: 48.0, anchorY: 74.7 },
+  agent: { x: 192, y: 288, width: 96, height: 96, anchorX: 48.0, anchorY: 83.8 },
+  caravan: { x: 288, y: 288, width: 96, height: 96, anchorX: 42.7, anchorY: 79.8 },
+  tree: { x: 0, y: 384, width: 96, height: 96, anchorX: 48.0, anchorY: 87.8 },
+  scrub: { x: 96, y: 384, width: 96, height: 96, anchorX: 48.0, anchorY: 88.3 },
 } as const;
 
 export type SpriteName = keyof typeof SPRITES;
