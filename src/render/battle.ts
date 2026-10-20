@@ -505,20 +505,24 @@ function drawUnit(
     return;
   }
 
-  // The dead, where they fell: a mark a man, behind the line, as many as the
-  // regiment has lost. The simulation does not keep a body's position and
+  // The dead, lying where the regiment has been fighting: a body a man, as
+  // many as it has lost. The simulation does not keep a body's position and
   // does not need to — what the eye reads off a field is how much of it has
-  // been fought over, and that is the count.
+  // been fought over. They are pinned to the regiment's position rounded to
+  // the nearest few metres, so a unit shuffling about does not drag its own
+  // dead along behind it a pixel at a time.
   const lost = Math.max(0, unit.startingSoldiers - unit.soldiers);
-  if (lost > 0 && frame.scale > 0.6) {
-    const marks = Math.min(26, Math.round(lost / Math.max(6, unit.startingSoldiers / 22)));
-    ctx.fillStyle = 'rgba(58, 36, 28, 0.55)';
-    for (let i = 0; i < marks; i++) {
-      const a = tileNoise(Math.round(unit.position.x), i, 13);
-      const b = tileNoise(Math.round(unit.position.y), i, 29);
-      const px = Math.round(at.x + (a - 0.5) * across * 1.25);
-      const py = Math.round(baseY + (b * 0.5 + 0.1) * frame.scale * 26 * SQUASH);
-      ctx.fillRect(px, py, Math.max(1, Math.round(frame.scale * 2.4)), 1);
+  if (lost > 0 && frame.scale > 0.45) {
+    const bodies = Math.min(30, Math.round(lost / Math.max(5, unit.startingSoldiers / 26)));
+    const anchorX = Math.round(unit.position.x / 7);
+    const anchorY = Math.round(unit.position.y / 7);
+    const size = Math.max(5, Math.min(26, frame.scale * 11));
+    for (let i = 0; i < bodies; i++) {
+      const a = tileNoise(anchorX, anchorY, 13 + i * 5);
+      const b = tileNoise(anchorY, anchorX, 29 + i * 5);
+      const px = at.x + (a - 0.5) * across * 1.3;
+      const py = baseY + (b - 0.25) * frame.scale * 34 * SQUASH;
+      stamp(ctx, b > 0.5 ? 'fallen2' : 'fallen', px, py, size, colour, false);
     }
   }
 
@@ -557,6 +561,9 @@ function drawUnit(
       // standing in it rather than as a comb.
       const shift = rank % 2 === 1 ? (across / files) * 0.5 : 0;
       const x = at.x - across / 2 + (across / files) * (file + 0.5) + shift;
+      // And a pixel of slop per man, fixed to who he is, so that a block is
+      // a body of men rather than a lattice of them.
+      const slop = Math.round(tileNoise(file, rank, 71) * 2) - 1;
       // Only the rank in contact is swinging; the ones behind it are
       // waiting, which is what the ranks behind were actually doing.
       const pose = poseFor(
@@ -568,7 +575,7 @@ function drawUnit(
         ctx,
         figureSprite(kind, facing, pose),
         x + (rank === 0 ? press : 0),
-        baseY - back,
+        baseY - back + slop,
         manSize,
         colour,
       );

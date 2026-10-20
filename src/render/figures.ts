@@ -50,18 +50,22 @@ export function figureSprite(kind: Figure, facing: number, pose: Pose): SpriteNa
 }
 
 /**
- * Which of the four renders to use for a facing.
+ * Which of the eight renders to use for a facing.
  *
  * The field is drawn squashed to half its depth, so a bearing on the ground
  * is not the bearing you see: a man walking due north on the field goes up
  * the screen at twice the angle he would on a map. The squash goes in here,
- * and what comes out is the quarter of the screen's own compass he is
- * facing. Direction 0 is up and to the right, and they run clockwise.
+ * and what comes out is the eighth of the screen's own compass he is facing.
+ * Direction 0 is up and to the right, and they run clockwise.
+ *
+ * Eight rather than four, because four means a regiment wheeling turns in
+ * right angles, and a line of battle spends most of its time at an angle to
+ * the line it is fighting.
  */
 export function facingIndex(facing: number, squash: number): number {
   const screen = Math.atan2(Math.sin(facing) * squash, Math.cos(facing));
   const degrees = (screen * 180) / Math.PI;
-  return ((Math.round((degrees + 45) / 90) % 4) + 4) % 4;
+  return ((Math.round((degrees + 45) / 45) % 8) + 8) % 8;
 }
 
 /**

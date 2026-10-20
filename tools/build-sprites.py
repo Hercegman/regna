@@ -434,8 +434,11 @@ def fighter(weapon, mounted=False, shield=True, barded=False, pose='idle', facin
     man('one', 0, 0, mail, cloth, timber, skin, mounted,
         shield=shield, weapon=weapon, barded=barded, pose=pose)
     # Direction 0 is the man as built, which the camera reads as facing up
-    # and to the right; the rest follow anticlockwise on the screen.
-    spin((0, 270, 180, 90)[facing])
+    # and to the right; the rest follow clockwise round the screen in eighths.
+    # Eight rather than four because four means a regiment wheeling turns in
+    # right angles, and a line of battle spends most of its time at an angle
+    # to the line it is fighting.
+    spin((360 - facing * 45) % 360)
     tall = {'pike': 1.05, 'bow': 0.72}.get(weapon, 0.62)
     return tall if not mounted else 0.9
 
@@ -461,6 +464,38 @@ def general(mounted):
     # own heraldry.
     banner('standard', -0.32, 0.04, 0, 0.72 + base, timber, cloth, width=0.2)
     return 0.72 if not mounted else 0.92
+
+
+def fallen(variant):
+    """A body, lying where it dropped.
+
+    The dead used to be a dark mark a man. A mark says how much of a field
+    has been fought over, which is most of what the eye wants, but it does
+    not say what is lying there, and on ground drawn this closely it reads as
+    a stain rather than as a man. This is a man: on his back, arms out, his
+    surcoat still in his lord's colours and his shield where it fell.
+
+    Two of them, turned differently, because a field strewn with the same
+    body repeated is a pattern and nothing reads as a pattern less than the
+    aftermath of a fight.
+    """
+    clear()
+    mail, cloth, timber, skin = palette_for_men()
+    turn = 0.32 if variant else -0.26
+    # Laid out along y, which the camera reads as lying across the picture.
+    box('legs-l', -0.05, -0.2, 0, 0.055, 0.2, 0.055, mail)
+    box('legs-r', 0.05, -0.22, 0, 0.055, 0.2, 0.055, mail)
+    box('torso', 0, 0.02, 0, 0.17, 0.24, 0.07, cloth)
+    box('arm-l', -0.13, 0.04, 0, 0.07, 0.16, 0.05, mail)
+    box('arm-r', 0.13, 0.0, 0, 0.07, 0.16, 0.05, mail)
+    box('head', 0, 0.2, 0, 0.1, 0.1, 0.08, skin)
+    box('helm', 0, 0.22, 0.05, 0.11, 0.11, 0.05, mail)
+    if variant:
+        box('shield', -0.24, -0.04, 0, 0.14, 0.17, 0.03, cloth)
+    else:
+        box('spear', 0.2, -0.02, 0, 0.5, 0.028, 0.028, timber)
+    spin(math.degrees(turn) * 3)
+    return 0.42
 
 
 def agent():
@@ -706,10 +741,10 @@ def main():
     wanted.append(('rider', lambda: oneMan(True)))
     wanted.append(('captain', lambda: general(False)))
     wanted.append(('general', lambda: general(True)))
-    # Every kind of soldier, in four directions and four poses. It is a
-    # hundred and twenty-eight renders and about as many kilobytes, which is
-    # the price of a battle in which the men face the men they are fighting
-    # and move their legs on the way there.
+    # Every kind of soldier, in eight directions and four poses. It is two
+    # hundred and fifty-six renders and about three hundred kilobytes, which
+    # is the price of a battle in which the men face the men they are
+    # fighting and move their legs on the way there.
     kinds = (
         ('spearman', dict(weapon='spear')),
         ('swordsman', dict(weapon='sword')),
@@ -721,7 +756,7 @@ def main():
         ('lighthorse', dict(weapon='sword', mounted=True)),
     )
     for kind, options in kinds:
-        for facing in range(4):
+        for facing in range(8):
             for pose in ('idle', 'step-a', 'step-b', 'fight'):
                 label = f'{kind}_{facing}_{pose.replace("-", "")}'
                 wanted.append((
@@ -732,10 +767,12 @@ def main():
     wanted.append(('roundship', lambda: vessel(False)))
     wanted.append(('agent', lambda: agent()))
     wanted.append(('caravan', lambda: caravan()))
+    wanted.append(('fallen', lambda: fallen(0)))
+    wanted.append(('fallen2', lambda: fallen(1)))
     wanted.append(('tree', lambda: tree(True)))
     wanted.append(('scrub', lambda: tree(False)))
 
-    columns = 12
+    columns = 16
     rows = (len(wanted) + columns - 1) // columns
     sheet = bytearray(columns * CELL * rows * CELL * 4)
     index = []

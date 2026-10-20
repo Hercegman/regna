@@ -408,6 +408,14 @@ plausible where it is not, and where two realms really did bear almost the
 same thing one of them is nudged, because a player has to tell them apart at
 sixteen pixels.
 
+**The sprite cache is quantised and capped.** Two hundred and seventy-six
+sprites, two sides to a battle and a continuous zoom is a map that grows
+without end: sizes above twenty pixels are rounded to even numbers so a notch
+of the wheel does not ask for a hundred and forty sprites at a size nothing
+has ever asked for, and past four thousand entries the lot is thrown away
+rather than evicted one at a time — what the next frame wants is almost
+always what the last frame wanted.
+
 **Two screen pixels to the picture pixel, not three.** Three made a tile
 unmistakably made of pixels and threw away more than half the detail the
 screen could carry — a town was twenty pixels of information blown up to
@@ -505,9 +513,12 @@ shape of the land appear, which is the whole point of fighting on a ridge.
 
 **The men move, and the sheet is how.** The camera cannot move — the whole
 picture depends on it not moving — so a man who faces a different way is a
-man built facing a different way. Every kind of soldier is rendered in four
-directions and four poses: idle, two mirrored steps, and a fight. A hundred
-and twenty-eight renders, about as many kilobytes, and offline. What the
+man built facing a different way. Every kind of soldier is rendered in eight
+directions and four poses: idle, two mirrored steps, and a fight. Eight
+rather than four, because four means a regiment wheeling turns in right
+angles and a line of battle spends most of its time at an angle to the line
+it is fighting. Two hundred and seventy-six renders, two hundred kilobytes,
+and offline. What the
 renderer does with them is read the unit's stance and the clock: advancing
 plays step, stand, other step, stand, with a phase per man so a block on the
 move is a crowd out of step; in melee the front rank alternates between the
@@ -522,9 +533,12 @@ built from the same dozen boxes with a different thing in the hand, and the
 thing in the hand is the whole of what tells one from another in a
 silhouette this size. Over each regiment stands its realm's banner in its own
 arms, which is what a medieval battlefield was actually read by, and behind it
-lie its dead: a mark a man, as many as it has lost. The simulation does not
-keep a body's position and does not need to — what the eye reads off a field
-is how much of it has been fought over, and that is the count.
+lie its dead: a body a man, as many as it has lost, on his back with his
+shield where it fell. The simulation does not keep a body's position and does
+not need to — what the eye reads off a field is how much of it has been
+fought over, and that is the count. They are pinned to the regiment's
+position rounded to the nearest few metres, so a unit shuffling about does
+not drag its own dead along behind it a pixel at a time.
 
 **A regiment is the men in it.** Ranks and files from the unit's own formation,
 as many figures as the block has room for, thinning from the back as it takes

@@ -67,7 +67,7 @@ export function whenSpritesReady(redraw: () => void): void {
  * while costs less than tracking which of them was used when.
  */
 const cache = new Map<string, HTMLCanvasElement>();
-const CACHE_LIMIT = 2400;
+const CACHE_LIMIT = 4000;
 
 /**
  * A sprite ready to be stamped on the map.
@@ -82,7 +82,11 @@ export function sprite(
   colour: string | undefined,
 ): HTMLCanvasElement | undefined {
   if (!sheet) return undefined;
-  const pixels = Math.max(4, Math.round(size));
+  // Quantised above a certain size, because the zoom is continuous and the
+  // cache is not: without this every notch of the wheel asks for a hundred
+  // and forty sprites at a size nothing has ever asked for before.
+  const wanted = Math.max(4, Math.round(size));
+  const pixels = wanted > 20 ? Math.round(wanted / 2) * 2 : wanted;
   const key = `${name}|${pixels}|${colour ?? '-'}`;
   const known = cache.get(key);
   if (known) return known;
