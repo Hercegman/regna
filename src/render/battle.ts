@@ -25,7 +25,8 @@ import type { BattleState } from '../core/battle/sim';
 import { frontage } from '../core/battle/sim';
 import type { BattleSettlement, BattleUnit } from '../core/battle/types';
 import { FIELD_DEPTH, FIELD_WIDTH } from '../core/battle/types';
-import { WATER, rampFor, snap, stepFor } from './iso/palette';
+import { WATER, rampFor, snap, stepFor, tileNoise } from './iso/palette';
+import { dressGround } from './iso/terrain';
 import { loadSprites, stamp, type SpriteName } from './iso/sprites';
 
 export interface BattleView {
@@ -49,7 +50,7 @@ export const PIXEL = 3;
 const SQUASH = 0.5;
 
 /** Close enough that a man is a man rather than a dot. */
-export const MAX_BATTLE_ZOOM = 6;
+export const MAX_BATTLE_ZOOM = 11;
 
 /** Metres of rise to a pixel. The ridge is only forty metres tall. */
 const RISE = 1.6;
@@ -61,8 +62,13 @@ const RISE = 1.6;
  * varies with how many men are left: a unit would otherwise flick between a
  * token and a crowd as it took losses, which is the one thing that must not
  * happen while you are watching it fight.
+ *
+ * Low, because a battle is the men in it. Above this the regiment is drawn
+ * as the men themselves at every zoom the camera will give you, and how many
+ * of them fit is decided by the frontage rather than by a threshold — so a
+ * line pulled back is a thin crowd rather than a counter.
  */
-const DETAIL_SCALE = 1.0;
+const DETAIL_SCALE = 0.42;
 
 let spritesAsked = false;
 
@@ -148,7 +154,7 @@ export function frameBattleCamera(
     minY = Math.min(minY, settlement.centre.y - settlement.radius);
     maxY = Math.max(maxY, settlement.centre.y + settlement.radius);
   }
-  const margin = 90;
+  const margin = 55;
   const across = Math.max(200, maxX - minX + margin * 2);
   const deep = Math.max(160, maxY - minY + margin * 2);
   view.centre = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
@@ -378,6 +384,25 @@ function drawGround(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fr
       ctx.lineTo(sx - halfWidth, yW);
       ctx.closePath();
       ctx.fill();
+
+      // And whatever grows on it. A battle on farmland is fought across
+      // furrows and one in a wood among trees, which is worth having for
+      // itself and is also the only thing on the field that gives the eye a
+      // sense of how far away anything is.
+      if (!state.setup.naval && halfWidth > 3) {
+        dressGround(
+          ctx,
+          sx,
+          Math.round((yE + yW) / 2),
+          halfWidth,
+          halfHeight,
+          state.setup.terrain,
+          0,
+          tx,
+          ty,
+          tileNoise(tx, ty),
+        );
+      }
     }
   }
 }
@@ -465,25 +490,35 @@ function drawUnit(
   }
 
   // The men themselves. Ranks run back into the picture, so each one is
-  // drawn a little higher and smaller than the one in front of it.
+  // drawn a little higher than the one in front of it.
+  //
+  // A man is drawn far larger than his share of the ground, and on purpose:
+  // a field is 1400 metres across and a man is one, so at the ground's own
+  // scale he is a pixel. The rank behind is therefore offset by a share of
+  // his own height rather than by the metre and a half he is really
+  // standing back, or the ranks land on top of each other and a regiment is
+  // one row of heads.
   const ranks = type.unitClass === 'pikemen' || type.unitClass === 'spearmen' ? 4 : 3;
-  const manSize = Math.max(6, Math.min(26, frame.scale * 8));
+  const manSize = Math.max(6, Math.min(34, frame.scale * 13));
   // As many files as will stand shoulder to shoulder across the frontage the
   // simulation is using, and no more.
   const files = Math.max(
     1,
-    Math.min(Math.round(unit.soldiers / ranks), Math.round(across / (manSize * 0.42))),
+    Math.min(Math.round(unit.soldiers / ranks), Math.round(across / (manSize * 0.4))),
   );
-  const depth = ranks * (mounted ? 3.2 : 1.8) * frame.scale * SQUASH;
+  const rankStep = manSize * (mounted ? 0.5 : 0.42);
   const figures = Math.max(1, Math.round(files * ranks * standing));
   const name: SpriteName = mounted ? 'rider' : 'soldier';
 
   let placed = 0;
   for (let rank = ranks - 1; rank >= 0 && placed < figures; rank--) {
-    const back = (rank / Math.max(1, ranks - 1)) * depth;
+    const back = rank * rankStep;
     for (let file = 0; file < files && placed < figures; file++) {
       placed += 1;
-      const x = at.x - across / 2 + (across / files) * (file + 0.5);
+      // Not a perfect lattice: a rank nudged half a man along reads as men
+      // standing in it rather than as a comb.
+      const shift = rank % 2 === 1 ? (across / files) * 0.5 : 0;
+      const x = at.x - across / 2 + (across / files) * (file + 0.5) + shift;
       stamp(ctx, name, x, baseY - back, manSize, colour);
     }
   }
