@@ -239,7 +239,7 @@ def settlement(rank, walls):
 
 
 def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
-        spear=True, cloak=False):
+        spear=True, cloak=False, weapon='spear', barded=False):
     """One figure, built like a person rather than like a token.
 
     Legs apart, a torso in his lord's colours, two arms, a head with a helmet
@@ -257,6 +257,11 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
         # all there is room for and all a horse needs to read as one.
         hide = spear_mat
         box(f'{name}-barrel', x, y, 0.22, 0.17, 0.44, 0.19, hide)
+        if barded:
+            # A trapper over the horse in his lord's colours, which is what
+            # tells a knight from a man on a horse at any distance.
+            box(f'{name}-bard', x, y, 0.16, 0.21, 0.42, 0.14, cloth)
+            box(f'{name}-chamfron', x, y + 0.25, 0.46, 0.1, 0.13, 0.09, cloth)
         for i, (dx, dy) in enumerate(((-0.065, 0.16), (0.065, 0.16),
                                       (-0.065, -0.16), (0.065, -0.16))):
             box(f'{name}-hoof-{i}', x + dx, y + dy, 0, 0.05, 0.05, 0.23, hide)
@@ -280,8 +285,41 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
     box(f'{name}-helm', x, y, base + 0.47, 0.115, 0.115, 0.06, mail)
     if shield:
         box(f'{name}-shield', x - 0.135, y - 0.01, base + 0.19, 0.03, 0.13, 0.17, cloth)
-    if spear:
+
+    # What he is carrying, which is the whole of what tells one kind of
+    # soldier from another in a silhouette this size.
+    if not spear or weapon == 'none':
+        pass
+    elif weapon == 'spear':
         box(f'{name}-spear', x + 0.14, y - 0.02, base + 0.08, 0.028, 0.028, 0.52, spear_mat)
+    elif weapon == 'pike':
+        box(f'{name}-pike', x + 0.14, y - 0.02, base + 0.04, 0.028, 0.028, 0.95, spear_mat)
+    elif weapon == 'sword':
+        # Raised, because a sword held down is a stick against the leg.
+        box(f'{name}-arm-up', x + 0.11, y, base + 0.3, 0.05, 0.08, 0.14, mail)
+        box(f'{name}-sword', x + 0.11, y - 0.01, base + 0.44, 0.035, 0.035, 0.26, mail)
+        box(f'{name}-guard', x + 0.11, y - 0.01, base + 0.44, 0.12, 0.04, 0.03, mail)
+    elif weapon == 'bow':
+        # A stave taller than he is, held out from the body. No shield goes
+        # with it, and that absence is half of what says archer.
+        bow = box(f'{name}-bow', x + 0.17, y - 0.02, base + 0.02, 0.022, 0.035, 0.58, spear_mat)
+        bow.rotation_euler = (0, math.radians(-10), 0)
+        # The string, which is what turns a stave into a bow.
+        box(f'{name}-string', x + 0.11, y - 0.02, base + 0.1, 0.012, 0.012, 0.42, skin)
+        box(f'{name}-quiver', x - 0.1, y - 0.08, base + 0.18, 0.06, 0.06, 0.2, spear_mat)
+    elif weapon == 'crossbow':
+        # Held level across the chest: a cross shape, which is exactly how
+        # the thing was recognised.
+        box(f'{name}-stock', x + 0.06, y - 0.06, base + 0.3, 0.05, 0.3, 0.04, spear_mat)
+        box(f'{name}-prod', x + 0.06, y - 0.17, base + 0.3, 0.3, 0.04, 0.04, spear_mat)
+    elif weapon == 'gun':
+        barrel = box(f'{name}-gun', x + 0.08, y - 0.1, base + 0.32, 0.04, 0.34, 0.04, mail)
+        barrel.rotation_euler = (math.radians(-10), 0, 0)
+        box(f'{name}-rest', x + 0.2, y - 0.04, base, 0.025, 0.025, 0.36, spear_mat)
+    elif weapon == 'lance':
+        lance = box(f'{name}-lance', x + 0.15, y + 0.06, base + 0.24, 0.03, 0.78, 0.03, spear_mat)
+        lance.rotation_euler = (math.radians(-9), 0, 0)
+        box(f'{name}-pennon', x + 0.15, y + 0.3, base + 0.3, 0.02, 0.14, 0.1, cloth)
 
 
 def palette_for_men():
@@ -320,6 +358,23 @@ def oneMan(mounted):
     mail, cloth, timber, skin = palette_for_men()
     man('one', 0, 0, mail, cloth, timber, skin, mounted)
     return 0.62 if not mounted else 0.82
+
+
+def fighter(weapon, mounted=False, shield=True, barded=False):
+    """One soldier of a given kind.
+
+    A battle used to be fought by one figure repeated: the same man with the
+    same spear whether he was a Genoese crossbowman or a Scots pikeman. The
+    simulation has always known which; this is the sheet catching up, and it
+    costs one render each because the models are built from the same dozen
+    boxes with a different thing in the hand.
+    """
+    clear()
+    mail, cloth, timber, skin = palette_for_men()
+    man('one', 0, 0, mail, cloth, timber, skin, mounted,
+        shield=shield, weapon=weapon, barded=barded)
+    tall = {'pike': 1.05, 'bow': 0.72}.get(weapon, 0.62)
+    return tall if not mounted else 0.9
 
 
 def general(mounted):
@@ -588,6 +643,14 @@ def main():
     wanted.append(('rider', lambda: oneMan(True)))
     wanted.append(('captain', lambda: general(False)))
     wanted.append(('general', lambda: general(True)))
+    wanted.append(('spearman', lambda: fighter('spear')))
+    wanted.append(('swordsman', lambda: fighter('sword')))
+    wanted.append(('pikeman', lambda: fighter('pike')))
+    wanted.append(('archer', lambda: fighter('bow', shield=False)))
+    wanted.append(('crossbowman', lambda: fighter('crossbow', shield=False)))
+    wanted.append(('gunner', lambda: fighter('gun', shield=False)))
+    wanted.append(('knight', lambda: fighter('lance', mounted=True, barded=True)))
+    wanted.append(('lighthorse', lambda: fighter('sword', mounted=True)))
     wanted.append(('galley', lambda: vessel(True)))
     wanted.append(('roundship', lambda: vessel(False)))
     wanted.append(('agent', lambda: agent()))

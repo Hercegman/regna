@@ -26,8 +26,10 @@ import { frontage } from '../core/battle/sim';
 import type { BattleSettlement, BattleUnit } from '../core/battle/types';
 import { FIELD_DEPTH, FIELD_WIDTH } from '../core/battle/types';
 import { WATER, rampFor, snap, stepFor, tileNoise } from './iso/palette';
-import { dressGround } from './iso/terrain';
-import { loadSprites, stamp, type SpriteName } from './iso/sprites';
+import { armsCanvas } from './arms';
+import { figureFor } from './figures';
+import { dressGround, grainOf } from './iso/terrain';
+import { loadSprites, stamp } from './iso/sprites';
 
 export interface BattleView {
   /** Updated when the window is resized. */
@@ -44,7 +46,7 @@ export interface BattleView {
 }
 
 /** How many screen pixels go to one pixel of the picture. */
-export const PIXEL = 3;
+export const PIXEL = 2;
 
 /** The ground is flattened towards the viewer by the usual two to one. */
 const SQUASH = 0.5;
@@ -300,6 +302,7 @@ export function drawBattle(
   ctx.clearRect(0, 0, view.width, view.height);
   ctx.drawImage(small!, 0, 0, width, height, 0, 0, width * PIXEL, height * PIXEL);
 
+  for (const unit of ordered) drawStandard(ctx, view, frame, unit, state);
   for (const unit of ordered) drawMoraleBar(ctx, view, frame, unit);
   drawSelection(ctx, state, view, frame);
 }
@@ -353,8 +356,11 @@ function drawGround(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fr
       // A field is not one colour. A tile's own number nudges it a step up or
       // down the ladder, which is most of what makes these pictures look like
       // country instead of a sheet of paint.
+      // Subtle. A field is not a chequerboard, and at two screen pixels to
+      // the picture pixel a quarter of the tiles a step lighter reads as a
+      // pattern rather than as grass.
       const grain = Math.sin(tx * 127.1 + ty * 311.7) * 43758.5453;
-      const nudge = grain - Math.floor(grain) > 0.72 ? 1 : 0;
+      const nudge = grain - Math.floor(grain) > 0.86 ? 1 : 0;
       const face = (which: 'top' | 'left' | 'right'): string =>
         snap(ramp[Math.max(0, Math.min(4, stepFor(which, lean) - (which === 'top' ? nudge : 0)))]!);
 
@@ -390,6 +396,16 @@ function drawGround(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fr
       // itself and is also the only thing on the field that gives the eye a
       // sense of how far away anything is.
       if (!state.setup.naval && halfWidth > 3) {
+        grainOf(
+          ctx,
+          sx,
+          Math.round((yE + yW) / 2),
+          halfWidth,
+          halfHeight,
+          ramp,
+          tx,
+          ty,
+        );
         dressGround(
           ctx,
           sx,
@@ -489,6 +505,23 @@ function drawUnit(
     return;
   }
 
+  // The dead, where they fell: a mark a man, behind the line, as many as the
+  // regiment has lost. The simulation does not keep a body's position and
+  // does not need to — what the eye reads off a field is how much of it has
+  // been fought over, and that is the count.
+  const lost = Math.max(0, unit.startingSoldiers - unit.soldiers);
+  if (lost > 0 && frame.scale > 0.6) {
+    const marks = Math.min(26, Math.round(lost / Math.max(6, unit.startingSoldiers / 22)));
+    ctx.fillStyle = 'rgba(58, 36, 28, 0.55)';
+    for (let i = 0; i < marks; i++) {
+      const a = tileNoise(Math.round(unit.position.x), i, 13);
+      const b = tileNoise(Math.round(unit.position.y), i, 29);
+      const px = Math.round(at.x + (a - 0.5) * across * 1.25);
+      const py = Math.round(baseY + (b * 0.5 + 0.1) * frame.scale * 26 * SQUASH);
+      ctx.fillRect(px, py, Math.max(1, Math.round(frame.scale * 2.4)), 1);
+    }
+  }
+
   // The men themselves. Ranks run back into the picture, so each one is
   // drawn a little higher than the one in front of it.
   //
@@ -508,7 +541,7 @@ function drawUnit(
   );
   const rankStep = manSize * (mounted ? 0.5 : 0.42);
   const figures = Math.max(1, Math.round(files * ranks * standing));
-  const name: SpriteName = mounted ? 'rider' : 'soldier';
+  const name = figureFor(type.unitClass);
 
   let placed = 0;
   for (let rank = ranks - 1; rank >= 0 && placed < figures; rank--) {
@@ -522,6 +555,45 @@ function drawUnit(
       stamp(ctx, name, x, baseY - back, manSize, colour);
     }
   }
+  ctx.globalAlpha = 1;
+}
+
+/**
+ * The standard over a regiment.
+ *
+ * A line of men all in one colour is a line of men; the thing that made a
+ * medieval battlefield readable, to the men in it as much as to anybody
+ * watching, was the banner over each body of them. This is that, in the
+ * realm's own arms, drawn at the screen's own resolution because a coat of
+ * arms four pixels across is a smudge.
+ */
+function drawStandard(
+  ctx: CanvasRenderingContext2D,
+  view: BattleView,
+  frame: Frame,
+  unit: BattleUnit,
+  state: BattleState,
+): void {
+  if (unit.stance === 'destroyed' || unit.fled) return;
+  const ground = state.terrainHeight(unit.position);
+  const at = floorOf(frame, unit.position);
+  const baseY = at.y - lift(frame, ground);
+  const x = at.x * PIXEL;
+  const y = baseY * PIXEL;
+  if (x < -30 || x > view.width + 30 || y < -40 || y > view.height + 40) return;
+
+  const height = Math.max(12, Math.min(30, frame.scale * 16));
+  const flagWidth = Math.round(height * 0.78);
+  const flagHeight = Math.round(height * 0.62);
+  const top = y - height - Math.max(8, frame.scale * 14);
+  ctx.globalAlpha = unit.stance === 'routing' ? 0.55 : 1;
+  ctx.fillStyle = 'rgba(10, 12, 10, 0.85)';
+  ctx.fillRect(Math.round(x) - 1, Math.round(top), 2, height + Math.max(8, frame.scale * 14));
+  ctx.drawImage(
+    armsCanvas(unit.faction, flagWidth, flagHeight, 'banner'),
+    Math.round(x) + 1,
+    Math.round(top),
+  );
   ctx.globalAlpha = 1;
 }
 

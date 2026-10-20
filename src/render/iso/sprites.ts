@@ -144,11 +144,25 @@ export function stamp(
   y: number,
   size: number,
   colour?: string,
+  shadow = true,
 ): void {
   const image = sprite(name, size, colour);
   if (!image) return;
   const box = SPRITES[name];
   const scale = image.width / box.width;
+  // A thing with nothing under it is a sticker. One dark ellipse on the
+  // ground it is standing on is the whole of what makes it stand there,
+  // and because the sprite is anchored on that exact point the shadow
+  // always lands where the feet are.
+  if (shadow && size > 7) {
+    const reach = size * 0.2;
+    ctx.save();
+    ctx.fillStyle = 'rgba(14, 18, 14, 0.22)';
+    ctx.beginPath();
+    ctx.ellipse(Math.round(x), Math.round(y), reach, Math.max(1, reach * 0.42), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
   ctx.drawImage(
     image,
     Math.round(x - box.anchorX * scale),

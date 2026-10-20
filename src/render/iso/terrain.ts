@@ -25,6 +25,7 @@ import { tryGetFaction, INDEPENDENT_ID } from '../../core/data/factions';
 import type { Ground } from './elevation';
 import type { IsoTransform } from './view';
 import { METRES_PER_STEP, cornerOf, floorAt } from './view';
+import type { Ramp } from './palette';
 import {
   DECOR,
   OWNER_WASH,
@@ -262,7 +263,11 @@ export function drawGround(
         const cy = Math.round((yE + yW) / 2);
         if (sea) {
           if (edged && jitter > 0.55) surf(ctx, cx, cy, halfWidth, jitter);
+          else if (halfWidth > 5) ripple(ctx, cx, cy, halfWidth, tx, ty);
         } else {
+          if (halfWidth > 4) {
+            speckle(ctx, cx, cy, halfWidth, halfHeight, ramp, mottle, tx, ty);
+          }
           dressGround(ctx, cx, cy, halfWidth, halfHeight, terrain, metres, tx, ty, jitter);
         }
       }
@@ -390,6 +395,9 @@ function tree(
   const w = Math.max(1, Math.round(halfWidth * (broad ? 0.34 : 0.24)));
   const palette = high ? DECOR.conifer : broad ? DECOR.leaf : DECOR.conifer;
 
+  // What it is standing on, before it.
+  ctx.fillStyle = 'rgba(14, 20, 12, 0.28)';
+  ctx.fillRect(x - w, y, w * 2, 1);
   ctx.fillStyle = palette[2]!;
   ctx.fillRect(x, y - 1, 1, 2);
   if (broad) {
@@ -468,6 +476,72 @@ function furrows(
     ctx.lineTo(x + ox + reach, y + oy - along * reach * 0.5);
   }
   ctx.stroke();
+}
+
+/**
+ * The grain of the ground.
+ *
+ * A tile is one flat colour, and a field of flat colours is a chart. Half a
+ * dozen marks a shade either side of it, in places fixed to the tile's own
+ * coordinates, is grass — and it costs six fills and nothing else. This is
+ * the whole difference between ground you believe and ground you read.
+ */
+export function grainOf(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  halfWidth: number,
+  halfHeight: number,
+  ramp: Ramp,
+  tx: number,
+  ty: number,
+): void {
+  speckle(ctx, x, y, halfWidth, halfHeight, ramp, 0, tx, ty);
+}
+
+function speckle(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  halfWidth: number,
+  halfHeight: number,
+  ramp: Ramp,
+  mottle: number,
+  tx: number,
+  ty: number,
+): void {
+  const marks = halfWidth > 9 ? 7 : 4;
+  const lighter = ramp[Math.max(0, Math.min(4, 3 + mottle + 1))]!;
+  const darker = ramp[Math.max(0, Math.min(4, 3 + mottle - 1))]!;
+  for (let i = 0; i < marks; i++) {
+    const a = tileNoise(tx, ty, 101 + i * 7);
+    const b = tileNoise(tx, ty, 211 + i * 7);
+    const c = tileNoise(tx, ty, 307 + i * 7);
+    // Kept inside the diamond: a mark that strays over the edge shows as a
+    // notch in the tile next to it.
+    const across = (a - 0.5) * 2;
+    const down = (b - 0.5) * 2;
+    if (Math.abs(across) + Math.abs(down) > 0.82) continue;
+    const px = Math.round(x + across * halfWidth * 0.8);
+    const py = Math.round(y + down * halfHeight * 0.8);
+    ctx.fillStyle = c > 0.5 ? lighter : darker;
+    ctx.fillRect(px, py, c > 0.8 ? 2 : 1, 1);
+  }
+}
+
+/** The sea has a grain of its own, and it runs the other way. */
+function ripple(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  halfWidth: number,
+  tx: number,
+  ty: number,
+): void {
+  if (tileNoise(tx, ty, 57) < 0.55) return;
+  const width = Math.max(2, Math.round(halfWidth * 0.5));
+  ctx.fillStyle = 'rgba(126, 170, 206, 0.16)';
+  ctx.fillRect(Math.round(x - width / 2), Math.round(y), width, 1);
 }
 
 /** White water, where the sea is working on a shore. */
