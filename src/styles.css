@@ -153,7 +153,7 @@ select.select {
 .menu-shield {
   width: 1.9rem;
   height: 2.3rem;
-  background: var(--banner, #888);
+  background-size: 100% 100%;
   clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%);
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.3);
 }
@@ -473,6 +473,7 @@ button.faction-chip.chosen {
   width: 1.05em;
   height: 1.25em;
   background: var(--banner, #888);
+  background-size: 100% 100%;
   border: 1px solid rgba(0, 0, 0, 0.75);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 0 1px rgba(201, 168, 76, 0.45);
   clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%);

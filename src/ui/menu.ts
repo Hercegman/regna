@@ -13,6 +13,7 @@
  * illustration would.
  */
 import { FACTIONS } from '../core/data/factions';
+import { armsDataUrl } from '../render/arms';
 import { clear, el } from './dom';
 
 export type BattleKind = 'field' | 'siege' | 'sea';
@@ -33,7 +34,7 @@ export function heraldry(): HTMLElement {
     for (const faction of FACTIONS) {
       wall.appendChild(el('span', {
         class: 'menu-shield',
-        style: `--banner:${faction.colour}`,
+        style: `background-image:url(${armsDataUrl(faction.id, 38, 46, 'banner')})`,
         title: faction.name,
       }));
     }

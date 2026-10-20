@@ -74,7 +74,7 @@ export function renderFactionSelect(
     });
     detail.appendChild(
       el('div', { class: 'faction-detail-inner' },
-        el('h2', {}, crest(faction.colour, faction.name), ' ', faction.name),
+        el('h2', {}, crest(faction.colour, faction.name, faction.id), ' ', faction.name),
         el('p', { class: 'faction-meta' },
           `${faction.culture.replace(/_/g, ' ')} · ${faction.religion}` +
             (faction.appearsIn > startYear ? ` · enters play in ${faction.appearsIn}` : ''),
@@ -110,7 +110,7 @@ export function renderFactionSelect(
             showDetail(faction);
           },
         },
-        crest(faction.colour, faction.name),
+        crest(faction.colour, faction.name, faction.id),
         el('span', { class: 'chip-name' }, faction.name),
         !available && el('span', { class: 'chip-year' }, String(faction.appearsIn)),
       );

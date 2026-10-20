@@ -135,7 +135,7 @@ import { commitRng, rngFor } from '../core/campaign';
 import { getBuildingType } from '../core/data/buildings';
 import { getUnitType } from '../core/data/units';
 import { getRegion } from '../core/data/regions';
-import { FACTIONS, factionName, tryGetFaction } from '../core/data/factions';
+import { FACTIONS, INDEPENDENT_ID, factionName, tryGetFaction } from '../core/data/factions';
 import type { SeaZoneId } from '../core/data/seas';
 import { getSeaZone, zonesOffPort } from '../core/data/seas';
 import { getTradeRoute } from '../core/data/trade';
@@ -730,7 +730,8 @@ export class CampaignScreen {
 
     // --- the cards
     const banner = el('div', { class: 'cards-banner' },
-      crest(owner?.colour ?? '#8d8578', factionName(region.owner)),
+      crest(owner?.colour ?? '#8d8578', factionName(region.owner),
+        region.owner === INDEPENDENT_ID ? undefined : region.owner),
       el('span', { class: 'cards-place' }, geography.settlement),
       el('span', { class: 'cards-meta' }, pretty(region.tier)),
     );
@@ -744,7 +745,8 @@ export class CampaignScreen {
             this.clearMovementHighlights();
             this.renderAll();
           },
-        }, crest(tryGetFaction(army.faction)?.colour ?? '#888', factionName(army.faction))));
+        }, crest(tryGetFaction(army.faction)?.colour ?? '#888', factionName(army.faction),
+          army.faction === INDEPENDENT_ID ? undefined : army.faction)));
       }
     }
     this.cardStrip.appendChild(banner);
@@ -1082,7 +1084,7 @@ export class CampaignScreen {
     clear(this.topBar);
     this.topBar.appendChild(
       el('div', { class: 'hud-realm' },
-        crest(faction?.colour ?? '#888', faction?.name ?? 'Unknown'),
+        crest(faction?.colour ?? '#888', faction?.name ?? 'Unknown', state.player),
         el('div', { class: 'realm-titles' },
           el('strong', {}, faction?.name ?? 'Unknown'),
           el('span', { class: 'muted' },

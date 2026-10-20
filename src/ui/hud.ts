@@ -15,14 +15,14 @@
 import { getUnitType } from '../core/data/units';
 import type { Regiment } from '../core/campaign';
 import { loadSprites, sprite } from '../render/iso/sprites';
+import { armsDataUrl } from '../render/arms';
+import { figureFor } from '../render/figures';
+import type { FactionId } from '../core/types';
 import type { SpriteName } from '../render/iso/sprites';
 import { el } from './dom';
 
 /** How big a card's picture is drawn, before the page scales it. */
 const PORTRAIT = 48;
-
-/** Where in its frame a rendered figure actually is, as a fraction of it. */
-const FIGURE = { x: 0.5, y: 0.23 } as const;
 
 /**
  * One regiment, as a card.
@@ -45,7 +45,7 @@ export function unitCard(
   const canvas = el('canvas', { class: 'card-portrait' });
   canvas.width = PORTRAIT;
   canvas.height = PORTRAIT;
-  paintPortrait(canvas, type.mounted ? 'rider' : 'soldier', colour);
+  paintPortrait(canvas, figureFor(type.unitClass), colour);
 
   const card = el('div', {
     class: `unit-card${options.selected ? ' selected' : ''}${regiment.mercenary ? ' hired' : ''}`,
@@ -111,18 +111,12 @@ function paintPortrait(canvas: HTMLCanvasElement, name: SpriteName, colour: stri
     if (!ctx) return;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    // The sprites were modelled to stand on a tile, so each one sits small
-    // and high in a square with a good deal of air under it. That is right
-    // on the map, where the air is where the ground goes, and wrong on a
-    // card, where the man is the whole point: so he is drawn at twice the
-    // size and the card is cropped to him.
-    const image = sprite(name, PORTRAIT * 2, colour);
+    // A sprite now fills its own frame, so the card is the frame: no crop,
+    // no guessing where in the square the man ended up. It used to need
+    // both, which is why heads came off when the sheet was reframed.
+    const image = sprite(name, PORTRAIT, colour);
     if (!image) return;
-    ctx.drawImage(
-      image,
-      Math.round(PORTRAIT / 2 - FIGURE.x * image.width),
-      Math.round(PORTRAIT / 2 - FIGURE.y * image.height),
-    );
+    ctx.drawImage(image, 0, 0);
   };
   paint();
   void loadSprites().then(paint).catch(() => undefined);
@@ -137,13 +131,18 @@ export function plaque(label: string, value: Node | string, extra = ''): HTMLEle
 }
 
 /**
- * The faction's shield.
+ * The realm's shield.
  *
- * A device rather than a swatch: the colour the realm is painted in on the
- * map, in the shape the player is looking at on every banner in the game.
+ * Its actual arms where it has them, which is everywhere: the device a
+ * medieval realm was recognised by, drawn from a blazon at the size the page
+ * wants it. The colour is kept behind as a fallback, and is still what the
+ * map paints the realm's ground and borders in.
  */
-export function crest(colour: string, title: string): HTMLElement {
-  return el('span', { class: 'crest', title, style: `--banner:${colour}` });
+export function crest(colour: string, title: string, faction?: FactionId): HTMLElement {
+  const style = faction
+    ? `--banner:${colour};background-image:url(${armsDataUrl(faction, 44, 52, 'banner')})`
+    : `--banner:${colour}`;
+  return el('span', { class: `crest${faction ? ' blazoned' : ''}`, title, style });
 }
 
 /**
@@ -183,7 +182,7 @@ export function battleCard(
   const canvas = el('canvas', { class: 'card-portrait' });
   canvas.width = PORTRAIT;
   canvas.height = PORTRAIT;
-  paintPortrait(canvas, afloat ? 'galley' : mounted ? 'rider' : 'soldier', colour);
+  paintPortrait(canvas, afloat ? 'galley' : mounted ? 'lighthorse' : 'swordsman', colour);
   const chevrons = Math.min(3, Math.round(experience / 3));
 
   const strength = el('div', { class: 'card-strength-fill' });

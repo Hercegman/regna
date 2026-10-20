@@ -36,6 +36,7 @@ import { mercatorY } from './projection';
 import { provinceShapes, type ProvinceShape } from './provinces';
 import { LAKE_RINGS, LAND_RINGS, RIVER_LINES } from '../core/data/geography';
 import { DECOR } from './iso/palette';
+import { armsCanvas } from './arms';
 import { loadGround, type Ground } from './iso/elevation';
 import { drawGround, type TilePaint } from './iso/terrain';
 import { loadSprites, stamp, type SpriteName } from './iso/sprites';
@@ -71,10 +72,14 @@ export interface MapView {
 /**
  * How many screen pixels go to one pixel of the picture.
  *
- * Three is the point at which a tile is unmistakably made of pixels without
- * the map becoming a mosaic you cannot read.
+ * Two rather than three. Three made a tile unmistakably made of pixels, and
+ * also threw away more than half the detail the screen could have carried: a
+ * town was twenty pixels of actual information blown up to sixty. At two the
+ * picture is still visibly pixels — the sprites are the same pixels, only
+ * more of them — and there is room for texture in the ground, for a shadow
+ * under what stands on it, and for a man to have a shield.
  */
-export const PIXEL = 3;
+export const PIXEL = 2;
 
 const SKY = '#0c1620';
 
@@ -222,12 +227,24 @@ export function zoneAt(view: MapView, x: number, y: number): SeaZoneId | undefin
 // Drawing
 // ---------------------------------------------------------------------------
 
-/** What is standing on a tile, gathered before the sweep that paints them. */
+/**
+ * What is standing on a tile, gathered before the sweep that paints them.
+ *
+ * It carries its own place in the picture rather than relying on the tile's.
+ * A tile at the zoom a continent is read at covers several kilometres, so
+ * stamping a town at the middle of the tile it falls in put it up to a tile
+ * away from the place it belongs to — and that far from its own name, which
+ * is drawn at the real coordinates. The tile decides only when the thing is
+ * painted, which is what gets it in front of whatever is behind it.
+ */
 interface Standing {
   readonly sprite: SpriteName;
   readonly size: number;
   readonly colour: string | undefined;
-  /** Nudged off the middle of the tile so several do not pile up. */
+  /** Where it stands, in the picture's own pixels, already lifted. */
+  readonly x: number;
+  readonly y: number;
+  /** Nudged off its own place so several in one province do not pile up. */
   readonly offsetX: number;
   readonly offsetY: number;
 }
@@ -270,7 +287,7 @@ export function drawMap(
         const here = standing.get(key(tile.tx, tile.ty));
         if (!here) return;
         for (const item of here) {
-          stamp(paint, item.sprite, tile.x + item.offsetX, tile.y + item.offsetY, item.size, item.colour);
+          stamp(paint, item.sprite, item.x + item.offsetX, item.y + item.offsetY, item.size, item.colour);
         }
       },
     );
@@ -326,12 +343,20 @@ function gather(
   zones: ReadonlySet<string>,
 ): Map<string, Standing[]> {
   const out = new Map<string, Standing[]>();
-  const add = (lon: number, merc: number, item: Standing): void => {
+  const add = (lon: number, lat: number, item: Omit<Standing, 'x' | 'y'>): void => {
+    const merc = mercatorY(lat);
+    const floor = floorAt(transform, lon, merc);
+    const metres = ground?.metresAt(lon, lat) ?? 0;
+    const placed: Standing = {
+      ...item,
+      x: floor.x,
+      y: floor.y - liftFor(transform, metres),
+    };
     const tile = tileOf(transform, lon, merc);
     const at = key(tile.tx, tile.ty);
     const list = out.get(at);
-    if (list) list.push(item);
-    else out.set(at, [item]);
+    if (list) list.push(placed);
+    else out.set(at, [placed]);
   };
 
   // Sized from the zoom and not from the tile.
@@ -357,7 +382,7 @@ function gather(
     const colour = region.owner === INDEPENDENT_ID
       ? '#8d8578'
       : tryGetFaction(region.owner)?.colour ?? '#8d8578';
-    add(geography.lon, mercatorY(geography.lat), {
+    add(geography.lon, geography.lat, {
       sprite: `town${Math.max(0, Math.min(5, rank))}` as SpriteName,
       size: Math.max(8, Math.min(42, close * (0.44 + rank * 0.125))),
       colour,
@@ -373,7 +398,7 @@ function gather(
     const geography = getRegion(army.location);
     const faction = tryGetFaction(army.faction);
     nudge += 1;
-    add(geography.lon, mercatorY(geography.lat), {
+    add(geography.lon, geography.lat, {
       // The man in command, because that is what is standing there. An army
       // on this map used to be a block of eight identical figures, which
       // reads as a token however well it is drawn; one man with his standard
@@ -393,7 +418,7 @@ function gather(
     const where = fleet.location.kind === 'port'
       ? { lon: getRegion(fleet.location.region).lon, lat: getRegion(fleet.location.region).lat }
       : { lon: getSeaZone(fleet.location.zone).lon, lat: getSeaZone(fleet.location.zone).lat };
-    add(where.lon, mercatorY(where.lat), {
+    add(where.lon, where.lat, {
       sprite: fleet.cargo.length > 0 ? 'roundship' : 'galley',
       size: unitSize,
       colour: tryGetFaction(fleet.faction)?.colour ?? '#8d8578',
@@ -405,7 +430,7 @@ function gather(
   for (const agent of state.agents.values()) {
     if (!canSeeAgent(state, state.player, agent.id, watched)) continue;
     const geography = getRegion(agent.location);
-    add(geography.lon, mercatorY(geography.lat), {
+    add(geography.lon, geography.lat, {
       sprite: 'agent',
       size: Math.max(6, unitSize * 0.7),
       colour: tryGetFaction(agent.faction)?.colour ?? '#8d8578',
@@ -419,7 +444,7 @@ function gather(
     const where = caravanLocation(caravan);
     if (!where) continue;
     const geography = getRegion(where);
-    add(geography.lon, mercatorY(geography.lat), {
+    add(geography.lon, geography.lat, {
       sprite: 'caravan',
       size: Math.max(6, unitSize * 0.7),
       colour: tryGetFaction(caravan.faction)?.colour ?? '#8d8578',
@@ -790,43 +815,78 @@ function drawHighlights(
   if (view.selected) outline(view.selected, '#ffe28a', 1);
 }
 
-/** A pole with a pennant on it, in whoever's colours the men are. */
-function banner(ctx: CanvasRenderingContext2D, x: number, y: number, colour: string): void {
-  const height = 13;
-  ctx.fillStyle = 'rgba(8, 10, 8, 0.8)';
+/**
+ * A pole with the realm's banner on it, over an army.
+ *
+ * The thing a medieval army was recognised by at a distance was its banner,
+ * and the thing a player needs at a distance is the same: whose those men
+ * are, without reading anything.
+ */
+function banner(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  owner: FactionId | undefined,
+  colour: string,
+): void {
+  const height = 15;
+  const flagWidth = 11;
+  const flagHeight = 9;
+  ctx.fillStyle = 'rgba(8, 10, 8, 0.85)';
   ctx.fillRect(Math.round(x) - 1, Math.round(y) - height, 2, height);
-  ctx.beginPath();
-  ctx.moveTo(x, y - height);
-  ctx.lineTo(x + 9, y - height + 3);
-  ctx.lineTo(x, y - height + 6);
-  ctx.closePath();
+  if (owner) {
+    ctx.drawImage(
+      armsCanvas(owner, flagWidth, flagHeight, 'banner'),
+      Math.round(x) + 1,
+      Math.round(y) - height,
+    );
+    return;
+  }
   ctx.fillStyle = colour;
-  ctx.fill();
+  ctx.fillRect(Math.round(x) + 1, Math.round(y) - height, flagWidth, flagHeight);
   ctx.lineWidth = 1;
   ctx.strokeStyle = 'rgba(8, 10, 8, 0.85)';
-  ctx.stroke();
+  ctx.strokeRect(Math.round(x) + 1.5, Math.round(y) - height + 0.5, flagWidth - 1, flagHeight - 1);
 }
 
-/** A small heater shield, drawn at the screen's own resolution. */
+/**
+ * The owner's arms beside a name, at the screen's own resolution.
+ *
+ * A realm used to be a square of its colour here, which tells two borders
+ * apart and nothing else. These are the arms the realm actually bore, drawn
+ * from a blazon and kept once painted, so two hundred of them cost two
+ * hundred blits.
+ */
 function shield(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   radius: number,
+  owner: FactionId | undefined,
   colour: string,
 ): void {
-  ctx.beginPath();
-  ctx.moveTo(x - radius, y - radius);
-  ctx.lineTo(x + radius, y - radius);
-  ctx.lineTo(x + radius, y + radius * 0.2);
-  ctx.lineTo(x, y + radius * 1.25);
-  ctx.lineTo(x - radius, y + radius * 0.2);
-  ctx.closePath();
-  ctx.fillStyle = colour;
-  ctx.fill();
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = 'rgba(8, 10, 8, 0.85)';
-  ctx.stroke();
+  if (!owner) {
+    ctx.beginPath();
+    ctx.moveTo(x - radius, y - radius);
+    ctx.lineTo(x + radius, y - radius);
+    ctx.lineTo(x + radius, y + radius * 0.2);
+    ctx.lineTo(x, y + radius * 1.25);
+    ctx.lineTo(x - radius, y + radius * 0.2);
+    ctx.closePath();
+    ctx.fillStyle = colour;
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(8, 10, 8, 0.85)';
+    ctx.stroke();
+    return;
+  }
+  const width = Math.max(6, Math.round(radius * 2));
+  const height = Math.max(7, Math.round(radius * 2.3));
+  ctx.drawImage(
+    armsCanvas(owner, width, height),
+    Math.round(x - width / 2),
+    Math.round(y - height * 0.44),
+  );
 }
 
 /**
@@ -849,7 +909,9 @@ function drawNames(
     const region = state.regions.get(geography.id);
     if (!region) continue;
     const rank = SETTLEMENT_ORDER.indexOf(region.tier);
-    const threshold = zoom < 14 ? 3 : zoom < 22 ? 2 : zoom < 34 ? 1 : 0;
+    // A settlement with no name on it is a smudge. Only the most pulled-back
+    // view holds any of them back, and then only the villages.
+    const threshold = zoom < 13 ? 2 : zoom < 26 ? 1 : 0;
     if (!view.alwaysLabel && rank < threshold) continue;
     const at = placeOf(transform, geography.id);
     const x = at.x * PIXEL;
@@ -866,10 +928,15 @@ function drawNames(
     // A shield in the owner's colours, beside the name. Whose a town is is
     // the one thing a player looks for on a map of this kind, and reading it
     // off the wash on the fields is guesswork at anything but close range.
-    const colour = region.owner === INDEPENDENT_ID
-      ? '#8d8578'
-      : tryGetFaction(region.owner)?.colour ?? '#8d8578';
-    shield(ctx, x - ctx.measureText(geography.settlement).width / 2 - size * 0.62, y + size * 0.5, size * 0.46, colour);
+    const owner = region.owner === INDEPENDENT_ID ? undefined : region.owner;
+    shield(
+      ctx,
+      x - ctx.measureText(geography.settlement).width / 2 - size * 0.68,
+      y + size * 0.5,
+      size * 0.44,
+      owner,
+      '#8d8578',
+    );
   }
 
   // A banner over every army somebody of ours can see. The sprite on the
@@ -884,7 +951,13 @@ function drawNames(
     const y = (at.y + transform.halfHeight * 0.9) * PIXEL;
     if (x < -20 || x > view.viewport.width + 20) continue;
     if (y < -20 || y > view.viewport.height + 20) continue;
-    banner(ctx, x, y, tryGetFaction(army.faction)?.colour ?? '#8d8578');
+    banner(
+      ctx,
+      x,
+      y,
+      army.faction === INDEPENDENT_ID ? undefined : army.faction,
+      tryGetFaction(army.faction)?.colour ?? '#8d8578',
+    );
   }
 
   const zones = watchedZones(state, state.player);

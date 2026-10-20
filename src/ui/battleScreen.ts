@@ -429,7 +429,7 @@ export class BattleScreen {
       }
     }
     return el('div', { class: `side-summary ${side}` },
-      crest(colour, factionName(faction)),
+      crest(colour, factionName(faction), faction),
       el('span', { class: 'side-name' },
         factionName(faction) + (this.playerSide === side ? ' (you)' : ''),
       ),
@@ -461,7 +461,7 @@ export class BattleScreen {
       ? this.plan.setup.defender
       : this.plan.setup.attacker;
     this.cardStrip.appendChild(el('div', { class: 'cards-banner' },
-      crest(tryGetFaction(faction)?.colour ?? '#8d8578', factionName(faction)),
+      crest(tryGetFaction(faction)?.colour ?? '#8d8578', factionName(faction), faction),
       el('span', { class: 'cards-place' },
         this.playerSide ? 'Our regiments' : 'The field'),
       el('span', { class: 'cards-meta', id: 'battle-standing' }, ''),
