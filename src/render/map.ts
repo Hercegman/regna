@@ -34,6 +34,8 @@ import { SEA_ZONES, getSeaZone } from '../core/data/seas';
 import type { Camera, Viewport } from './projection';
 import { mercatorY } from './projection';
 import { provinceShapes } from './provinces';
+import { LAND_RINGS, RIVER_LINES } from '../core/data/geography';
+import { DECOR } from './iso/palette';
 import { loadGround, type Ground } from './iso/elevation';
 import { drawGround, type TilePaint } from './iso/terrain';
 import { loadSprites, stamp, type SpriteName } from './iso/sprites';
@@ -112,6 +114,26 @@ function placeOf(transform: IsoTransform, id: RegionId): Point {
 export function screenPositionOf(view: MapView, id: RegionId): Point {
   const place = placeOf(transformFor(view), id);
   return { x: place.x * PIXEL, y: place.y * PIXEL };
+}
+
+/**
+ * The four corners of the ground on screen, in world coordinates.
+ *
+ * The radar needs to draw a box around what the player is looking at, and
+ * because the map is isometric that box is a slanted one out here. Taken off
+ * the floor, so on hilly ground it is approximate in the same direction and
+ * by the same amount as picking is.
+ */
+export function viewCorners(view: MapView): { lon: number; merc: number }[] {
+  const transform = transformFor(view);
+  const width = view.viewport.width / PIXEL;
+  const height = view.viewport.height / PIXEL;
+  return [
+    floorFrom(transform, 0, 0),
+    floorFrom(transform, width, 0),
+    floorFrom(transform, width, height),
+    floorFrom(transform, 0, height),
+  ];
 }
 
 export function zonePosition(view: MapView, id: SeaZoneId): Point {
@@ -228,6 +250,8 @@ export function drawMap(
       },
     );
 
+    drawCoast(paint, transform);
+    drawRivers(paint, transform);
     drawFrontiers(paint, state, transform, watched);
     drawRoutes(paint, state, view, transform);
     drawHighlights(paint, view, transform);
@@ -250,7 +274,7 @@ function veil(
   if (!tile.province || watched.has(tile.province)) return;
   const halfWidth = transform.halfWidth;
   const halfHeight = transform.halfHeight;
-  ctx.fillStyle = 'rgba(10, 14, 22, 0.34)';
+  ctx.fillStyle = 'rgba(12, 16, 26, 0.26)';
   ctx.beginPath();
   ctx.moveTo(tile.x, tile.y - halfHeight);
   ctx.lineTo(tile.x + halfWidth, tile.y);
@@ -285,12 +309,18 @@ function gather(
     else out.set(at, [item]);
   };
 
-  // Sized from the zoom rather than from the tile. A tile is kept to about
-  // eight pixels at every zoom by design, so sizing anything off it makes
-  // everything the same size however far in you are.
+  // Sized from the zoom and not from the tile.
+  //
+  // This is the whole of what was wrong with the map before. A tile is kept
+  // to about eight pixels at every zoom by design, so anything measured
+  // against one is the same size on screen whether you are looking at one
+  // duchy or at Europe — and a Verona drawn the same size at both is a model
+  // of Verona sitting on top of Italy rather than a town standing in it.
+  // Measured against the zoom instead, a settlement covers a fixed piece of
+  // ground: about a fifth of the way to its neighbour for a village and
+  // rather more for Constantinople, which is what a town is.
   const close = transform.zoom;
-  const townSize = Math.max(9, Math.min(60, close * 2.4));
-  const unitSize = Math.max(8, Math.min(40, close * 1.5));
+  const unitSize = Math.max(7, Math.min(34, close * 0.72));
 
   for (const geography of REGIONS) {
     const region = state.regions.get(geography.id);
@@ -301,7 +331,7 @@ function gather(
       : tryGetFaction(region.owner)?.colour ?? '#8d8578';
     add(geography.lon, mercatorY(geography.lat), {
       sprite: `town${Math.max(0, Math.min(5, rank))}` as SpriteName,
-      size: townSize,
+      size: Math.max(9, Math.min(70, close * (0.85 + rank * 0.22))),
       colour,
       offsetX: 0,
       offsetY: 0,
@@ -376,6 +406,17 @@ function gather(
  * mean asking which province every neighbour of every tile belongs to. The
  * shapes already know which of their edges face another province, and that
  * is a few hundred lines instead of tens of thousands of lookups.
+ *
+ * A frontier is three things on top of each other, in this order: a band of
+ * the owner's colour laid inside his own ground, a dark line along the edge
+ * itself, and the colour again on top of that. The band is what makes a
+ * realm readable as one shape from across the room; the dark line is what
+ * stops the colour disappearing into whatever ground it happens to cross;
+ * and because each side lays its own band, a contested frontier comes out as
+ * two colours meeting, which is the thing you actually want to see.
+ *
+ * Boundaries between two provinces of the same realm get a thin grey line
+ * and only once the map is close enough for them to mean anything.
  */
 function drawFrontiers(
   ctx: CanvasRenderingContext2D,
@@ -383,31 +424,164 @@ function drawFrontiers(
   transform: IsoTransform,
   watched: ReadonlySet<RegionId>,
 ): void {
-  ctx.lineWidth = 1;
+  const shapes = provinceShapes();
+  // How deep the band reaches inside the border, and how heavy the line on
+  // it is. Both grow a little as the map is closed in on, because a frontier
+  // that is three pixels wide on a continent should not still be three
+  // pixels wide on one duchy.
+  const depth = Math.max(2, Math.min(7, transform.halfWidth * 0.55));
+  const weight = transform.halfWidth > 9 ? 2 : 1;
+
   ctx.lineJoin = 'round';
-  for (const shape of provinceShapes()) {
+  ctx.lineCap = 'round';
+
+  // The quiet lines first, so a national border is always drawn over them.
+  if (transform.zoom > 16) {
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(28, 34, 30, 0.35)';
+    ctx.beginPath();
+    for (const shape of shapes) {
+      const region = state.regions.get(shape.id);
+      if (!region || shape.cell.length < 3) continue;
+      for (let i = 0; i < shape.cell.length; i++) {
+        const across = shape.edgeNeighbours[i];
+        if (!across) continue;
+        const other = state.regions.get(across);
+        if (!other || other.owner !== region.owner) continue;
+        // Each shared edge belongs to two provinces; draw it once.
+        if (across < shape.id) continue;
+        const a = shape.cell[i]!;
+        const b = shape.cell[(i + 1) % shape.cell.length]!;
+        const from = lifted(transform, a[0], a[1]);
+        const to = lifted(transform, b[0], b[1]);
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+      }
+    }
+    ctx.stroke();
+  }
+
+  for (const shape of shapes) {
     const region = state.regions.get(shape.id);
     if (!region || shape.cell.length < 3) continue;
     const faction = region.owner === INDEPENDENT_ID ? undefined : tryGetFaction(region.owner);
     const colour = faction?.colour ?? '#9a9286';
-    let drew = false;
-    ctx.beginPath();
+    const seen = watched.has(shape.id);
+
+    // Which edges of this cell face somebody else.
+    const edges: { from: Point; to: Point }[] = [];
     for (let i = 0; i < shape.cell.length; i++) {
       const across = shape.edgeNeighbours[i];
       const other = across ? state.regions.get(across) : undefined;
       if (other && other.owner === region.owner) continue;
       const a = shape.cell[i]!;
       const b = shape.cell[(i + 1) % shape.cell.length]!;
-      const from = lifted(transform, a[0], a[1]);
-      const to = lifted(transform, b[0], b[1]);
-      ctx.moveTo(from.x, from.y);
-      ctx.lineTo(to.x, to.y);
-      drew = true;
+      edges.push({ from: lifted(transform, a[0], a[1]), to: lifted(transform, b[0], b[1]) });
     }
-    if (!drew) continue;
-    ctx.strokeStyle = watched.has(shape.id) ? colour : 'rgba(150,150,150,0.35)';
+    if (edges.length === 0) continue;
+
+    // Inside is whichever side of the edge the settlement is on.
+    const home = placeOf(transform, shape.id);
+
+    // Who holds a place is public knowledge and always was: the fog is over
+    // what is standing in it, not over whose flag is on it. So a frontier
+    // keeps its colour whether or not we have eyes on the ground behind it,
+    // and only loses a little of its strength.
+    ctx.fillStyle = colour;
+    ctx.globalAlpha = seen ? 0.32 : 0.2;
+    ctx.beginPath();
+    for (const edge of edges) {
+      const dx = edge.to.x - edge.from.x;
+      const dy = edge.to.y - edge.from.y;
+      const length = Math.hypot(dx, dy) || 1;
+      // The normal, turned to point at the settlement.
+      let nx = -dy / length;
+      let ny = dx / length;
+      const midX = (edge.from.x + edge.to.x) / 2;
+      const midY = (edge.from.y + edge.to.y) / 2;
+      if ((home.x - midX) * nx + (home.y - midY) * ny < 0) {
+        nx = -nx;
+        ny = -ny;
+      }
+      ctx.moveTo(edge.from.x, edge.from.y);
+      ctx.lineTo(edge.to.x, edge.to.y);
+      ctx.lineTo(edge.to.x + nx * depth, edge.to.y + ny * depth);
+      ctx.lineTo(edge.from.x + nx * depth, edge.from.y + ny * depth);
+      ctx.closePath();
+    }
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    ctx.beginPath();
+    for (const edge of edges) {
+      ctx.moveTo(edge.from.x, edge.from.y);
+      ctx.lineTo(edge.to.x, edge.to.y);
+    }
+    ctx.lineWidth = weight + 1.5;
+    ctx.strokeStyle = 'rgba(12, 16, 14, 0.75)';
+    ctx.stroke();
+    ctx.lineWidth = weight;
+    ctx.globalAlpha = seen ? 1 : 0.7;
+    ctx.strokeStyle = colour;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  ctx.lineWidth = 1;
+}
+
+/**
+ * The coastline.
+ *
+ * The ground already stops where the land does, but a continent drawn only
+ * in ground colours has a soft edge, and a map wants a hard one. This is the
+ * real Natural Earth outline, the same one the land mask is painted from, so
+ * the line lands exactly where the tiles change.
+ */
+function drawCoast(ctx: CanvasRenderingContext2D, transform: IsoTransform): void {
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(10, 22, 34, 0.75)';
+  ctx.beginPath();
+  for (const ring of LAND_RINGS) {
+    if (ring.length < 3) continue;
+    ring.forEach(([lon, lat], index) => {
+      const at = floorAtLatLon(transform, lon, lat);
+      if (index === 0) ctx.moveTo(at.x, at.y);
+      else ctx.lineTo(at.x, at.y);
+    });
+    ctx.closePath();
+  }
+  ctx.stroke();
+}
+
+/**
+ * The great rivers.
+ *
+ * They are already in the game twice over — as sea zones a fleet can sail
+ * and as the reason half these cities are where they are — and until now the
+ * one place they did not appear was the map. A river is the strongest line
+ * in a landscape and the eye uses it to find everything else.
+ */
+function drawRivers(ctx: CanvasRenderingContext2D, transform: IsoTransform): void {
+  const wide = transform.halfWidth > 10;
+  for (const line of RIVER_LINES) {
+    if (line.length < 2) continue;
+    ctx.beginPath();
+    line.forEach(([lon, lat], index) => {
+      const at = floorAtLatLon(transform, lon, lat);
+      const metres = ground?.metresAt(lon, lat) ?? 0;
+      const y = at.y - liftFor(transform, metres);
+      if (index === 0) ctx.moveTo(at.x, y);
+      else ctx.lineTo(at.x, y);
+    });
+    ctx.lineWidth = wide ? 3 : 2;
+    ctx.strokeStyle = DECOR.river;
+    ctx.stroke();
+    if (!wide) continue;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = DECOR.riverLight;
     ctx.stroke();
   }
+  ctx.lineWidth = 1;
 }
 
 /** A world point, raised onto the ground it sits on. */
@@ -470,6 +644,45 @@ function drawHighlights(
   if (view.selected) outline(view.selected, '#ffe28a', 1);
 }
 
+/** A pole with a pennant on it, in whoever's colours the men are. */
+function banner(ctx: CanvasRenderingContext2D, x: number, y: number, colour: string): void {
+  const height = 13;
+  ctx.fillStyle = 'rgba(8, 10, 8, 0.8)';
+  ctx.fillRect(Math.round(x) - 1, Math.round(y) - height, 2, height);
+  ctx.beginPath();
+  ctx.moveTo(x, y - height);
+  ctx.lineTo(x + 9, y - height + 3);
+  ctx.lineTo(x, y - height + 6);
+  ctx.closePath();
+  ctx.fillStyle = colour;
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(8, 10, 8, 0.85)';
+  ctx.stroke();
+}
+
+/** A small heater shield, drawn at the screen's own resolution. */
+function shield(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  colour: string,
+): void {
+  ctx.beginPath();
+  ctx.moveTo(x - radius, y - radius);
+  ctx.lineTo(x + radius, y - radius);
+  ctx.lineTo(x + radius, y + radius * 0.2);
+  ctx.lineTo(x, y + radius * 1.25);
+  ctx.lineTo(x - radius, y + radius * 0.2);
+  ctx.closePath();
+  ctx.fillStyle = colour;
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(8, 10, 8, 0.85)';
+  ctx.stroke();
+}
+
 /**
  * Names, drawn last and at the screen's own resolution.
  *
@@ -503,6 +716,29 @@ function drawNames(
     ctx.strokeText(geography.settlement, x, y);
     ctx.fillStyle = rank >= 4 ? '#f3ecd8' : '#e2dcc6';
     ctx.fillText(geography.settlement, x, y);
+
+    // A shield in the owner's colours, beside the name. Whose a town is is
+    // the one thing a player looks for on a map of this kind, and reading it
+    // off the wash on the fields is guesswork at anything but close range.
+    const colour = region.owner === INDEPENDENT_ID
+      ? '#8d8578'
+      : tryGetFaction(region.owner)?.colour ?? '#8d8578';
+    shield(ctx, x - ctx.measureText(geography.settlement).width / 2 - size * 0.62, y + size * 0.5, size * 0.46, colour);
+  }
+
+  // A banner over every army somebody of ours can see. The sprite on the
+  // ground says there are men there; the banner says whose, which at this
+  // scale is the thing being looked for, and it is drawn up here at the
+  // screen's own resolution for the same reason the names are.
+  const watched = watchedProvinces(state, state.player);
+  for (const army of state.armies.values()) {
+    if (!canSeeArmy(state, state.player, army.id, watched)) continue;
+    const at = placeOf(transform, army.location);
+    const x = (at.x + transform.halfWidth * 0.8) * PIXEL;
+    const y = (at.y + transform.halfHeight * 0.9) * PIXEL;
+    if (x < -20 || x > view.viewport.width + 20) continue;
+    if (y < -20 || y > view.viewport.height + 20) continue;
+    banner(ctx, x, y, tryGetFaction(army.faction)?.colour ?? '#8d8578');
   }
 
   const zones = watchedZones(state, state.player);
