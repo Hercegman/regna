@@ -503,6 +503,19 @@ the gradient of the height function lit from the north-west. Colouring by
 altitude makes a uniform rise invisible; lighting it from one side makes the
 shape of the land appear, which is the whole point of fighting on a ridge.
 
+**The men move, and the sheet is how.** The camera cannot move — the whole
+picture depends on it not moving — so a man who faces a different way is a
+man built facing a different way. Every kind of soldier is rendered in four
+directions and four poses: idle, two mirrored steps, and a fight. A hundred
+and twenty-eight renders, about as many kilobytes, and offline. What the
+renderer does with them is read the unit's stance and the clock: advancing
+plays step, stand, other step, stand, with a phase per man so a block on the
+move is a crowd out of step; in melee the front rank alternates between the
+fight pose and the idle one and leans into the enemy, while the ranks behind
+it stand, which is what the ranks behind were doing. There is no animation
+state anywhere — nothing to start, stop or keep in sync — because the pose is
+a pure function of the stance, the clock and which man it is.
+
 **A regiment is the kind of men in it.** There is a figure per kind of
 soldier — spear, pike, sword, bow, crossbow, handgun, lance, light horse —
 built from the same dozen boxes with a different thing in the hand, and the

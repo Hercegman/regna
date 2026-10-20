@@ -27,7 +27,7 @@ import type { BattleSettlement, BattleUnit } from '../core/battle/types';
 import { FIELD_DEPTH, FIELD_WIDTH } from '../core/battle/types';
 import { WATER, rampFor, snap, stepFor, tileNoise } from './iso/palette';
 import { armsCanvas } from './arms';
-import { figureFor } from './figures';
+import { facingIndex, figureFor, figureSprite, poseFor } from './figures';
 import { dressGround, grainOf } from './iso/terrain';
 import { loadSprites, stamp } from './iso/sprites';
 
@@ -541,7 +541,12 @@ function drawUnit(
   );
   const rankStep = manSize * (mounted ? 0.5 : 0.42);
   const figures = Math.max(1, Math.round(files * ranks * standing));
-  const name = figureFor(type.unitClass);
+  const kind = figureFor(type.unitClass);
+  const facing = facingIndex(unit.facing, SQUASH);
+  // A regiment pressed up against another leans into it. One offset on the
+  // whole block, toward whoever it is fighting, and a line of battle stops
+  // being two blocks a pace apart and becomes two blocks in contact.
+  const press = unit.stance === 'melee' ? Math.sin(state.time * 2.4) * manSize * 0.08 : 0;
 
   let placed = 0;
   for (let rank = ranks - 1; rank >= 0 && placed < figures; rank--) {
@@ -552,10 +557,29 @@ function drawUnit(
       // standing in it rather than as a comb.
       const shift = rank % 2 === 1 ? (across / files) * 0.5 : 0;
       const x = at.x - across / 2 + (across / files) * (file + 0.5) + shift;
-      stamp(ctx, name, x, baseY - back, manSize, colour);
+      // Only the rank in contact is swinging; the ones behind it are
+      // waiting, which is what the ranks behind were actually doing.
+      const pose = poseFor(
+        rank === 0 ? unit.stance : quietStance(unit.stance),
+        state.time,
+        placed,
+      );
+      stamp(
+        ctx,
+        figureSprite(kind, facing, pose),
+        x + (rank === 0 ? press : 0),
+        baseY - back,
+        manSize,
+        colour,
+      );
     }
   }
   ctx.globalAlpha = 1;
+}
+
+/** What the ranks behind the fighting are doing, which is standing. */
+function quietStance(stance: string): string {
+  return stance === 'melee' ? 'holding' : stance;
 }
 
 /**
@@ -585,15 +609,28 @@ function drawStandard(
   const height = Math.max(12, Math.min(30, frame.scale * 16));
   const flagWidth = Math.round(height * 0.78);
   const flagHeight = Math.round(height * 0.62);
-  const top = y - height - Math.max(8, frame.scale * 14);
+  // Clear of the men. The back rank stands about three men's heights up the
+  // picture from the front one, and a banner through the middle of its own
+  // regiment is a banner nobody can see.
+  const overhead = Math.max(14, frame.scale * 34) * PIXEL * 0.5;
+  const top = y - height - overhead;
   ctx.globalAlpha = unit.stance === 'routing' ? 0.55 : 1;
   ctx.fillStyle = 'rgba(10, 12, 10, 0.85)';
   ctx.fillRect(Math.round(x) - 1, Math.round(top), 2, height + Math.max(8, frame.scale * 14));
-  ctx.drawImage(
-    armsCanvas(unit.faction, flagWidth, flagHeight, 'banner'),
-    Math.round(x) + 1,
-    Math.round(top),
-  );
+  // The cloth moves. Four strips of it, each lagging the one before, which
+  // is the cheapest wave there is and the only thing on a battlefield that
+  // is never still.
+  const cloth = armsCanvas(unit.faction, flagWidth, flagHeight, 'banner');
+  const strips = 4;
+  const strip = flagWidth / strips;
+  for (let i = 0; i < strips; i++) {
+    const wave = Math.round(Math.sin(state.time * 2.6 + i * 0.85) * flagHeight * 0.11);
+    ctx.drawImage(
+      cloth,
+      i * strip, 0, strip, flagHeight,
+      Math.round(x) + 1 + i * strip, Math.round(top) + wave, strip, flagHeight,
+    );
+  }
   ctx.globalAlpha = 1;
 }
 

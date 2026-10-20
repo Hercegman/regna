@@ -465,6 +465,10 @@ function furrows(
   // Which way the plough went, fixed to the tile so a field never turns.
   const along = tileNoise(tx, ty, 77) > 0.5 ? 1 : -1;
   const reach = halfWidth * 0.62;
+  ctx.save();
+  // Faint. A furrow is a shadow in a field, not a line drawn on one, and at
+  // two screen pixels to the picture pixel a hard one is a stripe.
+  ctx.globalAlpha = 0.42;
   ctx.strokeStyle = jitter > 0.5 ? DECOR.furrow[0]! : DECOR.furrow[2]!;
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -476,6 +480,7 @@ function furrows(
     ctx.lineTo(x + ox + reach, y + oy - along * reach * 0.5);
   }
   ctx.stroke();
+  ctx.restore();
 }
 
 /**

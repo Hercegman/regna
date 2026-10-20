@@ -16,7 +16,7 @@ import { getUnitType } from '../core/data/units';
 import type { Regiment } from '../core/campaign';
 import { loadSprites, sprite } from '../render/iso/sprites';
 import { armsDataUrl } from '../render/arms';
-import { figureFor } from '../render/figures';
+import { figureFor, figureSprite } from '../render/figures';
 import type { FactionId } from '../core/types';
 import type { SpriteName } from '../render/iso/sprites';
 import { el } from './dom';
@@ -45,7 +45,7 @@ export function unitCard(
   const canvas = el('canvas', { class: 'card-portrait' });
   canvas.width = PORTRAIT;
   canvas.height = PORTRAIT;
-  paintPortrait(canvas, figureFor(type.unitClass), colour);
+  paintPortrait(canvas, figureSprite(figureFor(type.unitClass), 0, 'idle'), colour);
 
   const card = el('div', {
     class: `unit-card${options.selected ? ' selected' : ''}${regiment.mercenary ? ' hired' : ''}`,
@@ -182,7 +182,11 @@ export function battleCard(
   const canvas = el('canvas', { class: 'card-portrait' });
   canvas.width = PORTRAIT;
   canvas.height = PORTRAIT;
-  paintPortrait(canvas, afloat ? 'galley' : mounted ? 'lighthorse' : 'swordsman', colour);
+  paintPortrait(
+    canvas,
+    afloat ? 'galley' : figureSprite(mounted ? 'lighthorse' : 'swordsman', 0, 'idle'),
+    colour,
+  );
   const chevrons = Math.min(3, Math.round(experience / 3));
 
   const strength = el('div', { class: 'card-strength-fill' });

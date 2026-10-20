@@ -56,8 +56,18 @@ export function whenSpritesReady(redraw: () => void): void {
   void loadSprites().then(redraw).catch(() => undefined);
 }
 
-/** One sprite, in one owner's colours, at one size. */
+/**
+ * One sprite, in one owner's colours, at one size.
+ *
+ * Capped, because there are a hundred and forty of them, two sides to a
+ * battle, and a new size every time the player touches the wheel: left to
+ * itself this grows without end. Thrown away whole rather than evicted one
+ * at a time, because what the next frame wants is almost always what the
+ * last frame wanted, and rebuilding a few dozen small canvases once in a
+ * while costs less than tracking which of them was used when.
+ */
 const cache = new Map<string, HTMLCanvasElement>();
+const CACHE_LIMIT = 2400;
 
 /**
  * A sprite ready to be stamped on the map.
@@ -93,6 +103,7 @@ export function sprite(
   const drawing = out.getContext('2d')!;
   drawing.imageSmoothingEnabled = false;
   drawing.drawImage(cut, 0, 0, box.width, box.height, 0, 0, pixels, pixels);
+  if (cache.size >= CACHE_LIMIT) cache.clear();
   cache.set(key, out);
   return out;
 }

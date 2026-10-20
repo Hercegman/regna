@@ -239,7 +239,7 @@ def settlement(rank, walls):
 
 
 def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
-        spear=True, cloak=False, weapon='spear', barded=False):
+        spear=True, cloak=False, weapon='spear', barded=False, pose='idle'):
     """One figure, built like a person rather than like a token.
 
     Legs apart, a torso in his lord's colours, two arms, a head with a helmet
@@ -270,56 +270,116 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
         box(f'{name}-tail', x, y - 0.23, 0.3, 0.05, 0.05, 0.12, hide)
         base = 0.41
 
-    # Legs apart, because one block of legs is a plinth.
-    box(f'{name}-leg-l', x - 0.045, y, base, 0.055, 0.08, 0.17, mail)
-    box(f'{name}-leg-r', x + 0.045, y, base, 0.055, 0.08, 0.17, mail)
-    box(f'{name}-torso', x, y, base + 0.17, 0.17, 0.11, 0.2, cloth)
-    box(f'{name}-arm-l', x - 0.105, y, base + 0.2, 0.05, 0.09, 0.16, mail)
-    box(f'{name}-arm-r', x + 0.105, y, base + 0.2, 0.05, 0.09, 0.16, mail)
+    # Where the pose puts him. A man is the same dozen boxes in every one of
+    # them; what moves is his legs, his arms and how far forward he is
+    # leaning, which at the size a battle draws him is all there is room for
+    # and all a walk needs to read as one.
+    #
+    # The two stepping poses are mirrors of each other, and the game plays
+    # them as step, stand, other step, stand — which is a four-beat cycle out
+    # of three pictures, and the cheapest honest walk there is.
+    stride = {'step-a': 0.075, 'step-b': -0.075}.get(pose, 0.0)
+    lean = 0.055 if pose == 'fight' else abs(stride) * 0.25
+    crouch = 0.018 if pose == 'fight' else abs(stride) * 0.12
+
+    box(f'{name}-leg-l', x - 0.045, y + stride, base, 0.055, 0.08, 0.17 - crouch, mail)
+    box(f'{name}-leg-r', x + 0.045, y - stride, base, 0.055, 0.08, 0.17 - crouch, mail)
+    box(f'{name}-torso', x, y + lean, base + 0.17 - crouch, 0.17, 0.11, 0.2, cloth)
+    # Arms swing against the legs, which is the thing that makes a walk a
+    # walk rather than a hop.
+    box(f'{name}-arm-l', x - 0.105, y - stride * 0.8, base + 0.2 - crouch, 0.05, 0.09, 0.16, mail)
+    box(f'{name}-arm-r', x + 0.105, y + stride * 0.8 + lean, base + 0.2 - crouch, 0.05, 0.09, 0.16, mail)
     if cloak:
         # Hung off the shoulders and down the back, which is the one thing
         # that says a man is somebody at this size.
-        box(f'{name}-cloak', x, y - 0.062, base + 0.14, 0.165, 0.04, 0.24, cloth)
-    box(f'{name}-neck', x, y, base + 0.37, 0.07, 0.07, 0.04, skin)
-    box(f'{name}-head', x, y, base + 0.41, 0.1, 0.1, 0.09, skin)
-    box(f'{name}-helm', x, y, base + 0.47, 0.115, 0.115, 0.06, mail)
+        box(f'{name}-cloak', x, y - 0.062 + lean, base + 0.14, 0.165, 0.04, 0.24, cloth)
+    box(f'{name}-neck', x, y + lean, base + 0.37 - crouch, 0.07, 0.07, 0.04, skin)
+    box(f'{name}-head', x, y + lean, base + 0.41 - crouch, 0.1, 0.1, 0.09, skin)
+    box(f'{name}-helm', x, y + lean, base + 0.47 - crouch, 0.115, 0.115, 0.06, mail)
     if shield:
-        box(f'{name}-shield', x - 0.135, y - 0.01, base + 0.19, 0.03, 0.13, 0.17, cloth)
+        # Brought up and across in a fight, which is what a shield is for.
+        up = 0.04 if pose == 'fight' else 0.0
+        box(f'{name}-shield', x - 0.135, y - 0.01 + lean * 1.4, base + 0.19 + up - crouch,
+            0.03, 0.13, 0.17, cloth)
 
     # What he is carrying, which is the whole of what tells one kind of
     # soldier from another in a silhouette this size.
     if not spear or weapon == 'none':
         pass
     elif weapon == 'spear':
-        box(f'{name}-spear', x + 0.14, y - 0.02, base + 0.08, 0.028, 0.028, 0.52, spear_mat)
+        if pose == 'fight':
+            # Levelled and thrust, which is what a spear line did and the one
+            # thing that reads at this size as fighting rather than standing.
+            thrust = box(f'{name}-spear', x + 0.13, y + 0.2, base + 0.3,
+                         0.028, 0.6, 0.028, spear_mat)
+            thrust.rotation_euler = (math.radians(6), 0, 0)
+        else:
+            box(f'{name}-spear', x + 0.14, y - 0.02 + lean, base + 0.08,
+                0.028, 0.028, 0.52, spear_mat)
     elif weapon == 'pike':
-        box(f'{name}-pike', x + 0.14, y - 0.02, base + 0.04, 0.028, 0.028, 0.95, spear_mat)
+        pike = box(f'{name}-pike', x + 0.14, y - 0.02 + lean, base + 0.04,
+                   0.028, 0.028, 0.95, spear_mat)
+        if pose == 'fight':
+            # Brought down to the level: a pike hedge, not a forest.
+            pike.rotation_euler = (math.radians(72), 0, 0)
+            pike.location = (x + 0.14, y + 0.3, base + 0.34)
     elif weapon == 'sword':
         # Raised, because a sword held down is a stick against the leg.
-        box(f'{name}-arm-up', x + 0.11, y, base + 0.3, 0.05, 0.08, 0.14, mail)
-        box(f'{name}-sword', x + 0.11, y - 0.01, base + 0.44, 0.035, 0.035, 0.26, mail)
-        box(f'{name}-guard', x + 0.11, y - 0.01, base + 0.44, 0.12, 0.04, 0.03, mail)
+        high = 0.1 if pose == 'fight' else 0.0
+        box(f'{name}-arm-up', x + 0.11, y + lean, base + 0.3 + high - crouch, 0.05, 0.08, 0.14, mail)
+        box(f'{name}-sword', x + 0.11, y - 0.01 + lean, base + 0.44 + high - crouch,
+            0.035, 0.035, 0.26, mail)
+        box(f'{name}-guard', x + 0.11, y - 0.01 + lean, base + 0.44 + high - crouch,
+            0.12, 0.04, 0.03, mail)
     elif weapon == 'bow':
         # A stave taller than he is, held out from the body. No shield goes
-        # with it, and that absence is half of what says archer.
-        bow = box(f'{name}-bow', x + 0.17, y - 0.02, base + 0.02, 0.022, 0.035, 0.58, spear_mat)
-        bow.rotation_euler = (0, math.radians(-10), 0)
-        # The string, which is what turns a stave into a bow.
-        box(f'{name}-string', x + 0.11, y - 0.02, base + 0.1, 0.012, 0.012, 0.42, skin)
+        # with it, and that absence is half of what says archer. Drawn, the
+        # stave comes across the body and the arm goes back to the ear.
+        drawn = pose == 'fight'
+        bow = box(f'{name}-bow', x + (0.02 if drawn else 0.17), y + (0.17 if drawn else -0.02),
+                  base + 0.02, 0.022, 0.035, 0.58, spear_mat)
+        bow.rotation_euler = (0, math.radians(-10), math.radians(80 if drawn else 0))
+        box(f'{name}-string', x + (0.02 if drawn else 0.11), y + (0.08 if drawn else -0.02),
+            base + 0.1, 0.012, 0.012, 0.42, skin)
+        if drawn:
+            box(f'{name}-arrow', x + 0.02, y + 0.06, base + 0.3, 0.018, 0.34, 0.018, spear_mat)
         box(f'{name}-quiver', x - 0.1, y - 0.08, base + 0.18, 0.06, 0.06, 0.2, spear_mat)
     elif weapon == 'crossbow':
         # Held level across the chest: a cross shape, which is exactly how
-        # the thing was recognised.
-        box(f'{name}-stock', x + 0.06, y - 0.06, base + 0.3, 0.05, 0.3, 0.04, spear_mat)
-        box(f'{name}-prod', x + 0.06, y - 0.17, base + 0.3, 0.3, 0.04, 0.04, spear_mat)
+        # the thing was recognised. Brought up to the shoulder to shoot.
+        aim = 0.06 if pose == 'fight' else 0.0
+        box(f'{name}-stock', x + 0.06, y - 0.06 + lean + aim, base + 0.3 + aim - crouch,
+            0.05, 0.3, 0.04, spear_mat)
+        box(f'{name}-prod', x + 0.06, y - 0.17 + lean + aim, base + 0.3 + aim - crouch,
+            0.3, 0.04, 0.04, spear_mat)
     elif weapon == 'gun':
         barrel = box(f'{name}-gun', x + 0.08, y - 0.1, base + 0.32, 0.04, 0.34, 0.04, mail)
         barrel.rotation_euler = (math.radians(-10), 0, 0)
         box(f'{name}-rest', x + 0.2, y - 0.04, base, 0.025, 0.025, 0.36, spear_mat)
     elif weapon == 'lance':
-        lance = box(f'{name}-lance', x + 0.15, y + 0.06, base + 0.24, 0.03, 0.78, 0.03, spear_mat)
-        lance.rotation_euler = (math.radians(-9), 0, 0)
-        box(f'{name}-pennon', x + 0.15, y + 0.3, base + 0.3, 0.02, 0.14, 0.1, cloth)
+        down = pose == 'fight'
+        lance = box(f'{name}-lance', x + 0.15, y + (0.14 if down else 0.06),
+                    base + (0.2 if down else 0.24), 0.03, 0.78, 0.03, spear_mat)
+        lance.rotation_euler = (math.radians(2 if down else -9), 0, 0)
+        box(f'{name}-pennon', x + 0.15, y + (0.4 if down else 0.3),
+            base + (0.24 if down else 0.3), 0.02, 0.14, 0.1, cloth)
+
+
+def spin(degrees):
+    """Turns everything built so far about the world's vertical.
+
+    The camera cannot move — the whole picture depends on it not moving — so
+    a man who faces a different way is a man built facing a different way.
+    Four turns of ninety degrees give the four directions the screen reads as
+    diagonals, which is as many as a figure this size can carry and enough
+    for a line to visibly face the line it is fighting.
+    """
+    if not degrees:
+        return
+    turn = mathutils.Matrix.Rotation(math.radians(degrees), 4, 'Z')
+    for obj in bpy.data.objects:
+        if obj.type == 'MESH':
+            obj.matrix_world = turn @ obj.matrix_world
 
 
 def palette_for_men():
@@ -360,7 +420,7 @@ def oneMan(mounted):
     return 0.62 if not mounted else 0.82
 
 
-def fighter(weapon, mounted=False, shield=True, barded=False):
+def fighter(weapon, mounted=False, shield=True, barded=False, pose='idle', facing=0):
     """One soldier of a given kind.
 
     A battle used to be fought by one figure repeated: the same man with the
@@ -372,7 +432,10 @@ def fighter(weapon, mounted=False, shield=True, barded=False):
     clear()
     mail, cloth, timber, skin = palette_for_men()
     man('one', 0, 0, mail, cloth, timber, skin, mounted,
-        shield=shield, weapon=weapon, barded=barded)
+        shield=shield, weapon=weapon, barded=barded, pose=pose)
+    # Direction 0 is the man as built, which the camera reads as facing up
+    # and to the right; the rest follow anticlockwise on the screen.
+    spin((0, 270, 180, 90)[facing])
     tall = {'pike': 1.05, 'bow': 0.72}.get(weapon, 0.62)
     return tall if not mounted else 0.9
 
@@ -643,14 +706,28 @@ def main():
     wanted.append(('rider', lambda: oneMan(True)))
     wanted.append(('captain', lambda: general(False)))
     wanted.append(('general', lambda: general(True)))
-    wanted.append(('spearman', lambda: fighter('spear')))
-    wanted.append(('swordsman', lambda: fighter('sword')))
-    wanted.append(('pikeman', lambda: fighter('pike')))
-    wanted.append(('archer', lambda: fighter('bow', shield=False)))
-    wanted.append(('crossbowman', lambda: fighter('crossbow', shield=False)))
-    wanted.append(('gunner', lambda: fighter('gun', shield=False)))
-    wanted.append(('knight', lambda: fighter('lance', mounted=True, barded=True)))
-    wanted.append(('lighthorse', lambda: fighter('sword', mounted=True)))
+    # Every kind of soldier, in four directions and four poses. It is a
+    # hundred and twenty-eight renders and about as many kilobytes, which is
+    # the price of a battle in which the men face the men they are fighting
+    # and move their legs on the way there.
+    kinds = (
+        ('spearman', dict(weapon='spear')),
+        ('swordsman', dict(weapon='sword')),
+        ('pikeman', dict(weapon='pike')),
+        ('archer', dict(weapon='bow', shield=False)),
+        ('crossbowman', dict(weapon='crossbow', shield=False)),
+        ('gunner', dict(weapon='gun', shield=False)),
+        ('knight', dict(weapon='lance', mounted=True, barded=True)),
+        ('lighthorse', dict(weapon='sword', mounted=True)),
+    )
+    for kind, options in kinds:
+        for facing in range(4):
+            for pose in ('idle', 'step-a', 'step-b', 'fight'):
+                label = f'{kind}_{facing}_{pose.replace("-", "")}'
+                wanted.append((
+                    label,
+                    lambda o=options, p=pose, f=facing: fighter(pose=p, facing=f, **o),
+                ))
     wanted.append(('galley', lambda: vessel(True)))
     wanted.append(('roundship', lambda: vessel(False)))
     wanted.append(('agent', lambda: agent()))
@@ -658,7 +735,7 @@ def main():
     wanted.append(('tree', lambda: tree(True)))
     wanted.append(('scrub', lambda: tree(False)))
 
-    columns = 4
+    columns = 12
     rows = (len(wanted) + columns - 1) // columns
     sheet = bytearray(columns * CELL * rows * CELL * 4)
     index = []
