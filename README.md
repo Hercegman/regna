@@ -150,6 +150,13 @@ fight at sea.
   Behind the fighting the dead lie where the regiment has been — a body a man,
   on his back with his shield where it fell, in his lord's colours still.
 
+  And no two men beside each other are the same man. Every kind is rendered in
+  two kits — a surcoat of his lord's colours over a kite shield under a flat
+  helm, or mail with a coloured band over a round shield under a conical one —
+  and which a man wears is fixed to where he stands in his own block. Half a
+  regiment mostly coloured and half mostly grey is the difference between a
+  body of men and the same man stamped a hundred and twenty times.
+
   <div align="center">
   <img src="docs/screenshots/battle.png" alt="A French line and an Imperial one, every man drawn" width="860" />
   </div>

@@ -239,7 +239,7 @@ def settlement(rank, walls):
 
 
 def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
-        spear=True, cloak=False, weapon='spear', barded=False, pose='idle'):
+        spear=True, cloak=False, weapon='spear', barded=False, pose='idle', kit=0):
     """One figure, built like a person rather than like a token.
 
     Legs apart, a torso in his lord's colours, two arms, a head with a helmet
@@ -284,7 +284,16 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
 
     box(f'{name}-leg-l', x - 0.045, y + stride, base, 0.055, 0.08, 0.17 - crouch, mail)
     box(f'{name}-leg-r', x + 0.045, y - stride, base, 0.055, 0.08, 0.17 - crouch, mail)
-    box(f'{name}-torso', x, y + lean, base + 0.17 - crouch, 0.17, 0.11, 0.2, cloth)
+    if kit:
+        # The second man in every two: mail to the chest with a coloured
+        # band over it rather than a surcoat of his lord's colours all the
+        # way down. It is the strongest difference available at this size —
+        # a block in which half the men are mostly grey and half are mostly
+        # coloured stops being one man drawn a hundred and twenty times.
+        box(f'{name}-torso', x, y + lean, base + 0.17 - crouch, 0.17, 0.11, 0.2, mail)
+        box(f'{name}-band', x, y + lean, base + 0.25 - crouch, 0.178, 0.118, 0.07, cloth)
+    else:
+        box(f'{name}-torso', x, y + lean, base + 0.17 - crouch, 0.17, 0.11, 0.2, cloth)
     # Arms swing against the legs, which is the thing that makes a walk a
     # walk rather than a hop.
     box(f'{name}-arm-l', x - 0.105, y - stride * 0.8, base + 0.2 - crouch, 0.05, 0.09, 0.16, mail)
@@ -295,12 +304,26 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
         box(f'{name}-cloak', x, y - 0.062 + lean, base + 0.14, 0.165, 0.04, 0.24, cloth)
     box(f'{name}-neck', x, y + lean, base + 0.37 - crouch, 0.07, 0.07, 0.04, skin)
     box(f'{name}-head', x, y + lean, base + 0.41 - crouch, 0.1, 0.1, 0.09, skin)
-    box(f'{name}-helm', x, y + lean, base + 0.47 - crouch, 0.115, 0.115, 0.06, mail)
+    if kit:
+        # A conical helm with a nasal rather than a flat-topped one, which is
+        # a different silhouette and so tells one man from the next even
+        # where the colour does not.
+        cone(f'{name}-helm', x, y + lean, base + 0.46 - crouch, 0.068, 0.11, mail, 6)
+        box(f'{name}-nasal', x, y + lean + 0.055, base + 0.44 - crouch, 0.022, 0.03, 0.07, mail)
+    else:
+        box(f'{name}-helm', x, y + lean, base + 0.47 - crouch, 0.115, 0.115, 0.06, mail)
     if shield:
         # Brought up and across in a fight, which is what a shield is for.
         up = 0.04 if pose == 'fight' else 0.0
-        box(f'{name}-shield', x - 0.135, y - 0.01 + lean * 1.4, base + 0.19 + up - crouch,
-            0.03, 0.13, 0.17, cloth)
+        if kit:
+            # A round shield, which is the other shape there was and reads as
+            # a different thing at twenty pixels.
+            disc = cone(f'{name}-shield', 0, 0, 0, 0.095, 0.03, cloth, 8, 0.92)
+            disc.rotation_euler = (math.radians(90), 0, 0)
+            disc.location = (x - 0.14, y - 0.01 + lean * 1.4, base + 0.27 + up - crouch)
+        else:
+            box(f'{name}-shield', x - 0.135, y - 0.01 + lean * 1.4, base + 0.19 + up - crouch,
+                0.03, 0.13, 0.17, cloth)
 
     # What he is carrying, which is the whole of what tells one kind of
     # soldier from another in a silhouette this size.
@@ -420,7 +443,7 @@ def oneMan(mounted):
     return 0.62 if not mounted else 0.82
 
 
-def fighter(weapon, mounted=False, shield=True, barded=False, pose='idle', facing=0):
+def fighter(weapon, mounted=False, shield=True, barded=False, pose='idle', facing=0, kit=0):
     """One soldier of a given kind.
 
     A battle used to be fought by one figure repeated: the same man with the
@@ -432,7 +455,7 @@ def fighter(weapon, mounted=False, shield=True, barded=False, pose='idle', facin
     clear()
     mail, cloth, timber, skin = palette_for_men()
     man('one', 0, 0, mail, cloth, timber, skin, mounted,
-        shield=shield, weapon=weapon, barded=barded, pose=pose)
+        shield=shield, weapon=weapon, barded=barded, pose=pose, kit=kit)
     # Direction 0 is the man as built, which the camera reads as facing up
     # and to the right; the rest follow clockwise round the screen in eighths.
     # Eight rather than four because four means a regiment wheeling turns in
@@ -741,10 +764,10 @@ def main():
     wanted.append(('rider', lambda: oneMan(True)))
     wanted.append(('captain', lambda: general(False)))
     wanted.append(('general', lambda: general(True)))
-    # Every kind of soldier, in eight directions and four poses. It is two
-    # hundred and fifty-six renders and about three hundred kilobytes, which
-    # is the price of a battle in which the men face the men they are
-    # fighting and move their legs on the way there.
+    # Every kind of soldier, in two kits, eight directions and four poses.
+    # Five hundred and twelve renders and about four hundred kilobytes: the
+    # price of a battle in which the men face the men they are fighting, move
+    # their legs on the way there, and are not all the same man.
     kinds = (
         ('spearman', dict(weapon='spear')),
         ('swordsman', dict(weapon='sword')),
@@ -756,13 +779,15 @@ def main():
         ('lighthorse', dict(weapon='sword', mounted=True)),
     )
     for kind, options in kinds:
-        for facing in range(8):
-            for pose in ('idle', 'step-a', 'step-b', 'fight'):
-                label = f'{kind}_{facing}_{pose.replace("-", "")}'
-                wanted.append((
-                    label,
-                    lambda o=options, p=pose, f=facing: fighter(pose=p, facing=f, **o),
-                ))
+        for kit in range(2):
+            for facing in range(8):
+                for pose in ('idle', 'step-a', 'step-b', 'fight'):
+                    label = f'{kind}_{kit}_{facing}_{pose.replace("-", "")}'
+                    wanted.append((
+                        label,
+                        lambda o=options, p=pose, f=facing, k=kit:
+                            fighter(pose=p, facing=f, kit=k, **o),
+                    ))
     wanted.append(('galley', lambda: vessel(True)))
     wanted.append(('roundship', lambda: vessel(False)))
     wanted.append(('agent', lambda: agent()))

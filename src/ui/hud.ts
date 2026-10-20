@@ -45,7 +45,7 @@ export function unitCard(
   const canvas = el('canvas', { class: 'card-portrait' });
   canvas.width = PORTRAIT;
   canvas.height = PORTRAIT;
-  paintPortrait(canvas, figureSprite(figureFor(type.unitClass), 0, 'idle'), colour);
+  paintPortrait(canvas, figureSprite(figureFor(type.unitClass), 0, 0, 'idle'), colour);
 
   const card = el('div', {
     class: `unit-card${options.selected ? ' selected' : ''}${regiment.mercenary ? ' hired' : ''}`,
@@ -184,7 +184,7 @@ export function battleCard(
   canvas.height = PORTRAIT;
   paintPortrait(
     canvas,
-    afloat ? 'galley' : figureSprite(mounted ? 'lighthorse' : 'swordsman', 0, 'idle'),
+    afloat ? 'galley' : figureSprite(mounted ? 'lighthorse' : 'swordsman', 0, 0, 'idle'),
     colour,
   );
   const chevrons = Math.min(3, Math.round(experience / 3));

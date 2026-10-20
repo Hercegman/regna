@@ -27,7 +27,7 @@ import type { BattleSettlement, BattleUnit } from '../core/battle/types';
 import { FIELD_DEPTH, FIELD_WIDTH } from '../core/battle/types';
 import { WATER, rampFor, snap, stepFor, tileNoise } from './iso/palette';
 import { armsCanvas } from './arms';
-import { facingIndex, figureFor, figureSprite, poseFor } from './figures';
+import { facingIndex, figureFor, figureSprite, kitFor, poseFor } from './figures';
 import { dressGround, grainOf } from './iso/terrain';
 import { loadSprites, stamp } from './iso/sprites';
 
@@ -573,7 +573,7 @@ function drawUnit(
       );
       stamp(
         ctx,
-        figureSprite(kind, facing, pose),
+        figureSprite(kind, kitFor(file, rank), facing, pose),
         x + (rank === 0 ? press : 0),
         baseY - back + slop,
         manSize,

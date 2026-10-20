@@ -45,8 +45,28 @@ export function figureFor(unitClass: UnitClass): Figure {
   }
 }
 
-export function figureSprite(kind: Figure, facing: number, pose: Pose): SpriteName {
-  return `${kind}_${facing}_${pose}` as SpriteName;
+/**
+ * One man.
+ *
+ * `kit` is which of the two he is wearing: a surcoat of his lord's colours
+ * over a kite shield under a flat helm, or mail with a coloured band over a
+ * round shield under a conical one. It is the cheapest variety there is —
+ * two renders instead of one — and it is the difference between a regiment
+ * and the same man drawn a hundred and twenty times.
+ */
+export function figureSprite(
+  kind: Figure,
+  kit: number,
+  facing: number,
+  pose: Pose,
+): SpriteName {
+  return `${kind}_${kit}_${facing}_${pose}` as SpriteName;
+}
+
+/** Which kit a man wears, fixed to where he stands in his own block. */
+export function kitFor(file: number, rank: number): number {
+  const hash = (file * 73856093) ^ (rank * 19349663);
+  return (hash >>> 3) & 1;
 }
 
 /**

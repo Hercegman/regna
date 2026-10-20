@@ -514,11 +514,16 @@ shape of the land appear, which is the whole point of fighting on a ridge.
 **The men move, and the sheet is how.** The camera cannot move — the whole
 picture depends on it not moving — so a man who faces a different way is a
 man built facing a different way. Every kind of soldier is rendered in eight
-directions and four poses: idle, two mirrored steps, and a fight. Eight
-rather than four, because four means a regiment wheeling turns in right
-angles and a line of battle spends most of its time at an angle to the line
-it is fighting. Two hundred and seventy-six renders, two hundred kilobytes,
-and offline. What the
+directions, four poses and two kits: idle, two mirrored steps and a fight,
+worn either as a surcoat of his lord's colours over a kite shield under a
+flat helm or as mail with a coloured band over a round shield under a
+conical one. Eight directions rather than four, because four means a
+regiment wheeling turns in right angles and a line of battle spends most of
+its time at an angle to the line it is fighting; two kits because the
+cheapest variety there is — one more render — is the difference between a
+body of men and the same man stamped a hundred and twenty times, and which
+kit a man wears is fixed to where he stands in his own block. Five hundred
+and thirty-two renders, four hundred kilobytes, and offline. What the
 renderer does with them is read the unit's stance and the clock: advancing
 plays step, stand, other step, stand, with a phase per man so a block on the
 move is a crowd out of step; in melee the front rank alternates between the
