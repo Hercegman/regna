@@ -71,10 +71,32 @@ play in the year it actually rose, at the place it rose from.
   | Height | quantised into hundred-metre steps and exaggerated, because the Alps are four kilometres tall and five hundred wide and at true scale a continent is a sheet of paper |
   | The ground | read from an averaged copy of the elevation whose posts are about as far apart as a tile is wide, or a mountain range becomes a field of spikes |
   | Provinces | divided by a Voronoi diagram of the settlements, computed by half-plane clipping and cached |
-  | Ownership | a weak wash on the tile tops and the owner's colour along the frontier, because a province should read as its own country first |
+  | The ground | mottled from the tile's own coordinates and dressed with what grows on it — woods, worked fields with the furrows in them, scrub, boulders — so a plain is a plain and not a sheet of one green |
+  | Height | has the last word on the ground: above the treeline it is bare rock and above that snow, and the line wanders, because one drawn straight across a continent is a contour and not a treeline |
+  | The shore | a shelf of pale water wherever the sea touches land, a strand of sand wherever the land touches sea, and the real Natural Earth coast drawn over the join |
+  | Rivers | the great ones, drawn: the Rhine, the Danube, the Dnieper, the Volga, the Nile. A river is the strongest line in a landscape and the eye finds everything else from it |
+  | Ownership | a weak wash on the tile tops, a band of the owner's colour laid inside his own frontier, and his shield beside the name of every town he holds — because the first question anyone asks of a map like this is whose |
+  | Settlements | sized against the zoom and not against the tile, so a town covers a fixed piece of ground: pull back and Verona is a mark on Italy rather than a model sitting on top of it |
   | Sprites | one sheet; anything belonging to an owner is rendered in pure magenta and swapped for his colour, which is how one drawing serves seventy-three realms |
   | Battles | the same picture at the scale of one field — pulled back a regiment is a body of men under a standard, closed in it is the men themselves in their ranks and files |
   | Names | drawn afterwards at the screen's own resolution, because a place name in six-pixel type is not a style, it is unreadable |
+
+- **An interface of stone and parchment.** A plaque along the top for the realm,
+  the calendar and the treasury; a band along the bottom for the men and the
+  orders — every regiment as a card with its own soldier on it in its own
+  colours, its strength under it and its experience in the corner; the radar in
+  the corner, which is flat and north-up because a small isometric map is
+  unreadable and a small flat one with the countries painted in is a map of
+  Europe; and a parchment that unrolls over the map when there is something to
+  read and rolls away when there is not. The map is the screen, not a panel of
+  it.
+
+  The battlefield wears the same frame, because it is the same game. What
+  differs is what a card has to say: in a battle a regiment is men who are also
+  tired and frightened, so the card carries heart as well as strength, and the
+  radar shades the ground by height — which is the one thing about a
+  battlefield that decides battles and the one thing a picture taken from the
+  side will not show you.
 
 - **A map with two layers.** Provinces are the land; sea zones are the water. A
   harbour opens onto one or more zones, and fleets move from zone to zone. Great
@@ -248,28 +270,44 @@ Choose a faction, then:
 | Action | How |
 | :--- | :--- |
 | Select a province | click it |
+| Order whoever is selected | **right-click** where he should go — march, sail, lay siege |
+| Open a province's scroll | double-click it, or **Settlement** on the bottom bar |
 | See a sea and the fleets in it | click open water |
-| Pan and zoom | drag, scroll |
+| Pan | drag, the arrow keys, the edge of the picture, or click the radar |
+| Zoom | scroll, or `+` and `-` |
 | Every province name | `L` |
 | Every trade road | `T` |
+| Put the scroll away | `Esc` |
 | End the turn | `Enter` |
 
 In a battle the camera is yours too: scroll to zoom, drag with the right button
-to pan, `+` and `-` from the keyboard, `Home` to frame both armies again. A
-kilometre and a half of ground and a man a metre wide do not share a scale, so
-close in you watch the men and pulled back you read the shape of the battle.
+to pan, `+` and `-` from the keyboard, `Home` to frame both armies again, or
+click the radar to go there. A kilometre and a half of ground and a man a metre
+wide do not share a scale, so close in you watch the men and pulled back you
+read the shape of the battle.
 
-The panel on the right has the province, its building, recruitment and
-shipbuilding options, the trade roads through it, diplomacy and the state of the
-realm.
+The band along the bottom is the same one the map has, saying the things a
+battle needs said. Your regiments are the cards on the left, each with two bars
+rather than one — strength over heart — because a regiment at full strength and
+no heart is about to run, and the card goes red when it does and grey when it
+is gone. The chosen regiment's wind and shot are in the middle with what it can
+be ordered to do; the radar, the speed and **Advance** are on the right.
+**Order of battle** unrolls both sides on the scroll.
 
-- **On land.** Select an army, press **March**, click a highlighted province.
+The bottom bar has whoever is standing where you are looking and what can be
+done with him. Everything there is to read — the province, its building,
+recruitment and shipbuilding options, the trade roads through it, diplomacy and
+the state of the realm — is on the scroll, which the buttons on that bar open
+and `Esc` puts away.
+
+- **On land.** Select an army and right-click where it should go. **March**
+  highlights everywhere it could reach first, if you would rather see them.
   Moving into a defended enemy province offers battle, which you can fight
   yourself or leave to your captains. A walled settlement has to be stormed or
   starved out.
-- **At sea.** Lay down hulls from the **Ships** tab, select the squadron, press
-  **Sail**, then click a water or a harbour. Load an army with **Embark** and
-  put it on a hostile coast with **Land at**.
+- **At sea.** Lay down hulls from the **Ships** tab, select the squadron, and
+  right-click a water or a harbour. Load an army with **Embark** and put it on
+  a hostile coast with **Land at**.
 - **On the roads.** The **Trade** tab shows what a caravan would cost and what
   it is expected to fetch, and sends one.
 - **For hire.** Companies appear on the province panel wherever any are standing

@@ -398,10 +398,52 @@ polygon floating over the sea. Fifteen harbours — Venice on its lagoon, Split
 under its mountain — fall just outside a coastline simplified this far, so the
 clip region is the land together with a small disc around every settlement.
 
-**Nothing is an image file.** Every mark on either screen is drawn with path
-operations: terrain symbols, settlements by rank and wall, armies, ships,
-caravans, banners. That is what lets a settlement take any of seventy-three
-faction colours without seventy-three sprites, and stay sharp at any zoom.
+**One sheet, seventy-three realms.** Everything standing on the campaign map
+comes off a single sprite sheet, modelled and rendered by
+`tools/build-sprites.py` rather than drawn. Whatever belongs to an owner is
+rendered in pure magenta and swapped for his colour the first time it is
+asked for, and the result is cached per colour and per size. That is how one
+drawing of a town serves seventy-three realms. The ground under it, and
+everything growing on it, is path operations.
+
+**The ground is not one colour.** Each tile takes a shade from a short ladder,
+nudged by which way it leans and by a number hashed from its own coordinates —
+hashed, not generated, so a wood is in the same place on every frame and
+panning does not make the forest crawl. The same number decides what stands on
+the tile: trees in a forest, furrows in a worked field, scrub on the steppe,
+boulders above the treeline. Height overrules the province, so a mountain is
+rock at thirteen hundred metres and snow at twenty-one hundred whatever grows
+in its valleys, and the line between them wanders by the same hash.
+
+**The shore is drawn twice.** A sea tile touching land takes a pale shelf and
+a land tile touching sea takes sand, and the real coastline is stroked over
+the join. The shelf is what makes a sea read as a sea from across the room:
+water that is all one colour has no edge, and the edge is the information.
+
+**A frontier is three things.** A band of the owner's colour laid inside his
+own ground, a dark line along the edge itself, and the colour again on top of
+it. The band makes a realm one shape; the dark line stops the colour
+disappearing into whatever ground it crosses; and because each side lays its
+own band, a contested frontier is two colours meeting. Who holds a place is
+public knowledge in this game, so a frontier keeps its colour through the fog
+and only loses a little of its strength. A town's owner is also on a shield
+beside its name, because at any distance that is the question being asked.
+
+**A settlement is sized against the zoom.** Tiles are kept to about eight
+pixels at every zoom by design, so anything measured against one is the same
+size on screen whether the player is looking at a duchy or at Europe — which
+made every town a model sitting on top of the continent rather than a place
+standing in it. Measured against the zoom, a settlement covers a fixed piece
+of ground.
+
+**The radar is a different picture.** Flat, north-up, and drawn from the
+province shapes and the owner's colours alone, because a small isometric map
+is unreadable. The water, the land and the coast never change and are painted
+once into a plate that is kept; the colours are mixed on a second plate each
+frame and cut to the coast with a land mask, so a province whose cell reaches
+out to sea does not spill into it. Over the top goes the slanted box showing
+what is on screen, which is slanted because the map is isometric and the
+radar is not.
 
 **Ground reads by slope, not by height.** On the battlefield the shading is
 the gradient of the height function lit from the north-west. Colouring by
@@ -419,6 +461,37 @@ model is not doing.
 **The battle has its own camera.** A field 1400 m across and a man a metre
 wide do not share a scale. Untouched, the camera frames the two armies; the
 player zooms and pans from there.
+
+**The chrome is a frame, not a dashboard.** A plaque along the top, a band
+along the bottom and a parchment that unrolls over the map: the map is the
+whole screen until something is being read and the whole screen again
+afterwards. All of it is gradients and borders — no image to load, nothing to
+scale wrongly, and the right weight at any size of window. The regiment card
+is the piece that earns its place: a list of unit names is a spreadsheet,
+while a row of cards each with its own soldier on it in its own colours, its
+strength under it and its experience in the corner is an army, and the state
+of a whole army is read off it at a glance.
+
+**Orders are given with the right button.** Choose with the left, order with
+the right, and never go looking for a button in between. The buttons are still
+there and still highlight everywhere a thing could go, because that is worth
+seeing; but nothing has to be put into a mode to be moved.
+
+**The battle wears the same frame.** Plaque, band and scroll, for the same
+reason: it is the same game. Two things are its own. A battle card carries two
+bars rather than one — strength over heart — because a regiment at full
+strength and no heart is about to run, and which of the two is emptying is the
+thing a general wants to know; and the cards are built once and updated in
+place, because a battle rebuilds its panels four times a second and throwing
+away two dozen canvases that often to redraw the same soldier is work for
+nothing. The battle's radar shades the ground by height, which is what an
+isometric picture of a field hides and what decides the fight.
+
+**Both screens draw again when the sprite sheet lands.** They ask for it on
+their first frame and draw whatever they have, which for the first frame is
+nothing. A screen that redraws constantly never notices; a battle sitting
+paused before its first tick showed an empty field until the player happened to
+move the mouse.
 
 ## What a realm can see
 

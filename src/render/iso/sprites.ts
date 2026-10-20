@@ -39,6 +39,23 @@ export function spritesReady(): boolean {
   return sheet !== undefined;
 }
 
+/**
+ * Draws again once the sheet is in.
+ *
+ * Both screens ask for the sheet on their first frame and draw whatever they
+ * have, which for the first frame or two is nothing. A screen that redraws
+ * constantly never notices; a battle sitting paused before its first tick
+ * does, and shows an empty field until the player happens to move the mouse.
+ * So whoever draws says here what to do when the sheet arrives.
+ */
+export function whenSpritesReady(redraw: () => void): void {
+  if (sheet) {
+    redraw();
+    return;
+  }
+  void loadSprites().then(redraw).catch(() => undefined);
+}
+
 /** One sprite, in one owner's colours, at one size. */
 const cache = new Map<string, HTMLCanvasElement>();
 

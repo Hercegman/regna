@@ -140,9 +140,12 @@ import type { SeaZoneId } from '../core/data/seas';
 import { getSeaZone, zonesOffPort } from '../core/data/seas';
 import { getTradeRoute } from '../core/data/trade';
 import type { MapView } from '../render/map';
-import { drawMap, provinceAt, zoneAt } from '../render/map';
-import { createCamera, panCamera, zoomCamera } from '../render/projection';
+import { drawMap, provinceAt, viewCorners, zoneAt } from '../render/map';
+import { drawMinimap, fitMinimap, minimapToWorld } from '../render/minimap';
+import { whenSpritesReady } from '../render/iso/sprites';
+import { createCamera, inverseMercator, panCamera, zoomCamera } from '../render/projection';
 import { bar, clear, count, el, money, pretty, row, swatch } from './dom';
+import { crest, plaque, shipCard, unitCard } from './hud';
 import { downloadSave, saveToBrowser } from './persistence';
 
 export interface CampaignScreenHooks {
@@ -167,6 +170,14 @@ export class CampaignScreen {
   private readonly topBar: HTMLElement;
   private readonly logBox: HTMLElement;
   private readonly view: MapView;
+  /** The scroll: everything that used to live in a sidebar, over the map. */
+  private readonly scrollPanel: HTMLElement;
+  private scrollOpen = false;
+  /** The bar along the bottom, and the three blocks it is made of. */
+  private readonly cardStrip: HTMLElement;
+  private readonly commandBlock: HTMLElement;
+  private readonly radarBlock: HTMLElement;
+  private readonly radar: HTMLCanvasElement;
   private tab: PanelTab = 'province';
   private selectedArmy: ArmyId | undefined;
   private selectedFleet: FleetId | undefined;
@@ -180,6 +191,9 @@ export class CampaignScreen {
   private readonly seen = new Set<string>();
   private sailMode = false;
   private busy = false;
+  /** Which way the pointer is pushing at the edge of the picture, if at all. */
+  private edge: { readonly dx: number; readonly dy: number } | undefined;
+  private edgeFrame: number | undefined;
 
   constructor(
     host: HTMLElement,
@@ -187,18 +201,30 @@ export class CampaignScreen {
     private readonly hooks: CampaignScreenHooks,
   ) {
     clear(host);
-    this.topBar = el('header', { class: 'top-bar' });
+    this.topBar = el('header', { class: 'hud-top' });
     this.canvas = el('canvas', { class: 'map-canvas' });
-    this.panel = el('aside', { class: 'side-panel' });
+    this.panel = el('div', { class: 'scroll-inner' });
+    this.scrollPanel = el('aside', { class: 'scroll-panel hidden' }, this.panel);
     this.logBox = el('div', { class: 'log-box' });
     this.guideBox = el('div', { class: 'guide-box' });
+    this.cardStrip = el('div', { class: 'hud-cards' });
+    this.commandBlock = el('div', { class: 'hud-command' });
+    this.radar = el('canvas', { class: 'radar-canvas' });
+    this.radarBlock = el('div', { class: 'hud-radar' });
 
     host.appendChild(
       el('div', { class: 'campaign-screen' },
         this.topBar,
-        el('div', { class: 'campaign-body' },
-          el('div', { class: 'map-holder' }, this.canvas, this.guideBox, this.logBox),
-          this.panel,
+        el('div', { class: 'map-holder' },
+          this.canvas,
+          this.guideBox,
+          this.logBox,
+          this.scrollPanel,
+        ),
+        el('footer', { class: 'hud-bottom' },
+          this.cardStrip,
+          this.commandBlock,
+          this.radarBlock,
         ),
       ),
     );
@@ -233,6 +259,9 @@ export class CampaignScreen {
       this.draw();
     });
 
+    this.buildRadar();
+    whenSpritesReady(() => this.draw());
+
     // Start looking at the player's own capital.
     const capital = factionState(state, state.player).capital;
     if (capital) this.focusOn(capital);
@@ -251,7 +280,8 @@ export class CampaignScreen {
     if ((known as readonly string[]).includes(tab)) {
       this.tab = tab as PanelTab;
       this.seen.add(`tab:${tab}`);
-      this.renderPanel();
+      this.scrollOpen = true;
+      this.renderAll();
     }
   }
 
@@ -292,11 +322,23 @@ export class CampaignScreen {
 
   private attachInput(): void {
     let dragging = false;
+    let ordering = false;
     let lastX = 0;
     let lastY = 0;
     let moved = 0;
 
     this.canvas.addEventListener('mousedown', (event) => {
+      // The left button chooses and drags; the right one gives an order and
+      // must not do either, or every order would also move the selection on
+      // to whatever it was given about.
+      if (event.button === 2) {
+        ordering = true;
+        moved = 0;
+        lastX = event.clientX;
+        lastY = event.clientY;
+        return;
+      }
+      if (event.button !== 0) return;
       dragging = true;
       moved = 0;
       lastX = event.clientX;
@@ -304,7 +346,15 @@ export class CampaignScreen {
     });
 
     window.addEventListener('mouseup', (event) => {
-      if (!dragging) return;
+      if (event.button === 2 && ordering) {
+        ordering = false;
+        const rect = this.canvas.getBoundingClientRect();
+        if (moved < 5) {
+          this.handleOrderClick(event.clientX - rect.left, event.clientY - rect.top);
+        }
+        return;
+      }
+      if (!dragging || event.button !== 0) return;
       dragging = false;
       // A drag pans; a click selects.
       if (moved < 5) this.handleClick(event);
@@ -314,6 +364,12 @@ export class CampaignScreen {
       const rect = this.canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
+      if (ordering) {
+        moved += Math.abs(event.clientX - lastX) + Math.abs(event.clientY - lastY);
+        lastX = event.clientX;
+        lastY = event.clientY;
+        return;
+      }
       if (dragging) {
         const dx = event.clientX - lastX;
         const dy = event.clientY - lastY;
@@ -324,6 +380,7 @@ export class CampaignScreen {
         this.draw();
         return;
       }
+      this.trackEdge(x, y);
       const hovered = provinceAt(this.view, this.state, x, y);
       const hoveredZone = hovered ? undefined : zoneAt(this.view, x, y);
       if (hovered !== this.view.hovered || hoveredZone !== this.view.hoveredZone) {
@@ -332,6 +389,26 @@ export class CampaignScreen {
         this.canvas.style.cursor = hovered || hoveredZone ? 'pointer' : 'grab';
         this.draw();
       }
+    });
+
+    // The order itself is given on the button coming back up, with the menu
+    // the browser would otherwise put there kept out of the way.
+    this.canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+
+    // And a second click on a province opens its scroll, because by then it
+    // is plain that looking at it is what was wanted.
+    this.canvas.addEventListener('dblclick', (event) => {
+      const rect = this.canvas.getBoundingClientRect();
+      const id = provinceAt(this.view, this.state, event.clientX - rect.left, event.clientY - rect.top);
+      if (!id) return;
+      this.selectProvince(id);
+      this.scrollOpen = true;
+      this.tab = 'province';
+      this.renderAll();
+    });
+
+    this.canvas.addEventListener('mouseleave', () => {
+      this.edge = undefined;
     });
 
     this.canvas.addEventListener('wheel', (event) => {
@@ -349,9 +426,38 @@ export class CampaignScreen {
     }, { passive: false });
 
     window.addEventListener('keydown', (event) => {
+      const step = 70;
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight'
+        || event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        panCamera(
+          this.view.camera,
+          event.key === 'ArrowLeft' ? step : event.key === 'ArrowRight' ? -step : 0,
+          event.key === 'ArrowUp' ? step : event.key === 'ArrowDown' ? -step : 0,
+        );
+        this.draw();
+        return;
+      }
+      if (event.key === '+' || event.key === '=' || event.key === '-' || event.key === '_') {
+        const { width, height } = this.view.viewport;
+        zoomCamera(
+          this.view.camera,
+          this.view.viewport,
+          event.key === '-' || event.key === '_' ? 1 / 1.2 : 1.2,
+          width / 2,
+          height / 2,
+        );
+        this.draw();
+        return;
+      }
       if (event.key === 'Enter' && !event.repeat) {
         void this.doEndTurn();
       } else if (event.key === 'Escape') {
+        if (this.scrollOpen) {
+          this.scrollOpen = false;
+          this.renderAll();
+          return;
+        }
         this.moveMode = false;
         this.view.reachable.clear();
         this.renderAll();
@@ -363,6 +469,71 @@ export class CampaignScreen {
         this.draw();
       }
     });
+  }
+
+  /**
+   * The right button: do the obvious thing with whatever is chosen.
+   *
+   * March if an army is chosen and the ground can be reached, sail if a
+   * squadron is and the water can, and otherwise put the order away. There
+   * is no mode to be in and nothing to cancel, which is the point.
+   */
+  private handleOrderClick(x: number, y: number): void {
+    const id = provinceAt(this.view, this.state, x, y);
+    const army = this.selectedArmy ? this.state.armies.get(this.selectedArmy) : undefined;
+    if (id && army && army.faction === this.state.player && army.location !== id) {
+      if (reachableNeighbours(this.state, army).includes(id)) {
+        this.orderMove(army.id, id);
+        return;
+      }
+    }
+
+    const fleet = this.selectedFleet ? this.state.fleets.get(this.selectedFleet) : undefined;
+    if (fleet && fleet.faction === this.state.player) {
+      const waters = reachableWaters(this.state, fleet);
+      if (id && waters.ports.includes(id)) {
+        this.orderSail(fleet.id, { kind: 'port', region: id });
+        return;
+      }
+      const zone = zoneAt(this.view, x, y);
+      if (zone && waters.zones.includes(zone)) {
+        this.orderSail(fleet.id, { kind: 'sea', zone });
+        return;
+      }
+    }
+
+    this.clearMovementHighlights();
+    this.renderAll();
+  }
+
+  /**
+   * Scrolling at the edge of the picture.
+   *
+   * Held in a frame loop rather than done on the mouse event, because the
+   * pointer sitting still at the edge still means keep going, and a mouse
+   * that has stopped moving sends nothing at all.
+   */
+  private trackEdge(x: number, y: number): void {
+    const margin = 24;
+    const { width, height } = this.view.viewport;
+    const dx = x < margin ? 1 : x > width - margin ? -1 : 0;
+    const dy = y < margin ? 1 : y > height - margin ? -1 : 0;
+    if (dx === 0 && dy === 0) {
+      this.edge = undefined;
+      return;
+    }
+    this.edge = { dx, dy };
+    if (this.edgeFrame !== undefined) return;
+    const tick = (): void => {
+      if (!this.edge) {
+        this.edgeFrame = undefined;
+        return;
+      }
+      panCamera(this.view.camera, this.edge.dx * 14, this.edge.dy * 14);
+      this.draw();
+      this.edgeFrame = requestAnimationFrame(tick);
+    };
+    this.edgeFrame = requestAnimationFrame(tick);
   }
 
   private handleClick(event: MouseEvent): void {
@@ -501,9 +672,327 @@ export class CampaignScreen {
   private renderAll(): void {
     this.renderTopBar();
     this.renderPanel();
+    this.renderBottomBar();
     this.renderGuide();
     this.renderLog();
     this.draw();
+  }
+
+  // -------------------------------------------------------------------------
+  // The bar along the bottom
+  // -------------------------------------------------------------------------
+
+  /**
+   * What is standing where the player is looking, and what he can order it
+   * to do.
+   *
+   * Three blocks, in the order these games have always put them: the men on
+   * the left as cards, what can be done with them in the middle, and the
+   * radar and the turn on the right. The scroll is for reading; this is for
+   * acting, and the two never argue because both are rebuilt from the same
+   * state after every order.
+   */
+  private renderBottomBar(): void {
+    clear(this.cardStrip);
+    clear(this.commandBlock);
+    this.renderRadar();
+
+    if (this.view.selectedZone) {
+      this.renderWaterBar(this.view.selectedZone);
+      return;
+    }
+
+    const id = this.view.selected;
+    if (!id) {
+      this.cardStrip.appendChild(el('p', { class: 'hud-hint' },
+        'Click a province to look at it. Right-click moves whoever is chosen.',
+      ));
+      return;
+    }
+
+    const region = regionState(this.state, id);
+    const geography = getRegion(id);
+    const mine = region.owner === this.state.player;
+    const watched = this.watched().has(id);
+    const owner = tryGetFaction(region.owner);
+
+    // --- who is standing here
+    const armies = [...this.state.armies.values()].filter(
+      (army) =>
+        army.location === id &&
+        canSeeArmy(this.state, this.state.player, army.id, this.watched()),
+    );
+    const chosen = armies.find((army) => army.id === this.selectedArmy)
+      ?? armies.find((army) => army.faction === this.state.player)
+      ?? armies[0];
+    if (chosen && chosen.faction === this.state.player) this.selectedArmy = chosen.id;
+
+    // --- the cards
+    const banner = el('div', { class: 'cards-banner' },
+      crest(owner?.colour ?? '#8d8578', factionName(region.owner)),
+      el('span', { class: 'cards-place' }, geography.settlement),
+      el('span', { class: 'cards-meta' }, pretty(region.tier)),
+    );
+    if (armies.length > 1) {
+      for (const army of armies) {
+        banner.appendChild(el('button', {
+          class: `army-pick${army.id === chosen?.id ? ' active' : ''}`,
+          title: `${factionName(army.faction)} · ${count(strengthOf(army.regiments))} men`,
+          onClick: () => {
+            this.selectedArmy = army.id;
+            this.clearMovementHighlights();
+            this.renderAll();
+          },
+        }, crest(tryGetFaction(army.faction)?.colour ?? '#888', factionName(army.faction))));
+      }
+    }
+    this.cardStrip.appendChild(banner);
+
+    const strip = el('div', { class: 'card-row' });
+    if (chosen) {
+      const colour = tryGetFaction(chosen.faction)?.colour ?? '#8d8578';
+      for (const regiment of chosen.regiments) strip.appendChild(unitCard(regiment, colour));
+    } else if (watched && region.garrison.length > 0) {
+      const colour = owner?.colour ?? '#8d8578';
+      for (const regiment of region.garrison) strip.appendChild(unitCard(regiment, colour));
+    } else if (!watched) {
+      strip.appendChild(el('p', { class: 'hud-hint' },
+        'Nobody of ours is there to count what is standing in it.',
+      ));
+    } else {
+      strip.appendChild(el('p', { class: 'hud-hint' }, 'Nothing is standing here.'));
+    }
+    this.cardStrip.appendChild(strip);
+
+    // --- the orders
+    const head = el('div', { class: 'command-head' },
+      el('strong', {}, chosen ? `${factionName(chosen.faction)} in the field` : geography.province),
+      chosen
+        ? el('span', { class: 'muted' },
+            `${count(strengthOf(chosen.regiments))} men · move ${chosen.movement.toFixed(1)}`)
+        : el('span', { class: 'muted' },
+            watched ? `${count(strengthOf(region.garrison))} in garrison` : 'strength unknown'),
+    );
+    this.commandBlock.appendChild(head);
+
+    const orders = el('div', { class: 'command-row' });
+    if (chosen && chosen.faction === this.state.player) {
+      orders.appendChild(this.orderButton(
+        this.moveMode ? 'Choose a province' : 'March',
+        '\u2694',
+        chosen.movement > 0,
+        this.moveMode,
+        () => {
+          this.moveMode = !this.moveMode;
+          this.view.reachable = this.moveMode
+            ? new Set(reachableNeighbours(this.state, chosen))
+            : new Set();
+          this.renderAll();
+        },
+      ));
+      if (mine) {
+        orders.appendChild(this.orderButton('Garrison', '\u26ca', true, false, () => {
+          garrisonArmy(this.state, chosen.id);
+          this.selectProvince(region.id);
+          this.renderAll();
+        }));
+      }
+      const others = armies.filter(
+        (other) => other.id !== chosen.id && other.faction === chosen.faction,
+      );
+      if (others.length > 0) {
+        orders.appendChild(this.orderButton('Combine', '\u2630', true, false, () => {
+          for (const other of others) mergeArmies(this.state, chosen.id, other.id);
+          this.renderAll();
+        }));
+      }
+      if (region.siege && region.siege.besieger === chosen.faction) {
+        orders.appendChild(this.orderButton('Storm', '\u2691', true, false,
+          () => this.launchAssault(chosen, region), true));
+      }
+    } else if (mine && watched && region.garrison.length > 0) {
+      orders.appendChild(this.orderButton('Into the field', '\u2694', true, false, () => {
+        sortieFromGarrison(
+          this.state,
+          region.id,
+          region.garrison.map((_, index) => index),
+        );
+        this.selectProvince(region.id);
+        this.renderAll();
+      }));
+    }
+
+    orders.appendChild(this.scrollButton('Settlement', '\u2302', 'province'));
+    if (mine) orders.appendChild(this.scrollButton('Build', '\u2692', 'build'));
+    if (mine) orders.appendChild(this.scrollButton('Recruit', '\u2694', 'recruit'));
+    if (mine && geography.port) orders.appendChild(this.scrollButton('Ships', '\u2693', 'shipyard'));
+    orders.appendChild(this.scrollButton('Trade', '\u2696', 'trade'));
+    this.commandBlock.appendChild(orders);
+  }
+
+  /** The bar when a water is chosen rather than a province. */
+  private renderWaterBar(id: SeaZoneId): void {
+    const zone = getSeaZone(id);
+    const fleets = fleetsInZone(this.state, id);
+    const chosen = fleets.find((fleet) => fleet.id === this.selectedFleet)
+      ?? fleets.find((fleet) => fleet.faction === this.state.player)
+      ?? fleets[0];
+    if (chosen && chosen.faction === this.state.player) this.selectedFleet = chosen.id;
+
+    this.cardStrip.appendChild(el('div', { class: 'cards-banner' },
+      el('span', { class: 'cards-place' }, zone.name),
+      el('span', { class: 'cards-meta' }, zone.river ? 'River' : 'Open sea'),
+    ));
+    const strip = el('div', { class: 'card-row' });
+    if (chosen) {
+      const colour = tryGetFaction(chosen.faction)?.colour ?? '#8d8578';
+      for (const ship of chosen.ships) {
+        const type = getUnitType(ship.type);
+        strip.appendChild(shipCard(
+          type.name,
+          ship.soldiers,
+          type.soldiers,
+          colour,
+          type.soldiers > 60,
+          `${ship.soldiers} of ${type.soldiers} crew`,
+        ));
+      }
+    } else {
+      strip.appendChild(el('p', { class: 'hud-hint' }, 'No squadron of ours is on this water.'));
+    }
+    this.cardStrip.appendChild(strip);
+
+    this.commandBlock.appendChild(el('div', { class: 'command-head' },
+      el('strong', {}, chosen ? factionName(chosen.faction) : zone.name),
+      el('span', { class: 'muted' }, `${zone.ports.length} harbours on it`),
+    ));
+    const orders = el('div', { class: 'command-row' });
+    if (chosen && chosen.faction === this.state.player) {
+      orders.appendChild(this.orderButton(
+        this.sailMode ? 'Choose a water' : 'Sail',
+        '\u2693',
+        chosen.movement > 0,
+        this.sailMode,
+        () => {
+          this.sailMode = !this.sailMode;
+          if (this.sailMode) {
+            const waters = reachableWaters(this.state, chosen);
+            this.view.reachableZones = new Set(waters.zones);
+            this.view.reachable = new Set(waters.ports);
+          } else {
+            this.clearMovementHighlights();
+          }
+          this.renderAll();
+        },
+      ));
+    }
+    orders.appendChild(this.scrollButton('The water', '\u2693', 'province'));
+    this.commandBlock.appendChild(orders);
+  }
+
+  /** One of the carved buttons in the middle of the bottom bar. */
+  private orderButton(
+    label: string,
+    glyph: string,
+    enabled: boolean,
+    active: boolean,
+    act: () => void,
+    danger = false,
+  ): HTMLElement {
+    return el('button', {
+      class: `order${active ? ' active' : ''}${danger ? ' danger' : ''}`,
+      disabled: !enabled,
+      title: label,
+      onClick: act,
+    },
+      el('span', { class: 'order-glyph' }, glyph),
+      el('span', { class: 'order-label' }, label),
+    );
+  }
+
+  /** A button that opens the scroll at one of its tabs. */
+  private scrollButton(label: string, glyph: string, tab: PanelTab): HTMLElement {
+    return this.orderButton(label, glyph, true, this.scrollOpen && this.tab === tab, () => {
+      if (this.scrollOpen && this.tab === tab) {
+        this.scrollOpen = false;
+      } else {
+        this.scrollOpen = true;
+        this.tab = tab;
+        this.seen.add(`tab:${tab}`);
+      }
+      this.renderAll();
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // The radar
+  // -------------------------------------------------------------------------
+
+  /**
+   * The radar answers a click by going there.
+   *
+   * Dragging on it keeps going there, which is how every one of these has
+   * worked since the first, and is much the fastest way across a continent.
+   */
+  private buildRadar(): void {
+    let dragging = false;
+    const goThere = (event: MouseEvent): void => {
+      const rect = this.radar.getBoundingClientRect();
+      const fit = fitMinimap(rect.width, rect.height);
+      const world = minimapToWorld(fit, event.clientX - rect.left, event.clientY - rect.top);
+      this.view.camera.centreLon = world.lon;
+      this.view.camera.centreLat = inverseMercator(world.merc);
+      this.draw();
+    };
+    this.radar.addEventListener('mousedown', (event) => {
+      dragging = true;
+      goThere(event);
+      event.preventDefault();
+    });
+    this.radar.addEventListener('mousemove', (event) => {
+      if (dragging) goThere(event);
+    });
+    window.addEventListener('mouseup', () => {
+      dragging = false;
+    });
+  }
+
+  /** The radar block, rebuilt around the one canvas it keeps. */
+  private renderRadar(): void {
+    clear(this.radarBlock);
+    this.radarBlock.appendChild(el('div', { class: 'radar-frame' }, this.radar));
+    this.radarBlock.appendChild(el('div', { class: 'radar-side' },
+      el('div', { class: 'radar-scrolls' },
+        this.scrollButton('Realm', '\u2654', 'realm'),
+        this.scrollButton('Diplomacy', '\u270d', 'diplomacy'),
+        this.scrollButton('Agents', '\u265f', 'agents'),
+      ),
+      el('button', {
+        class: 'end-turn',
+        disabled: this.busy,
+        title: 'End the turn (Enter)',
+        onClick: () => void this.doEndTurn(),
+      }, this.busy ? 'Resolving\u2026' : 'End turn'),
+    ));
+    this.drawRadar();
+  }
+
+  private drawRadar(): void {
+    const width = this.radar.clientWidth || 190;
+    const height = this.radar.clientHeight || 150;
+    const ratio = window.devicePixelRatio || 1;
+    if (this.radar.width !== Math.floor(width * ratio)) {
+      this.radar.width = Math.max(1, Math.floor(width * ratio));
+      this.radar.height = Math.max(1, Math.floor(height * ratio));
+    }
+    const ctx = this.radar.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    drawMinimap(ctx, width, height, {
+      state: this.state,
+      corners: viewCorners(this.view),
+      selected: this.view.selected,
+    });
   }
 
   /**
@@ -570,8 +1059,18 @@ export class CampaignScreen {
 
   private draw(): void {
     drawMap(this.ctx, this.state, this.view);
+    this.drawRadar();
   }
 
+  /**
+   * The plaque along the top.
+   *
+   * The realm on the left, the calendar in the middle, the treasury on the
+   * right: the three things a ruler is asked about on every turn, each on
+   * its own carved tablet so they can be found without being read. The turn
+   * itself is ended from the other end of the screen, beside the radar,
+   * because that is where the hand already is.
+   */
   private renderTopBar(): void {
     const state = this.state;
     const faction = tryGetFaction(state.player);
@@ -581,53 +1080,59 @@ export class CampaignScreen {
 
     clear(this.topBar);
     this.topBar.appendChild(
-      el('div', { class: 'top-left' },
-        swatch(faction?.colour ?? '#888'),
-        el('strong', {}, faction?.name ?? 'Unknown'),
-        el('span', { class: 'muted' }, `${provinces} provinces`),
+      el('div', { class: 'hud-realm' },
+        crest(faction?.colour ?? '#888', faction?.name ?? 'Unknown'),
+        el('div', { class: 'realm-titles' },
+          el('strong', {}, faction?.name ?? 'Unknown'),
+          el('span', { class: 'muted' },
+            `${provinces} ${provinces === 1 ? 'province' : 'provinces'}`),
+        ),
       ),
     );
+
     this.topBar.appendChild(
-      el('div', { class: 'top-centre' },
-        el('strong', {}, `${state.year}`),
-        el('span', { class: 'muted' }, pretty(state.season)),
-        el('span', { class: 'muted' }, `turn ${state.turn}`),
+      el('div', { class: 'hud-calendar' },
+        plaque('Year', String(state.year)),
+        plaque('Season', pretty(state.season)),
+        plaque('Turn', String(state.turn)),
         this.civilWarBadge(),
         this.holyWarBadge(),
       ),
     );
+
     this.topBar.appendChild(
-      el('div', { class: 'top-right' },
-        el('span', { class: 'coin' }, count(treasury)),
-        el('span', { class: finances.net >= 0 ? 'income good' : 'income bad' }, money(finances.net)),
-        el('button', {
-          class: 'small',
-          title: 'Save to this browser',
-          onClick: () => {
-            const outcome = saveToBrowser(this.state);
-            this.flash(outcome.ok ? 'The campaign is saved.' : outcome.reason);
-          },
-        }, 'Save'),
-        el('button', {
-          class: 'small',
-          title: 'Download the campaign as a file',
-          onClick: () => downloadSave(this.state),
-        }, 'Export'),
-        el('button', {
-          class: 'small',
-          title: this.guideOpen ? 'Put the guide away' : 'Show the opening guide',
-          onClick: () => {
-            this.guideOpen = !this.guideOpen;
-            if (this.guideOpen) restoreGuide();
-            else dismissGuide();
-            this.renderAll();
-          },
-        }, 'Guide'),
-        el('button', {
-          class: 'primary',
-          disabled: this.busy,
-          onClick: () => void this.doEndTurn(),
-        }, this.busy ? 'Resolving…' : 'End turn'),
+      el('div', { class: 'hud-purse' },
+        plaque('Treasury', el('span', { class: 'coin' }, count(treasury))),
+        plaque(
+          'Each turn',
+          el('span', { class: finances.net >= 0 ? 'income good' : 'income bad' },
+            money(finances.net)),
+        ),
+        el('div', { class: 'hud-tools' },
+          el('button', {
+            class: 'tool',
+            title: 'Save to this browser',
+            onClick: () => {
+              const outcome = saveToBrowser(this.state);
+              this.flash(outcome.ok ? 'The campaign is saved.' : outcome.reason);
+            },
+          }, 'Save'),
+          el('button', {
+            class: 'tool',
+            title: 'Download the campaign as a file',
+            onClick: () => downloadSave(this.state),
+          }, 'Export'),
+          el('button', {
+            class: 'tool',
+            title: this.guideOpen ? 'Put the guide away' : 'Show the opening guide',
+            onClick: () => {
+              this.guideOpen = !this.guideOpen;
+              if (this.guideOpen) restoreGuide();
+              else dismissGuide();
+              this.renderAll();
+            },
+          }, 'Guide'),
+        ),
       ),
     );
   }
@@ -692,8 +1197,31 @@ export class CampaignScreen {
     }
   }
 
+  /**
+   * The scroll.
+   *
+   * Everything that is read rather than ordered: the province, its works,
+   * its men, the realm, the other crowns. It lies over the map instead of
+   * beside it, so the map is the whole screen until the moment somebody
+   * wants to read something, and goes back to being the whole screen the
+   * moment he has finished.
+   */
   private renderPanel(): void {
     clear(this.panel);
+    this.scrollPanel.className = `scroll-panel${this.scrollOpen ? '' : ' hidden'}`;
+    if (!this.scrollOpen) return;
+
+    this.panel.appendChild(el('div', { class: 'scroll-head' },
+      el('span', { class: 'scroll-rings' }, '\u2740'),
+      el('button', {
+        class: 'scroll-close',
+        title: 'Close (Esc)',
+        onClick: () => {
+          this.scrollOpen = false;
+          this.renderAll();
+        },
+      }, '\u00d7'),
+    ));
 
     if (this.view.selectedZone) {
       this.renderZonePanel(this.view.selectedZone);
@@ -2214,7 +2742,7 @@ export class CampaignScreen {
   private async doEndTurn(): Promise<void> {
     if (this.busy) return;
     this.busy = true;
-    this.renderTopBar();
+    this.renderRadar();
     // Yield once so the button repaints before the AI runs.
     await new Promise((resolve) => setTimeout(resolve, 0));
     try {

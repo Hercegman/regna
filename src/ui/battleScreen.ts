@@ -26,15 +26,28 @@ import {
   unitAt,
   zoomBattleCamera,
 } from '../render/battle';
+import { drawBattleRadar, radarToField } from '../render/battleRadar';
+import { whenSpritesReady } from '../render/iso/sprites';
 import { bar, clear, count, el, pretty, row } from './dom';
+import { battleCard, crest, plaque, type BattleCardHandle } from './hud';
 
 const SPEEDS = [1, 2, 4, 8] as const;
 
 export class BattleScreen {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
-  private readonly sidebar: HTMLElement;
   private readonly header: HTMLElement;
+  /** The band along the bottom: the men, the orders, and the radar. */
+  private readonly cardStrip: HTMLElement;
+  private readonly commandBlock: HTMLElement;
+  private readonly radarBlock: HTMLElement;
+  private readonly radar: HTMLCanvasElement;
+  /** One card per regiment, built once and updated in place. */
+  private readonly cards = new Map<string, BattleCardHandle>();
+  /** The order of battle, on a parchment over the field. */
+  private readonly scrollPanel: HTMLElement;
+  private readonly scrollInner: HTMLElement;
+  private scrollOpen = false;
   private readonly view: BattleView;
   private readonly battle: BattleState;
   private readonly playerSide: Side | undefined;
@@ -61,16 +74,23 @@ export class BattleScreen {
           ? 'defender'
           : undefined;
 
-    this.header = el('header', { class: 'battle-header' });
+    this.header = el('header', { class: 'hud-top battle-top' });
     this.canvas = el('canvas', { class: 'battle-canvas' });
-    this.sidebar = el('aside', { class: 'battle-sidebar' });
+    this.cardStrip = el('div', { class: 'hud-cards' });
+    this.commandBlock = el('div', { class: 'hud-command' });
+    this.radar = el('canvas', { class: 'radar-canvas battle-radar' });
+    this.radarBlock = el('div', { class: 'hud-radar' });
+    this.scrollInner = el('div', { class: 'scroll-inner' });
+    this.scrollPanel = el('aside', { class: 'scroll-panel hidden' }, this.scrollInner);
 
     host.appendChild(
       el('div', { class: 'battle-screen' },
         this.header,
-        el('div', { class: 'battle-body' },
-          el('div', { class: 'battle-field' }, this.canvas),
-          this.sidebar,
+        el('div', { class: 'battle-field' }, this.canvas, this.scrollPanel),
+        el('footer', { class: 'hud-bottom' },
+          this.cardStrip,
+          this.commandBlock,
+          this.radarBlock,
         ),
       ),
     );
@@ -103,9 +123,14 @@ export class BattleScreen {
       this.draw();
     });
 
+    this.buildRadar();
+    this.buildCards();
     this.renderHeader();
-    this.renderSidebar();
+    this.renderPanels();
     this.draw();
+    // A battle that opens paused draws once and then waits, so if the sheet
+    // of sprites is still in the air at that moment the field stays empty.
+    whenSpritesReady(() => this.draw());
   }
 
   private resize(): void {
@@ -197,25 +222,25 @@ export class BattleScreen {
           const target = this.battle.units.find((unit) => unit.id === clicked);
           if (target && target.side !== selected.side) {
             selected.order = { kind: 'attack', targetUnit: target.id };
-            this.renderSidebar();
+            this.renderPanels();
             this.draw();
             return;
           }
           if (target && target.side === selected.side) {
             this.view.selected = target.id;
-            this.renderSidebar();
+            this.renderPanels();
             this.draw();
             return;
           }
         }
         selected.order = { kind: 'move', target: screenToField(this.view, x, y) };
-        this.renderSidebar();
+        this.renderPanels();
         this.draw();
         return;
       }
 
       this.view.selected = clicked;
-      this.renderSidebar();
+      this.renderPanels();
       this.draw();
     });
 
@@ -290,11 +315,11 @@ export class BattleScreen {
       if (now - this.lastPanelRefresh > 250) {
         this.lastPanelRefresh = now;
         this.renderHeader();
-        this.renderSidebar();
+        this.renderPanels();
       }
       if (this.battle.finished) {
         this.renderHeader();
-        this.renderSidebar();
+        this.renderPanels();
         this.conclude();
         return;
       }
@@ -325,7 +350,7 @@ export class BattleScreen {
     for (let i = 0; i < ticks && !this.battle.finished; i++) stepBattle(this.battle);
     this.draw();
     this.renderHeader();
-    this.renderSidebar();
+    this.renderPanels();
     if (this.battle.finished) this.conclude();
   }
 
@@ -349,7 +374,7 @@ export class BattleScreen {
     const result = this.battle.result;
     if (!result) return;
     this.renderHeader();
-    this.renderSidebar();
+    this.renderPanels();
     this.renderResult(result);
   }
 
@@ -357,6 +382,13 @@ export class BattleScreen {
   // Panels
   // -------------------------------------------------------------------------
 
+  /**
+   * The plaque along the top.
+   *
+   * The two armies and how much of each is still standing, the clock, and
+   * the ground being fought over. What is being done about any of it belongs
+   * at the other end of the screen, next to the radar.
+   */
   private renderHeader(): void {
     const setup = this.plan.setup;
     const minutes = Math.floor(this.battle.time / 60);
@@ -372,36 +404,16 @@ export class BattleScreen {
       ),
     );
     this.header.appendChild(
-      el('div', { class: 'battle-clock' },
-        el('span', {}, `${minutes}:${seconds.toString().padStart(2, '0')}`),
-        el('span', { class: 'muted' },
+      el('div', { class: 'hud-calendar' },
+        plaque('Time', `${minutes}:${seconds.toString().padStart(2, '0')}`),
+        plaque(
+          this.plan.naval ? 'Water' : 'Ground',
           this.plan.zone ? getSeaZone(this.plan.zone).name : pretty(setup.terrain),
         ),
-        setup.isWinter && el('span', { class: 'muted' }, 'winter'),
+        setup.isWinter && plaque('Season', 'Winter'),
       ),
     );
-    const controls = el('div', { class: 'battle-controls' });
-    if (!this.finished) {
-      controls.appendChild(el('button', {
-        class: 'primary',
-        onClick: () => this.toggle(),
-      }, this.running ? 'Pause' : 'Advance'));
-      for (const speed of SPEEDS) {
-        controls.appendChild(el('button', {
-          class: `tiny${this.speed === speed ? ' active' : ''}`,
-          onClick: () => {
-            this.speed = speed;
-            this.renderHeader();
-          },
-        }, `${speed}×`));
-      }
-      controls.appendChild(el('button', {
-        class: 'small',
-        title: 'Run the rest of the battle without watching it',
-        onClick: () => this.finishNow(),
-      }, 'Resolve'));
-    }
-    this.header.appendChild(controls);
+    this.header.appendChild(el('div', { class: 'hud-purse' }));
   }
 
   private sideSummary(side: Side): HTMLElement {
@@ -417,7 +429,7 @@ export class BattleScreen {
       }
     }
     return el('div', { class: `side-summary ${side}` },
-      el('span', { class: 'swatch', style: `background:${colour}` }),
+      crest(colour, factionName(faction)),
       el('span', { class: 'side-name' },
         factionName(faction) + (this.playerSide === side ? ' (you)' : ''),
       ),
@@ -426,80 +438,317 @@ export class BattleScreen {
     );
   }
 
-  private renderSidebar(): void {
-    clear(this.sidebar);
-    const selected = this.selectedUnit();
+  // -------------------------------------------------------------------------
+  // The band along the bottom
+  // -------------------------------------------------------------------------
 
-    if (selected) {
-      const type = getUnitType(selected.type);
-      const threshold = Math.max(1, type.morale);
-      this.sidebar.appendChild(el('h2', {}, type.name));
-      this.sidebar.appendChild(el('p', { class: 'panel-sub' },
-        `${factionName(selected.faction)} · ${pretty(UNIT_ROLE[type.unitClass])}`,
-      ));
-      this.sidebar.appendChild(el('section', {},
-        row('Strength', `${count(selected.soldiers)} / ${selected.startingSoldiers}`),
-        row('State', pretty(selected.stance)),
-        row('Morale', bar(Math.max(0, 1 - selected.shock / threshold), '#d8d2a8')),
-        row('Fatigue', bar(selected.fatigue, '#e5a33a')),
-        type.range > 0 && row('Ammunition', bar(selected.ammunition / Math.max(1, type.ammunition), '#8fb8d8')),
-        row('Experience', '★'.repeat(Math.round(selected.experience / 3)) || 'none'),
-      ));
-      this.sidebar.appendChild(el('p', { class: 'offer-text' }, type.description));
+  /**
+   * One card per regiment, built once.
+   *
+   * The regiments in a battle are fixed at the moment it starts — nobody
+   * arrives and nobody is raised — so the cards can be made once and only
+   * their bars moved afterwards. That is what makes it affordable to refresh
+   * them four times a second while the battle runs.
+   */
+  private buildCards(): void {
+    clear(this.cardStrip);
+    this.cards.clear();
+    const mine = this.battle.units.filter(
+      (unit) => this.playerSide === undefined || unit.side === this.playerSide,
+    );
 
-      if (this.playerSide && selected.side === this.playerSide && !this.finished) {
-        this.sidebar.appendChild(el('h3', {}, 'Orders'));
-        this.sidebar.appendChild(el('div', { class: 'army-controls' },
-          el('button', { class: 'small', onClick: () => this.setOrder(selected, { kind: 'hold' }) }, 'Hold'),
-          type.range > 0 && el('button', {
-            class: 'small',
-            onClick: () => {
-              const target = this.nearestEnemy(selected);
-              if (target) this.setOrder(selected, { kind: 'skirmish', targetUnit: target.id });
-            },
-          }, 'Skirmish'),
-          el('button', {
-            class: 'small',
-            onClick: () => {
-              const target = this.nearestEnemy(selected);
-              if (target) this.setOrder(selected, { kind: 'attack', targetUnit: target.id });
-            },
-          }, 'Charge nearest'),
-          el('button', { class: 'danger small', onClick: () => this.setOrder(selected, { kind: 'withdraw' }) }, 'Withdraw'),
-        ));
-        this.sidebar.appendChild(el('p', { class: 'muted' },
-          'Click the field to march there, or an enemy regiment to attack it.',
-        ));
+    const faction = this.playerSide === 'defender'
+      ? this.plan.setup.defender
+      : this.plan.setup.attacker;
+    this.cardStrip.appendChild(el('div', { class: 'cards-banner' },
+      crest(tryGetFaction(faction)?.colour ?? '#8d8578', factionName(faction)),
+      el('span', { class: 'cards-place' },
+        this.playerSide ? 'Our regiments' : 'The field'),
+      el('span', { class: 'cards-meta', id: 'battle-standing' }, ''),
+    ));
+
+    const row = el('div', { class: 'card-row' });
+    for (const unit of mine) {
+      const type = getUnitType(unit.type);
+      const card = battleCard(
+        type.name,
+        tryGetFaction(unit.faction)?.colour ?? '#8d8578',
+        type.mounted,
+        this.plan.naval,
+        unit.experience,
+        `${type.name}\n${factionName(unit.faction)} · ${pretty(UNIT_ROLE[type.unitClass])}` +
+          `\n\n${type.description}`,
+        () => {
+          this.view.selected = unit.id;
+          this.renderPanels();
+          this.draw();
+        },
+      );
+      this.cards.set(unit.id, card);
+      row.appendChild(card.root);
+    }
+    this.cardStrip.appendChild(row);
+  }
+
+  /** The whole bottom band, from the state as it now stands. */
+  private renderPanels(): void {
+    let standing = 0;
+    for (const unit of this.battle.units) {
+      const type = getUnitType(unit.type);
+      const gone = unit.stance === 'destroyed' || unit.fled;
+      // Counted the way the plaque at the top counts it: a regiment running
+      // for the treeline is not standing, whatever its card still says.
+      if (!gone && unit.stance !== 'routing' && unit.side === this.playerSide) {
+        standing += unit.soldiers;
       }
-      this.sidebar.appendChild(el('hr', {}));
+      const card = this.cards.get(unit.id);
+      if (!card) continue;
+      card.update({
+        strength: unit.soldiers / Math.max(1, unit.startingSoldiers),
+        morale: Math.max(0, 1 - unit.shock / Math.max(1, type.morale)),
+        routing: unit.stance === 'routing',
+        gone,
+        selected: unit.id === this.view.selected,
+      });
+    }
+    const tally = this.cardStrip.querySelector('#battle-standing');
+    if (tally) tally.textContent = this.playerSide ? `${count(standing)} still standing` : '';
+
+    this.renderCommand();
+    this.renderRadarBlock();
+    this.renderOrderOfBattle();
+  }
+
+  /** What the chosen regiment is, and what it can be told to do. */
+  private renderCommand(): void {
+    clear(this.commandBlock);
+    const selected = this.selectedUnit();
+    if (!selected) {
+      this.commandBlock.appendChild(el('div', { class: 'command-head' },
+        el('strong', {}, 'No regiment chosen'),
+        el('span', { class: 'muted' }, 'Click a card, or a regiment on the field.'),
+      ));
+      return;
     }
 
-    this.sidebar.appendChild(el('h3', {}, 'Order of battle'));
+    const type = getUnitType(selected.type);
+    const threshold = Math.max(1, type.morale);
+    this.commandBlock.appendChild(el('div', { class: 'command-head' },
+      el('strong', {}, type.name),
+      el('span', { class: 'muted' },
+        `${count(selected.soldiers)}/${selected.startingSoldiers} \u00b7 ${pretty(selected.stance)}`),
+    ));
+
+    this.commandBlock.appendChild(el('div', { class: 'command-gauges' },
+      el('span', { class: 'gauge' },
+        el('span', { class: 'gauge-label' }, 'Heart'),
+        bar(Math.max(0, 1 - selected.shock / threshold), '#8fb8d8')),
+      el('span', { class: 'gauge' },
+        el('span', { class: 'gauge-label' }, 'Wind'),
+        bar(1 - selected.fatigue, '#e5a33a')),
+      type.range > 0 && el('span', { class: 'gauge' },
+        el('span', { class: 'gauge-label' }, 'Shot'),
+        bar(selected.ammunition / Math.max(1, type.ammunition), '#b9d8a0')),
+    ));
+
+    if (!this.playerSide || selected.side !== this.playerSide || this.finished) return;
+
+    const orders = el('div', { class: 'command-row' });
+    orders.appendChild(this.orderButton('Hold', '\u26ca', true,
+      selected.order?.kind === 'hold', () => this.setOrder(selected, { kind: 'hold' })));
+    if (type.range > 0) {
+      orders.appendChild(this.orderButton('Skirmish', '\u27b3', true,
+        selected.order?.kind === 'skirmish', () => {
+          const target = this.nearestEnemy(selected);
+          if (target) this.setOrder(selected, { kind: 'skirmish', targetUnit: target.id });
+        }));
+    }
+    orders.appendChild(this.orderButton('Charge', '\u2694', true,
+      selected.order?.kind === 'attack', () => {
+        const target = this.nearestEnemy(selected);
+        if (target) this.setOrder(selected, { kind: 'attack', targetUnit: target.id });
+      }));
+    orders.appendChild(this.orderButton('Withdraw', '\u21a9', true,
+      selected.order?.kind === 'withdraw',
+      () => this.setOrder(selected, { kind: 'withdraw' }), true));
+    this.commandBlock.appendChild(orders);
+  }
+
+  /** One of the carved buttons in the middle of the band. */
+  private orderButton(
+    label: string,
+    glyph: string,
+    enabled: boolean,
+    active: boolean,
+    act: () => void,
+    danger = false,
+  ): HTMLElement {
+    return el('button', {
+      class: `order${active ? ' active' : ''}${danger ? ' danger' : ''}`,
+      disabled: !enabled,
+      title: label,
+      onClick: act,
+    },
+      el('span', { class: 'order-glyph' }, glyph),
+      el('span', { class: 'order-label' }, label),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // The radar and the clock
+  // -------------------------------------------------------------------------
+
+  /** A click on the radar takes the camera there, and dragging keeps it there. */
+  private buildRadar(): void {
+    let dragging = false;
+    const goThere = (event: MouseEvent): void => {
+      const rect = this.radar.getBoundingClientRect();
+      const at = radarToField(
+        rect.width,
+        rect.height,
+        event.clientX - rect.left,
+        event.clientY - rect.top,
+      );
+      this.view.centre = at;
+      this.view.touched = true;
+      clampBattleCamera(this.view);
+      this.draw();
+    };
+    this.radar.addEventListener('mousedown', (event) => {
+      dragging = true;
+      goThere(event);
+      event.preventDefault();
+    });
+    this.radar.addEventListener('mousemove', (event) => {
+      if (dragging) goThere(event);
+    });
+    window.addEventListener('mouseup', () => {
+      dragging = false;
+    });
+  }
+
+  private renderRadarBlock(): void {
+    clear(this.radarBlock);
+    this.radarBlock.appendChild(el('div', { class: 'radar-frame' }, this.radar));
+
+    const side = el('div', { class: 'radar-side' });
+    side.appendChild(el('div', { class: 'radar-scrolls' },
+      this.orderButton('Order of battle', '\u2630', true, this.scrollOpen, () => {
+        this.scrollOpen = !this.scrollOpen;
+        this.renderPanels();
+      }),
+      !this.finished && this.orderButton('Resolve', '\u23ed', true, false, () => this.finishNow()),
+    ));
+
+    if (!this.finished) {
+      const speeds = el('div', { class: 'speed-row' });
+      for (const speed of SPEEDS) {
+        speeds.appendChild(el('button', {
+          class: `speed${this.speed === speed ? ' active' : ''}`,
+          onClick: () => {
+            this.speed = speed;
+            this.renderPanels();
+          },
+        }, `${speed}\u00d7`));
+      }
+      side.appendChild(speeds);
+      side.appendChild(el('button', {
+        class: 'end-turn',
+        title: 'Space',
+        onClick: () => this.toggle(),
+      }, this.running ? 'Pause' : 'Advance'));
+    } else {
+      side.appendChild(el('p', { class: 'hud-hint' }, 'The fighting is over.'));
+    }
+    this.radarBlock.appendChild(side);
+    this.drawRadar();
+  }
+
+  private drawRadar(): void {
+    const width = this.radar.clientWidth || 190;
+    const height = this.radar.clientHeight || 136;
+    const ratio = window.devicePixelRatio || 1;
+    if (this.radar.width !== Math.floor(width * ratio)) {
+      this.radar.width = Math.max(1, Math.floor(width * ratio));
+      this.radar.height = Math.max(1, Math.floor(height * ratio));
+    }
+    const ctx = this.radar.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    drawBattleRadar(ctx, width, height, {
+      state: this.battle,
+      selected: this.view.selected,
+      playerSide: this.playerSide,
+      corners: [
+        screenToField(this.view, 0, 0),
+        screenToField(this.view, this.view.width, 0),
+        screenToField(this.view, this.view.width, this.view.height),
+        screenToField(this.view, 0, this.view.height),
+      ],
+    });
+  }
+
+  /**
+   * The order of battle, on a parchment over the field.
+   *
+   * Both sides, because knowing what is across from you is most of what a
+   * general was doing. It is a thing to read rather than a thing to act on,
+   * so it belongs on the scroll and not in the band.
+   */
+  private renderOrderOfBattle(): void {
+    this.scrollPanel.className = `scroll-panel${this.scrollOpen ? '' : ' hidden'}`;
+    clear(this.scrollInner);
+    if (!this.scrollOpen) return;
+
+    this.scrollInner.appendChild(el('div', { class: 'scroll-head' },
+      el('span', { class: 'scroll-rings' }, '\u2740'),
+      el('button', {
+        class: 'scroll-close',
+        title: 'Close',
+        onClick: () => {
+          this.scrollOpen = false;
+          this.renderPanels();
+        },
+      }, '\u00d7'),
+    ));
+    this.scrollInner.appendChild(el('div', { class: 'panel-header' },
+      el('h2', {}, 'Order of battle'),
+      el('p', { class: 'panel-sub' },
+        this.plan.naval ? 'At sea' : pretty(this.plan.setup.terrain),
+      ),
+    ));
+
+    const body = el('div', { class: 'panel-body' });
     for (const side of ['attacker', 'defender'] as Side[]) {
-      this.sidebar.appendChild(el('h4', { class: 'muted' },
-        side === 'attacker' ? 'Attacking' : 'Defending',
+      const faction = side === 'attacker' ? this.plan.setup.attacker : this.plan.setup.defender;
+      body.appendChild(el('h3', {},
+        `${factionName(faction)} \u00b7 ${side === 'attacker' ? 'attacking' : 'defending'}`,
       ));
       for (const unit of this.battle.units.filter((candidate) => candidate.side === side)) {
         const type = getUnitType(unit.type);
         const dead = unit.stance === 'destroyed' || unit.fled;
-        this.sidebar.appendChild(el('div', {
+        body.appendChild(el('div', {
           class: `unit-row clickable${dead ? ' gone' : ''}${unit.stance === 'routing' ? ' routing' : ''}`,
+          title: type.description,
           onClick: () => {
             this.view.selected = unit.id;
-            this.renderSidebar();
+            this.renderPanels();
             this.draw();
           },
         },
           el('span', { class: 'unit-name' }, type.name),
-          el('span', { class: 'unit-strength' }, dead ? '—' : count(unit.soldiers)),
+          el('span', { class: 'unit-strength' },
+            dead ? '\u2014' : `${count(unit.soldiers)}/${unit.startingSoldiers}`),
+          el('span', { class: 'unit-exp' }, '\u2605'.repeat(Math.round(unit.experience / 3))),
         ));
       }
     }
+    this.scrollInner.appendChild(body);
   }
 
   private setOrder(unit: BattleUnit, order: BattleUnit['order']): void {
     unit.order = order;
-    this.renderSidebar();
+    this.renderPanels();
     this.draw();
   }
 
