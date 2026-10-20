@@ -82,13 +82,16 @@ fight at sea.
   | The shore | a shelf of pale water wherever the sea touches land, a strand of sand wherever the land touches sea, and the real Natural Earth coast drawn over the join |
   | Rivers | the great ones, drawn: the Rhine, the Danube, the Dnieper, the Volga, the Nile. A river is the strongest line in a landscape and the eye finds everything else from it |
   | Frontiers | chained into continuous runs before they are stroked, so a corner is a corner, and the whole lot drawn on its own plate and cut to the coastline — a border running across open water is the one thing that most gives away a map drawn from a diagram |
+  | Arms | every realm bears its own, drawn from a blazon rather than loaded from a folder of pictures: beside the name of every town it holds, on the banner over every army it has in the field, on its crest in the chrome, and on the wall of shields at the front of the game |
+  | Texture | each tile takes a handful of marks a shade either side of its own colour, in places fixed to its coordinates — six fills a tile, and the whole difference between ground you read and a chart you look at |
+  | Shadows | one dark ellipse under everything standing on the ground, which is what makes it stand there rather than float |
   | Ownership | a weak wash on the tile tops, a band of the owner's colour laid inside his own frontier, and his shield beside the name of every town he holds — because the first question anyone asks of a map like this is whose |
   | Settlements | sized against the zoom and not against the tile, so a town covers a fixed piece of ground: pull back and Verona is a mark on Italy rather than a model sitting on top of it |
   | Position | every sprite records where its own model stood, and is stamped by that point rather than by the middle of its frame — so a town lands on its coordinates and a spear leaning out of the frame does not move the settlement carrying it |
   | Armies | the man in command. An army with a general is a horseman with his standard planted beside him, one without is a captain on foot; either way what is standing in the province is a person, not a counter |
   | Sprites | one sheet; anything belonging to an owner is rendered in pure magenta and swapped for his colour, which is how one drawing serves seventy-three realms |
   | Battles | the same picture at the scale of one field — pulled back a regiment is a body of men under a standard, closed in it is the men themselves in their ranks and files |
-  | Names | drawn afterwards at the screen's own resolution, because a place name in six-pixel type is not a style, it is unreadable |
+  | Names | drawn afterwards at the screen's own resolution, because a place name in six-pixel type is not a style, it is unreadable — and on the town it belongs to, which means the town is stamped at its own coordinates rather than at the middle of whichever tile it fell in |
 
 - **An interface of stone and parchment.** A plaque along the top for the realm,
   the calendar and the treasury; a band along the bottom for the men and the
@@ -121,13 +124,18 @@ fight at sea.
   rivers are zones too, because the Nile, the Danube, the Dnieper, the Volga and
   the Rhine carried more medieval traffic than most coastlines.
 
-- **Every man, on both screens.** The figures are modelled and rendered the
+- **Every man, and the right man.** The figures are modelled and rendered the
   same way the towns are: legs apart, a torso in his lord's colours, arms, a
-  helmet, a shield and a spear — a dozen boxes where it used to be four, which
-  at the size a battle draws him is the difference between a man and a domino.
+  helmet, and whatever he is actually carrying. A spearman has a spear and a
+  shield, a pikeman a pike twice his height, an archer a stave and a quiver and
+  no shield at all, a crossbowman his bow held level across the chest, a knight
+  a barded horse and a couched lance with a pennon on it. The simulation always
+  knew which of them a regiment was made of; now so does the picture.
+
   A regiment is the men in it at every zoom the camera will give you, in ranks,
-  each rank offset by a share of his own height so the ranks read as ranks; and
-  the camera goes close enough that every man in the line is a man.
+  each rank offset by a share of his own height so the ranks read as ranks. Over
+  each one stands its realm's banner, in its real arms, because that is what a
+  medieval battlefield was read by. Behind each one lie its dead, a mark a man.
 
   <div align="center">
   <img src="docs/screenshots/battle.png" alt="A French line and an Imperial one, every man drawn" width="860" />

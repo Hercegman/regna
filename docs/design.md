@@ -398,6 +398,30 @@ polygon floating over the sea. Fifteen harbours — Venice on its lagoon, Split
 under its mountain — fall just outside a coastline simplified this far, so the
 clip region is the land together with a small disc around every settlement.
 
+**Arms are a blazon, not a picture.** Seventy-three realms, each with its own
+device, in about three dozen bytes apiece: a field, sometimes divided,
+sometimes with an ordinary laid over it, and usually a charge on top. The
+renderer turns that into a shield or a banner at whatever size is asked for
+and keeps what it drew, so two hundred shields beside two hundred town names
+cost two hundred blits. They are historical where history is clear and
+plausible where it is not, and where two realms really did bear almost the
+same thing one of them is nudged, because a player has to tell them apart at
+sixteen pixels.
+
+**Two screen pixels to the picture pixel, not three.** Three made a tile
+unmistakably made of pixels and threw away more than half the detail the
+screen could carry — a town was twenty pixels of information blown up to
+sixty. At two there is room for grain in the ground, a shadow under what
+stands on it, and a shield on a man's arm, and the picture is still visibly
+pixels because the sprites are the same pixels, only more of them.
+
+**A thing is stamped where it stands, not where its tile is.** The sweep that
+paints the ground decides *when* something standing on it is drawn, which is
+what gets it in front of whatever is behind it. It used to decide *where* as
+well, and a tile at the zoom a continent is read at covers several
+kilometres: a town came out up to a tile from its own coordinates, and that
+far from its own name.
+
 **A sprite is framed on what is in it, and stamped by where it stood.** The
 tool fits the camera to the model's own bounds rather than to a radius the
 model reports, so no sprite spends most of its pixels on air, and it records
@@ -478,6 +502,16 @@ radar is not.
 the gradient of the height function lit from the north-west. Colouring by
 altitude makes a uniform rise invisible; lighting it from one side makes the
 shape of the land appear, which is the whole point of fighting on a ridge.
+
+**A regiment is the kind of men in it.** There is a figure per kind of
+soldier — spear, pike, sword, bow, crossbow, handgun, lance, light horse —
+built from the same dozen boxes with a different thing in the hand, and the
+thing in the hand is the whole of what tells one from another in a
+silhouette this size. Over each regiment stands its realm's banner in its own
+arms, which is what a medieval battlefield was actually read by, and behind it
+lie its dead: a mark a man, as many as it has lost. The simulation does not
+keep a body's position and does not need to — what the eye reads off a field
+is how much of it has been fought over, and that is the count.
 
 **A regiment is the men in it.** Ranks and files from the unit's own formation,
 as many figures as the block has room for, thinning from the back as it takes
