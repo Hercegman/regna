@@ -141,9 +141,27 @@ function commandOf(armies: readonly Army[]): number {
   return best;
 }
 
+/**
+ * A window on every battle the campaign fights without drawing.
+ *
+ * Nothing in the game sets this. `tools/diagnose.ts` does, because the only
+ * way to find out whether two centuries of campaign are producing sensible
+ * battles — how many, in what weather, ending how — is to watch them go
+ * past, and the alternative is a counter wired into the model that the model
+ * does not need. It observes and cannot write: the watcher is handed the
+ * finished result, after the fact.
+ */
+let watcher: ((plan: BattlePlan, result: BattleResult) => void) | undefined;
+
+export function watchBattles(fn: ((plan: BattlePlan, result: BattleResult) => void) | undefined): void {
+  watcher = fn;
+}
+
 /** Runs a planned battle to its end without presenting it. */
 export function autoResolve(plan: BattlePlan): BattleResult {
-  return runBattle(plan.setup);
+  const result = runBattle(plan.setup);
+  watcher?.(plan, result);
+  return result;
 }
 
 /**
