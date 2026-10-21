@@ -40,6 +40,7 @@ interface Battle {
   readonly naval: boolean;
   readonly assault: boolean;
   readonly losses: number;
+  readonly attackerLosses: number;
   readonly duration: number;
 }
 
@@ -57,6 +58,7 @@ watchBattles((plan: BattlePlan, result: BattleResult) => {
     naval: plan.naval,
     assault: plan.isAssault,
     losses: result.attackerLosses + result.defenderLosses,
+    attackerLosses: result.attackerLosses,
     duration: result.duration,
   });
 });
@@ -68,6 +70,26 @@ watchBattles((plan: BattlePlan, result: BattleResult) => {
 const owners = new Map<RegionId, FactionId>();
 for (const region of state.regions.values()) owners.set(region.id, region.owner);
 
+/**
+ * What was said, counted as it is said.
+ *
+ * The log is capped at two thousand entries — it is a panel in the interface,
+ * not a chronicle — so a two-hundred-turn campaign throws most of it away
+ * and counting at the end measures only the last few years. Counted once a
+ * turn instead, from the entries that turn put there.
+ */
+const SAYINGS = {
+  'wars declared': 'declares war on',
+  'truces agreed': 'agree a truce',
+  'alliances concluded': 'conclude an alliance',
+  'alliances lapsed': 'alliance of',
+  'provinces stormed': 'is taken by storm',
+  'settlements surrendered': 'surrenders',
+  'risings': 'rises in revolt',
+} as const;
+const said: Record<string, number> = {};
+for (const label of Object.keys(SAYINGS)) said[label] = 0;
+
 let flips = 0;
 let peakPopulation = 0;
 let peakTreasury = 0;
@@ -76,6 +98,12 @@ const started = Date.now();
 
 for (turn = 1; turn <= turns; turn++) {
   endTurn(state);
+  for (const entry of state.log) {
+    if (entry.turn !== turn) continue;
+    for (const [label, phrase] of Object.entries(SAYINGS)) {
+      if (entry.text.includes(phrase)) said[label] = (said[label] ?? 0) + 1;
+    }
+  }
   for (const region of state.regions.values()) {
     if (owners.get(region.id) !== region.owner) {
       flips += 1;
@@ -118,6 +146,22 @@ const held = new Map<FactionId, number>();
 for (const region of state.regions.values()) {
   held.set(region.owner, (held.get(region.owner) ?? 0) + 1);
 }
+let marriages = 0;
+{
+  const seen = new Set<string>();
+  for (const faction of state.factions.values()) {
+    if (!faction.alive) continue;
+    for (const person of faction.characters) {
+      const from = person.bornIn;
+      if (!from || from === faction.id) continue;
+      if (!state.factions.get(from)?.alive) continue;
+      const pair = faction.id < from ? `${faction.id}|${from}` : `${from}|${faction.id}`;
+      seen.add(pair);
+    }
+  }
+  marriages = seen.size;
+}
+
 let soldiers = 0;
 for (const army of state.armies.values()) {
   for (const regiment of army.regiments) soldiers += regiment.soldiers;
@@ -130,10 +174,17 @@ for (const region of state.regions.values()) {
   unrest += region.unrest;
   if (region.siege) sieges += 1;
 }
+// Between the living only. A realm's relations outlive the realms they are
+// with: a dead kingdom is still recorded as somebody's ally, and counting
+// those made the first version of this report claim three times as many
+// alliances as there were.
 let wars = 0;
 let allies = 0;
 for (const faction of state.factions.values()) {
-  for (const relation of faction.relations.values()) {
+  if (faction.id === INDEPENDENT_ID || !faction.alive) continue;
+  for (const [other, relation] of faction.relations) {
+    if (other === INDEPENDENT_ID) continue;
+    if (!state.factions.get(other)?.alive) continue;
     if (relation.stance === 'war') wars += 1;
     if (relation.stance === 'alliance') allies += 1;
   }
@@ -154,8 +205,18 @@ show('The map', [
 show('The realms', [
   ['alive', alive.length],
   ['gone', [...state.factions.values()].filter((f) => f.destroyedOn !== undefined).length],
-  ['at war (pairs)', wars / 2],
-  ['allied (pairs)', allies / 2],
+  ['wars declared', said['wars declared'] ?? 0],
+  ['truces agreed', said['truces agreed'] ?? 0],
+  ['alliances concluded', said['alliances concluded'] ?? 0],
+  ['alliances lapsed', said['alliances lapsed'] ?? 0],
+  ['at war now (pairs)', wars / 2],
+  ['allied now (pairs)', allies / 2],
+  ['alliances per realm', (allies / Math.max(1, alive.length)).toFixed(2)],
+  // Why that number is that number. An alliance needs a cause, and the
+  // commonest cause by a distance is a bride: the houses of Europe are tied
+  // to each other faster than leagues lapse, so the ceiling on how many
+  // commitments a crown will carry is what ends up doing the limiting.
+  ['houses tied by marriage (pairs)', marriages],
   ['richest treasury seen', Math.round(peakTreasury)],
   ['richest now', Math.round(Math.max(...alive.map((f) => f.treasury)))],
   ['median treasury now', Math.round(median(alive.map((f) => f.treasury)))],
@@ -182,6 +243,28 @@ show('Battles', [
 ]);
 
 if (battles.length > 0) {
+  // Split, because the three are different arguments. A field action the AI
+  // chose to fight should favour the attacker, since it picked the fight; an
+  // assault on a wall should not, and if it does the walls are not worth
+  // what they cost.
+  const share = (of: readonly Battle[]): string =>
+    of.length === 0
+      ? '-'
+      : `${Math.round((of.filter((b) => b.outcome === 'attacker').length / of.length) * 100)}% of ${of.length}`;
+  const cost = (of: readonly Battle[]): string =>
+    of.length === 0 ? '-' : Math.round(mean(of.map((b) => b.attackerLosses))).toString();
+  show('Attacker takes', [
+    ['in the field', share(battles.filter((b) => !b.assault && !b.naval))],
+    ['against walls', share(battles.filter((b) => b.assault))],
+    ['at sea', share(battles.filter((b) => b.naval))],
+  ]);
+  // What it costs him, which is the thing a success rate cannot tell you. A
+  // commander storms a town when he can afford to, so he usually wins — the
+  // question is whether the wall made him pay for it.
+  show('And pays', [
+    ['for a field battle', cost(battles.filter((b) => !b.assault && !b.naval))],
+    ['for a wall', cost(battles.filter((b) => b.assault))],
+  ]);
   show('Fought under', tally(battles, (b) => b.weather));
   show('Fought at', tally(battles, (b) => b.hour));
   show('Ended by', tally(battles, (b) => b.ended));
@@ -225,14 +308,48 @@ note(
 // it can win, so attackers should come out ahead — but not by this much,
 // and a world with four times as many alliances as wars is a world where
 // goodwill is still too cheap.
-const attackerWins = battles.filter((b) => b.outcome === 'attacker').length;
+// Split, because the aggregate hides the thing worth knowing. An AI that
+// picks its field battles should win most of them; an army that storms a
+// stone town nine times in ten means the walls are not worth what they cost,
+// which is how two hundred turns revealed that the simulation had never once
+// read the settlement it was fighting over.
+const takenBy = (of: readonly Battle[]): number =>
+  of.length === 0 ? 0 : of.filter((b) => b.outcome === 'attacker').length / of.length;
+const field = battles.filter((b) => !b.assault && !b.naval);
+const assaults = battles.filter((b) => b.assault);
 note(
-  battles.length > 50 && attackerWins > battles.length * 0.7,
-  `attackers win ${Math.round((attackerWins / battles.length) * 100)}% of battles`,
+  field.length > 50 && takenBy(field) > 0.78,
+  `attackers win ${Math.round(takenBy(field) * 100)}% of the battles they pick`,
+);
+// A high success rate at walls is not in itself a fault: an army storms a
+// town when it can afford to, so it usually wins. What would be a fault is a
+// wall that costs the man coming over it nothing, and that is measurable
+// without a counterfactual.
+const fieldCost = mean(field.map((b) => b.attackerLosses));
+const wallCost = mean(assaults.map((b) => b.attackerLosses));
+// Not tuned, only reported. A fleet intercepts another when it likes the
+// odds, so it should come off well — but never losing is not an advantage,
+// it is a missing mechanic, and this is where it would show.
+const sea = battles.filter((b) => b.naval);
+note(
+  sea.length > 40 && takenBy(sea) > 0.92,
+  `the fleet that forces a sea action wins ${Math.round(takenBy(sea) * 100)}% of the time`,
 );
 note(
-  wars > 0 && allies > wars * 3,
-  `${allies / 2} alliances against ${wars / 2} wars`,
+  assaults.length > 30 && wallCost < fieldCost * 1.25,
+  `storming a wall costs an attacker ${Math.round(wallCost)} men against ${Math.round(fieldCost)} in the open`,
+);
+// A realm may bind itself to two others and no more, so this is the share
+// of the whole of Europe's capacity for alliance that is taken up. Near one
+// means goodwill is free and everybody has spent it.
+// Near one means every crown in Europe has spent its whole allowance and
+// the ceiling, rather than anything about the world, is what is holding the
+// number down. Measured against `MAX_ALLIANCES`, which is two.
+const saturation = allies / Math.max(1, alive.length * 2);
+note(saturation > 0.82, `${Math.round(saturation * 100)}% of all possible alliances are in force`);
+note(
+  (said['wars declared'] ?? 0) < turns * 0.25,
+  `only ${said['wars declared'] ?? 0} wars declared in ${turns} turns`,
 );
 for (const faction of alive) {
   note(faction.treasury < 0, `${factionName(faction.id)} is in debt (${Math.round(faction.treasury)})`);
