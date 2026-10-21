@@ -47,6 +47,20 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Because a build succeeding is not the same as a build doing what it
+      # was asked. Vite 8 moved from Rollup to Rolldown, Rolldown does not
+      # honour the old chunking hook and does not say so, and the bundle
+      # silently folded back into one piece — green run, no warning, and the
+      # only evidence was the list of files. Three quarters of this game is
+      # eleventh century history that never changes, and keeping it in a
+      # chunk of its own is the whole reason the config exists.
+      - name: Check the bundle is still split
+        run: |
+          for chunk in data simulation presentation; do
+            ls dist/assets/"$chunk"-*.js > /dev/null \
+              || { echo "::error::the $chunk chunk is missing - see vite.config.ts"; exit 1; }
+          done
+
       - name: Test
         run: npm test
 
