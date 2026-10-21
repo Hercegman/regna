@@ -26,7 +26,7 @@ import type { BattleState } from '../core/battle/sim';
 import { frontage, isShooting } from '../core/battle/sim';
 import type { BattleSettlement, BattleUnit, Fallen, Side } from '../core/battle/types';
 import { FIELD_DEPTH, FIELD_WIDTH } from '../core/battle/types';
-import { WATER, rampFor, snap, stepFor, tileNoise } from './iso/palette';
+import { WATER, rampFor, snap, snowy, stepFor, tileNoise } from './iso/palette';
 import { armsCanvas } from './arms';
 import {
   FALL_SECONDS,
@@ -38,7 +38,7 @@ import {
   kitFor,
   poseFor,
 } from './figures';
-import { drawPrecipitation, drawSky, veilOf } from './weather';
+import { drawPrecipitation, drawSky, snowCover, veilOf } from './weather';
 import { dressGround, grainOf } from './iso/terrain';
 import { loadSprites, stamp } from './iso/sprites';
 
@@ -442,7 +442,13 @@ function drawGround(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fr
   const halfWidth = metresPerTile * frame.scale;
   const halfHeight = halfWidth * SQUASH;
   if (halfWidth < 1) return;
-  const ramp = state.setup.naval ? WATER : rampFor(state.setup.terrain);
+  // Snow lies on the ground rather than only falling through the air. The
+  // wash over the finished picture can only ever darken or veil, so a field
+  // under a snowstorm came out looking like mud until the ladder itself went
+  // white — and because the cover follows the sky, it melts back off over
+  // the half minute a change takes.
+  const cover = state.setup.naval ? 0 : snowCover(state) * 0.78;
+  const ramp = state.setup.naval ? WATER : snowy(rampFor(state.setup.terrain), cover);
   const skirt = 120;
 
   const height = (tx: number, ty: number): number =>
@@ -540,6 +546,7 @@ function drawGround(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fr
           tx,
           ty,
           tileNoise(tx, ty),
+          cover,
         );
       }
     }

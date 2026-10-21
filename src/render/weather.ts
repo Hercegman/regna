@@ -15,7 +15,8 @@
 import type { BattleState } from '../core/battle/sim';
 import type { Side } from '../core/battle/types';
 import { clarity } from '../core/battle/weather';
-import type { TimeOfDay, Weather } from '../core/battle/weather';
+import type { Sky, TimeOfDay, Weather } from '../core/battle/weather';
+import { mix } from './iso/palette';
 
 interface Wash {
   /** Multiplied into everything already drawn. */
@@ -74,13 +75,56 @@ const WEATHER_WASH: Record<Weather, Wash> = {
  * rule everything else on this field already follows.
  */
 export function lightning(state: BattleState, time: number): number {
-  if (state.setup.weather !== 'storm') return 0;
+  const strength = weight(state.sky, 'storm');
+  if (strength <= 0.05) return 0;
   const period = 7.3;
   const phase = time % period;
-  if (phase < 0.14) return 1 - phase / 0.14;
+  if (phase < 0.14) return (1 - phase / 0.14) * strength;
   // The second stroke, which is what makes it lightning rather than a lamp.
-  if (phase > 0.2 && phase < 0.3) return (1 - (phase - 0.2) / 0.1) * 0.55;
+  if (phase > 0.2 && phase < 0.3) return (1 - (phase - 0.2) / 0.1) * 0.55 * strength;
   return 0;
+}
+
+/** How much of a given sky is in the air at this moment, 0 to 1. */
+function weight(sky: Sky, weather: Weather): number {
+  const arriving = sky.weather === weather ? sky.through : 0;
+  const leaving = sky.from === weather ? 1 - sky.through : 0;
+  return Math.min(1, arriving + leaving);
+}
+
+/**
+ * The wash for a sky that may be halfway into another.
+ *
+ * Weather turns over about half a minute rather than between two frames, so
+ * the two washes are mixed rather than cut. An absent tint is white, an
+ * absent lift is black and an absent haze is nothing, which is exactly what
+ * each of those operations does when it does nothing — so a sky with none of
+ * them blends into one with all three without a special case.
+ */
+function washAt(sky: Sky): Wash {
+  const to = WEATHER_WASH[sky.weather];
+  if (sky.through >= 1 || sky.from === sky.weather) return to;
+  const from = WEATHER_WASH[sky.from];
+  const t = sky.through;
+  const colour = from.haze ?? to.haze;
+  const other = to.haze ?? from.haze;
+  return {
+    tint: mix(from.tint, to.tint, t),
+    lift: mix(from.lift ?? '#000000', to.lift ?? '#000000', t),
+    haze: colour && other ? mix(colour, other, t) : undefined,
+    hazeFar: (from.haze ? from.hazeFar : 0) * (1 - t) + (to.haze ? to.hazeFar : 0) * t,
+    hazeNear: (from.haze ? from.hazeNear : 0) * (1 - t) + (to.haze ? to.hazeNear : 0) * t,
+  };
+}
+
+/**
+ * How much snow is lying, 0 to 1.
+ *
+ * The one thing the weather does to the ground itself rather than to the
+ * light over it, which is why the battle renderer asks for it separately.
+ */
+export function snowCover(state: BattleState): number {
+  return weight(state.sky, 'snow');
 }
 
 /** The wash, laid over the finished picture. */
@@ -91,7 +135,7 @@ export function drawSky(
   height: number,
   time: number,
 ): void {
-  const wash = WEATHER_WASH[state.setup.weather];
+  const wash = washAt(state.sky);
   const hour = HOUR_TINT[state.setup.timeOfDay];
 
   ctx.save();
@@ -117,7 +161,7 @@ export function drawSky(
     ctx.fillRect(0, 0, width, height);
   }
   ctx.globalCompositeOperation = 'source-over';
-  if (wash.haze) {
+  if (wash.haze && wash.hazeFar > 0.01) {
     // Thicker towards the top of the screen, because the top of the screen is
     // the far end of the field. It is the cheapest depth there is and it is
     // the one thing that says the fog has a distance in it rather than being
@@ -151,14 +195,29 @@ export function drawPrecipitation(
   height: number,
   time: number,
 ): void {
-  const weather = state.setup.weather;
-  if (weather !== 'rain' && weather !== 'storm' && weather !== 'snow') return;
+  // A change in the weather is two of these at once, one thinning and one
+  // thickening, which is what a squall coming on actually looks like.
+  for (const weather of ['rain', 'storm', 'snow'] as const) {
+    const strength = weight(state.sky, weather);
+    if (strength > 0.02) fall(ctx, state, weather, strength, width, height, time);
+  }
+}
+
+function fall(
+  ctx: CanvasRenderingContext2D,
+  state: BattleState,
+  weather: 'rain' | 'storm' | 'snow',
+  strength: number,
+  width: number,
+  height: number,
+  time: number,
+): void {
   const night = state.setup.timeOfDay === 'night';
 
   if (weather === 'snow') {
     // Snow drifts. Slow, with a sideways sway that is different for every
     // flake, which is the whole of what tells it from rain.
-    const flakes = Math.min(900, Math.round((width * height) / 420));
+    const flakes = Math.round(Math.min(900, (width * height) / 420) * strength);
     ctx.fillStyle = night ? 'rgba(206, 216, 230, 0.55)' : 'rgba(246, 249, 252, 0.8)';
     for (let i = 0; i < flakes; i++) {
       const seed = hash(i);
@@ -173,7 +232,7 @@ export function drawPrecipitation(
   }
 
   const heavy = weather === 'storm';
-  const drops = Math.min(1600, Math.round((width * height) / (heavy ? 170 : 300)));
+  const drops = Math.round(Math.min(1600, (width * height) / (heavy ? 170 : 300)) * strength);
   const fall = heavy ? 620 : 420;
   const slant = heavy ? 0.42 : 0.2;
   const length = heavy ? 9 : 6;

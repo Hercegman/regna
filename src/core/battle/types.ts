@@ -109,6 +109,16 @@ export interface BattleSetup {
    */
   readonly weather: Weather;
   readonly timeOfDay: TimeOfDay;
+  /**
+   * True when the sky was named rather than rolled, which also means it
+   * holds for the day.
+   *
+   * A battle set up under a chosen sky is one somebody wants to look at or
+   * to measure under that sky, and a squall arriving ten minutes in would
+   * defeat both. A campaign battle never sets this, so a campaign day can
+   * turn.
+   */
+  readonly fixedSky: boolean;
   /** True for a sea fight: open water, no cover, and nowhere to run. */
   readonly naval: boolean;
 }

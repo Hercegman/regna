@@ -188,6 +188,129 @@ export function rollTimeOfDay(seed: string, naval: boolean, assault: boolean): T
   return rng.weighted(hours, (hour) => weights[hour]);
 }
 
+// ---------------------------------------------------------------------------
+// A day that does not hold still
+// ---------------------------------------------------------------------------
+
+/** One stretch of the day, and what the sky was doing through it. */
+export interface Spell {
+  /** Seconds of battle time at which it begins. The first is always nought. */
+  readonly from: number;
+  readonly weather: Weather;
+}
+
+/**
+ * How long a change takes to arrive.
+ *
+ * Rain does not start at full force and fog does not drop like a curtain, so
+ * both the picture and the model cross from one sky to the next over this,
+ * rather than stepping. It is also what stops a squall arriving as a visible
+ * cut between two frames.
+ */
+export const TURN_OF_WEATHER = 25;
+
+/**
+ * Which skies a day can turn into from a given one.
+ *
+ * Not an arbitrary redraw. Weather moves through neighbouring states: cloud
+ * thickens into rain and rain into a storm, a storm blows itself out, snow
+ * eases back to cloud. Fog is the odd one — it lifts, and it almost never
+ * arrives in the middle of a fight, because the thing that makes fog is the
+ * night that has already passed.
+ */
+const NEIGHBOURS: Record<Weather, readonly Weather[]> = {
+  clear: ['overcast', 'overcast', 'rain'],
+  overcast: ['clear', 'rain', 'rain', 'snow'],
+  rain: ['overcast', 'storm', 'clear'],
+  storm: ['rain', 'rain', 'overcast'],
+  snow: ['overcast', 'snow', 'clear'],
+  fog: ['overcast', 'overcast', 'clear', 'rain'],
+};
+
+/**
+ * What the sky does over the course of one day's fighting.
+ *
+ * Most battles keep the sky they started under — a field action lasted less
+ * than an hour of fighting time and weather does not usually turn inside
+ * one. The rest get a change, and a few get two. The first spell always
+ * starts at nought, and nothing changes inside the first four minutes or in
+ * the last two, because a squall that arrives as the last regiment breaks is
+ * a squall nobody saw.
+ */
+export function rollSpells(
+  seed: string,
+  opening: Weather,
+  winter: boolean,
+  terrain: Terrain,
+): Spell[] {
+  const rng = new Rng(`${seed}:spells`);
+  const spells: Spell[] = [{ from: 0, weather: opening }];
+  // Snow does not turn into rain in a summer campaign and a desert does not
+  // turn into either, so a change is filtered the same way the opening was.
+  const allowed = (kind: Weather): boolean => {
+    if (kind === 'snow' && !winter) return false;
+    if (terrain === 'desert' && (kind === 'snow' || kind === 'rain' || kind === 'storm')) {
+      return false;
+    }
+    return true;
+  };
+  const changes = rng.chance(0.45) ? (rng.chance(0.25) ? 2 : 1) : 0;
+  let at = 0;
+  let current = opening;
+  for (let i = 0; i < changes; i++) {
+    at += rng.float(4 * 60, 9 * 60);
+    if (at > BATTLE_TIME_LIMIT - 2 * 60) break;
+    const options = NEIGHBOURS[current].filter(allowed);
+    if (options.length === 0) break;
+    const next = rng.pick(options);
+    if (next === current) continue;
+    spells.push({ from: at, weather: next });
+    current = next;
+  }
+  return spells;
+}
+
+/** The sky at a moment, and how far through a change it is. */
+export interface Sky {
+  readonly weather: Weather;
+  /** What it is turning from, which equals `weather` once the turn is over. */
+  readonly from: Weather;
+  /** 0 at the moment of the change, 1 once it has fully arrived. */
+  readonly through: number;
+}
+
+export function skyAt(spells: readonly Spell[], seconds: number): Sky {
+  let index = 0;
+  for (let i = 1; i < spells.length; i++) {
+    if (seconds >= spells[i]!.from) index = i;
+  }
+  const spell = spells[index]!;
+  const previous = spells[index - 1]?.weather ?? spell.weather;
+  const since = seconds - spell.from;
+  const through = index === 0 ? 1 : clamp(since / TURN_OF_WEATHER, 0, 1);
+  return { weather: spell.weather, from: previous, through };
+}
+
+/** The conditions under a sky mid-change: the two of them, mixed. */
+export function conditionsUnder(sky: Sky, hour: TimeOfDay, terrain: Terrain): Conditions {
+  const to = conditionsOf(sky.weather, hour, terrain);
+  if (sky.through >= 1 || sky.from === sky.weather) return to;
+  const from = conditionsOf(sky.from, hour, terrain);
+  const t = sky.through;
+  const lerp = (a: number, b: number): number => a + (b - a) * t;
+  return {
+    visibility: lerp(from.visibility, to.visibility),
+    aim: lerp(from.aim, to.aim),
+    powder: lerp(from.powder, to.powder),
+    footing: lerp(from.footing, to.footing),
+    toil: lerp(from.toil, to.toil),
+    morale: lerp(from.morale, to.morale),
+    // The light is a property of the hour, not of the cloud, so it does not
+    // move when the sky does.
+    light: to.light,
+  };
+}
+
 /** How much of a thing at this distance can be made out at all, 0 to 1. */
 export function clarity(conditions: Conditions, metres: number): number {
   const full = conditions.visibility * 0.72;

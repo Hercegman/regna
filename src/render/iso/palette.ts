@@ -50,6 +50,26 @@ export const ROCK: Ramp = ['#3b3733', '#4e4842', '#655e55', '#7e766c', '#978f84'
 /** And snow above that. */
 export const SNOW: Ramp = ['#8c99a4', '#a3b0ba', '#bcc8d1', '#d4dee5', '#eaf1f6'];
 
+/**
+ * The same ladder with snow lying on it.
+ *
+ * Step for step rather than one flat white, because the banding is what
+ * makes this a picture of ground rather than a sheet of paint, and a field
+ * under snow still has a lit face and a shaded one. Blended against the snow
+ * ladder's matching step, so a shadow on snow is blue and a lit slope is
+ * nearly white, which is what snow actually does.
+ */
+export function snowy(ramp: Ramp, amount: number): Ramp {
+  if (amount <= 0.01) return ramp;
+  return [
+    mix(ramp[0], SNOW[0], amount),
+    mix(ramp[1], SNOW[1], amount),
+    mix(ramp[2], SNOW[2], amount),
+    mix(ramp[3], SNOW[3], amount),
+    mix(ramp[4], SNOW[4], amount),
+  ] as const;
+}
+
 /** The strand between the fields and the water. */
 export const SAND: Ramp = ['#7c6b43', '#998655', '#b5a169', '#cebb80', '#e0d099'];
 

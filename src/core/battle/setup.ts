@@ -272,6 +272,7 @@ export function buildBattle(params: BattleParams): BattleSetup {
     isWinter: params.isWinter,
     weather: params.weather ?? rollWeather(params.seed, params.isWinter, params.terrain),
     timeOfDay: params.timeOfDay ?? rollTimeOfDay(params.seed, naval, assault),
+    fixedSky: params.weather !== undefined,
     naval,
   };
 }

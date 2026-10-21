@@ -21,8 +21,8 @@ import type {
 import { BATTLE_TIME_LIMIT, FIELD_DEPTH, FIELD_WIDTH, STALEMATE_SECONDS, TICK } from './types';
 import { flatTerrain, ridgeTerrain } from './terrain';
 import { planSide } from './ai';
-import type { Conditions } from './weather';
-import { conditionsOf } from './weather';
+import type { Conditions, Sky, Spell } from './weather';
+import { conditionsUnder, rollSpells, skyAt } from './weather';
 
 /**
  * How many bodies are worth keeping.
@@ -53,11 +53,20 @@ export interface BattleState {
   /** True once the first casualty has been inflicted. */
   engaged: boolean;
   /**
-   * What the weather and the hour are worth, worked out once. Everything in
-   * here is read by the model, not by the renderer: these numbers slacken
-   * bowstrings, mire horses and shorten tempers.
+   * What the sky is doing, and what it is worth.
+   *
+   * The day does not hold still. `spells` is the whole of it, rolled once
+   * from the battle's seed before anything moves; `sky` is where in that the
+   * battle currently is, including how far through a change; `conditions`
+   * are the numbers that come out, mixed across a change rather than
+   * stepped. All of it is read by the model, not by the renderer — these
+   * numbers slacken bowstrings, mire horses and shorten tempers — and the
+   * renderer reads the same `sky` so the picture and the model are never
+   * under different weather.
    */
-  readonly conditions: Conditions;
+  readonly spells: readonly Spell[];
+  sky: Sky;
+  conditions: Conditions;
   /**
    * Every man who has gone down, where and when, or empty when nobody is
    * watching. See `Fallen`.
@@ -89,6 +98,10 @@ export function createBattle(setup: BattleSetup, options: BattleOptions = {}): B
       ? ridgeTerrain(setup.terrain)
       : flatTerrain(setup.terrain);
   const units = setup.units.map((unit) => ({ ...unit, engagedWith: [...unit.engagedWith] }));
+  const spells = setup.fixedSky
+    ? [{ from: 0, weather: setup.weather }]
+    : rollSpells(setup.seed, setup.weather, setup.isWinter, setup.terrain);
+  const sky = skyAt(spells, 0);
   return {
     setup,
     units,
@@ -102,7 +115,9 @@ export function createBattle(setup: BattleSetup, options: BattleOptions = {}): B
     lastCasualtyAt: 0,
     lastTotal: units.reduce((sum, unit) => sum + unit.soldiers, 0),
     engaged: false,
-    conditions: conditionsOf(setup.weather, setup.timeOfDay, setup.terrain),
+    spells,
+    sky,
+    conditions: conditionsUnder(sky, setup.timeOfDay, setup.terrain),
     fallen: [],
     debt: new Map(),
     recording: options.record ?? false,
@@ -778,6 +793,11 @@ export function stepBattle(state: BattleState): void {
     planSide(state, 'defender');
   }
 
+  // The sky first, because everything after this reads what it decides.
+  state.sky = skyAt(state.spells, state.time);
+  state.conditions = conditionsUnder(state.sky, state.setup.timeOfDay, state.setup.terrain);
+
+  batterWalls(state, dt);
   sampleRouted(state);
   applyMovement(state, dt);
   applyMissiles(state, dt);

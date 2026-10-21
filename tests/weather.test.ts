@@ -7,7 +7,15 @@ import { armyId, factionId, regionId, unitTypeId } from '../src/core/types';
 import { getUnitType } from '../src/core/data/units';
 import { FIELD_DEPTH, FIELD_WIDTH } from '../src/core/battle/types';
 import type { TimeOfDay, Weather } from '../src/core/battle/weather';
-import { conditionsOf, rollTimeOfDay, rollWeather } from '../src/core/battle/weather';
+import {
+  TURN_OF_WEATHER,
+  conditionsOf,
+  conditionsUnder,
+  rollSpells,
+  rollTimeOfDay,
+  rollWeather,
+  skyAt,
+} from '../src/core/battle/weather';
 import { deviceOf, armsOf, TINCTURES } from '../src/core/data/heraldry';
 import { FACTIONS } from '../src/core/data/factions';
 
@@ -129,6 +137,136 @@ describe('rolling the sky', () => {
     }
     expect(openField).toBeLessThan(60);
     expect(assaults).toBeGreaterThan(openField);
+  });
+});
+
+describe('a day that turns', () => {
+  it('is the same day every time for the same battle', () => {
+    for (const seed of ['a:1:knin', 'b:7:cairo']) {
+      expect(rollSpells(seed, 'clear', false, 'plains'))
+        .toEqual(rollSpells(seed, 'clear', false, 'plains'));
+    }
+  });
+
+  it('starts under the sky the battle opened with', () => {
+    for (let i = 0; i < 50; i++) {
+      const spells = rollSpells(`open-${i}`, 'rain', false, 'plains');
+      expect(spells[0]!.from).toBe(0);
+      expect(spells[0]!.weather).toBe('rain');
+    }
+  });
+
+  it('mostly leaves the sky alone, and never changes it twice over', () => {
+    let changed = 0;
+    for (let i = 0; i < 400; i++) {
+      const spells = rollSpells(`turn-${i}`, 'overcast', false, 'plains');
+      expect(spells.length).toBeLessThanOrEqual(3);
+      // Nothing turns inside the first four minutes or after the day is up.
+      for (const spell of spells.slice(1)) expect(spell.from).toBeGreaterThanOrEqual(4 * 60);
+      if (spells.length > 1) changed += 1;
+    }
+    // A field action lasted less than an hour and weather does not usually
+    // turn inside one, so most days keep the sky they started under.
+    expect(changed).toBeGreaterThan(80);
+    expect(changed).toBeLessThan(260);
+  });
+
+  it('moves between neighbouring skies rather than jumping', () => {
+    for (let i = 0; i < 300; i++) {
+      const spells = rollSpells(`walk-${i}`, 'clear', false, 'plains');
+      for (const spell of spells.slice(1)) {
+        // Clear never becomes a blizzard or a fog bank between two volleys.
+        expect(['overcast', 'rain', 'storm', 'clear']).toContain(spell.weather);
+      }
+    }
+  });
+
+  it('will not snow in a summer campaign or rain in the desert', () => {
+    for (let i = 0; i < 300; i++) {
+      for (const spell of rollSpells(`summer-${i}`, 'overcast', false, 'plains')) {
+        expect(spell.weather).not.toBe('snow');
+      }
+      for (const spell of rollSpells(`sand-${i}`, 'clear', true, 'desert')) {
+        expect(['snow', 'rain', 'storm']).not.toContain(spell.weather);
+      }
+    }
+  });
+
+  it('crosses from one sky to the next rather than cutting', () => {
+    const spells = [
+      { from: 0, weather: 'clear' as const },
+      { from: 600, weather: 'rain' as const },
+    ];
+    expect(skyAt(spells, 0).weather).toBe('clear');
+    expect(skyAt(spells, 599).weather).toBe('clear');
+    const starting = skyAt(spells, 600);
+    expect(starting.weather).toBe('rain');
+    expect(starting.from).toBe('clear');
+    expect(starting.through).toBe(0);
+    expect(skyAt(spells, 600 + TURN_OF_WEATHER / 2).through).toBeCloseTo(0.5, 3);
+    expect(skyAt(spells, 600 + TURN_OF_WEATHER).through).toBe(1);
+
+    // And the conditions cross with it: the shooting does not fall off a
+    // cliff the instant the first drop lands.
+    const dry = conditionsOf('clear', 'day', 'plains');
+    const wet = conditionsOf('rain', 'day', 'plains');
+    const half = conditionsUnder(skyAt(spells, 600 + TURN_OF_WEATHER / 2), 'day', 'plains');
+    expect(half.aim).toBeLessThan(dry.aim);
+    expect(half.aim).toBeGreaterThan(wet.aim);
+    expect(half.powder).toBeGreaterThan(wet.powder);
+  });
+
+  it('holds the sky for the day when the sky was named', () => {
+    const state = createBattle(
+      battle(
+        side('hre', [regiment('imperial_spearmen')]),
+        side('poland', [regiment('slavic_axemen')]),
+        { seed: 'held', weather: 'fog' },
+      ),
+    );
+    expect(state.setup.fixedSky).toBe(true);
+    for (let i = 0; i < 2000 && !state.finished; i++) {
+      stepBattle(state);
+      expect(state.sky.weather).toBe('fog');
+    }
+  });
+
+  it('lets a campaign battle day turn under it', () => {
+    // Nothing in the game names a sky, so a campaign battle is free to
+    // change. Over enough seeds at least some of them must.
+    let turned = 0;
+    for (let i = 0; i < 60; i++) {
+      const setup = buildBattle({
+        seed: `campaign-${i}`,
+        terrain: 'plains',
+        isWinter: false,
+        attacker: side('hre', [regiment('imperial_spearmen')]),
+        defender: side('poland', [regiment('slavic_axemen')]),
+      });
+      expect(setup.fixedSky).toBe(false);
+      const state = createBattle(setup);
+      if (state.spells.length > 1) turned += 1;
+    }
+    expect(turned).toBeGreaterThan(5);
+  });
+});
+
+describe('what a man carries on his shield', () => {
+  it('gives every realm a device that is not its own field', () => {
+    for (const faction of FACTIONS) {
+      const device = deviceOf(faction.id);
+      expect(device).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(device).not.toBe(TINCTURES[armsOf(faction.id).field]);
+    }
+  });
+
+  it('takes it from the blazon where the blazon has one', () => {
+    // Denmark bears a white cross on red; her men carry a white cross.
+    expect(deviceOf(factionId('denmark'))).toBe(TINCTURES.argent);
+    // Aragon is paly of or and gules, so the second tincture is the device.
+    expect(deviceOf(factionId('aragon'))).toBe(TINCTURES.gules);
+    // France is semy of gold fleurs on blue, and gold is what shows.
+    expect(deviceOf(factionId('france'))).toBe(TINCTURES.or);
   });
 });
 

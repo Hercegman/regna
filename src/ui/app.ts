@@ -444,7 +444,9 @@ function demoWeather(plan: BattlePlan): BattlePlan {
     ...plan,
     setup: {
       ...plan.setup,
-      ...(weather ? { weather } : {}),
+      // A named sky holds for the day, so that what is being looked at is
+      // still on the screen ten minutes in.
+      ...(weather ? { weather, fixedSky: true } : {}),
       ...(timeOfDay ? { timeOfDay } : {}),
     },
   };

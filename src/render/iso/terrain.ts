@@ -313,9 +313,19 @@ export function dressGround(
   tx: number,
   ty: number,
   jitter: number,
+  /**
+   * How much snow is lying, 0 to 1. Only the battlefield passes it: the
+   * campaign map has seasons but not storms, and a province does not go
+   * white for half a turn.
+   */
+  snow = 0,
 ): void {
   // Above the treeline nothing grows; what is up there is stone.
   if (metres > SNOW_LINE) return;
+  // What is buried, is buried. A ploughed field under snow is a white sheet
+  // with nothing to see in it, and scrub is gone before the furrows are —
+  // trees are not, which is most of what a winter landscape is made of.
+  if (snow > 0.45 && (terrain === 'farmland' || terrain === 'steppe')) return;
   if (metres > ROCK_LINE) {
     if (jitter > 0.6) boulder(ctx, x, y, halfWidth, jitter);
     return;

@@ -438,7 +438,9 @@ export class BattleScreen {
           this.plan.zone ? getSeaZone(this.plan.zone).name : pretty(setup.terrain),
         ),
         setup.isWinter && plaque('Season', 'Winter'),
-        plaque('Sky', WEATHER_NAME[setup.weather]),
+        // What it is doing now, not what it was doing when the armies
+        // formed up. A day that turns says so on the plaque as it turns.
+        plaque('Sky', WEATHER_NAME[this.battle.sky.weather]),
         // The light is only worth a plaque when it is running out. A battle
         // begun at dusk has about ten minutes of it, and a commander who
         // cannot see that number cannot plan around the thing it decides.

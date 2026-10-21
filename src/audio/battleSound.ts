@@ -111,7 +111,11 @@ export class BattleSound {
 
   /** Rain, wind, and the crack that goes with the flash. */
   private weather(state: BattleState, time: number): void {
-    const weather = state.setup.weather;
+    // The sky the battle is under now, not the one it started under. A bed
+    // ramps towards its new level over a quarter of a second anyway, so a
+    // change in the weather arrives in the ear about as gradually as it
+    // arrives in the picture.
+    const weather = state.sky.weather;
     this.rain.level(weather === 'storm' ? 0.15 : weather === 'rain' ? 0.085 : weather === 'snow' ? 0.02 : 0);
     this.wind.level(
       weather === 'storm' ? 0.13 : weather === 'snow' ? 0.055 : weather === 'fog' ? 0.02 : 0.012,
