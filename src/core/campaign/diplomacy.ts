@@ -182,6 +182,73 @@ export function proposeTrade(state: CampaignState, a: FactionId, b: FactionId): 
 /** Nobody binds themselves to everyone: an alliance is meant to cost something. */
 export const MAX_ALLIANCES = 2;
 
+/**
+ * How much two courts must like each other before an alliance is possible.
+ *
+ * Above where goodwill on its own can carry them. Trade warms a relationship
+ * and stops short of this on purpose: commerce makes a treaty of commerce,
+ * and it took something else to make a treaty of alliance.
+ */
+export const ALLIANCE_ATTITUDE = 72;
+
+/** An alliance with nothing left holding it together lapses at this. */
+const ALLIANCE_LAPSES = 45;
+
+/**
+ * Why two realms are bound to each other.
+ *
+ * A medieval alliance was not the natural end of a warm correspondence. It
+ * was made for a reason and it lasted as long as the reason did: a marriage
+ * between the two houses, a war both were already fighting against the same
+ * man, or a holy war both had sworn to. Leagues made against somebody
+ * dissolved when that somebody did, which is why so few of them outlived the
+ * war they were made for.
+ *
+ * Without one of these, two realms that like each other are two realms that
+ * like each other.
+ */
+export type AllianceCause = 'marriage' | 'common enemy' | 'holy war';
+
+export function allianceCause(
+  state: CampaignState,
+  a: FactionId,
+  b: FactionId,
+): AllianceCause | undefined {
+  if (marriedInto(state, a, b) || marriedInto(state, b, a)) return 'marriage';
+
+  const theirs = state.factions.get(b);
+  if (theirs) {
+    const ours = militaryStrength(state, a);
+    const yours = militaryStrength(state, b);
+    for (const enemy of enemiesOf(state, a)) {
+      if (theirs.relations.get(enemy)?.stance !== 'war') continue;
+      // A league is made against somebody worth making one against. Two
+      // kings who happen to be fighting the same small neighbour have a
+      // coincidence, not a cause, and with two hundred wars declared in a
+      // century the coincidence is common enough to have been carrying
+      // every alliance in Europe on its own.
+      const threat = militaryStrength(state, enemy);
+      if (threat > ours || threat > yours) return 'common enemy';
+    }
+  }
+
+  const war = state.faith.holyWar;
+  if (war && war.participants.includes(a) && war.participants.includes(b)) return 'holy war';
+  return undefined;
+}
+
+/**
+ * Is there a bride at this court who was born in that realm?
+ *
+ * `bornIn` is the whole of the bond a marriage makes between two houses, so
+ * it is the whole of the question here.
+ */
+function marriedInto(state: CampaignState, court: FactionId, from: FactionId): boolean {
+  const faction = state.factions.get(court);
+  if (!faction) return false;
+  return faction.characters.some((person) => person.bornIn === from);
+}
+
 export function countAlliances(state: CampaignState, id: FactionId): number {
   const faction = state.factions.get(id);
   if (!faction) return 0;
@@ -197,13 +264,15 @@ export function proposeAlliance(state: CampaignState, a: FactionId, b: FactionId
   if (a === INDEPENDENT_ID || b === INDEPENDENT_ID || a === b) return false;
   const current = relation(state, a, b);
   if (current.stance === 'war') return false;
-  if (relation(state, b, a).attitude < 62) return false;
+  if (relation(state, b, a).attitude < ALLIANCE_ATTITUDE) return false;
   if (countAlliances(state, a) >= MAX_ALLIANCES) return false;
   if (countAlliances(state, b) >= MAX_ALLIANCES) return false;
+  const cause = allianceCause(state, a, b);
+  if (!cause) return false;
   setStance(state, a, b, 'alliance');
   adjustAttitude(state, a, b, 10);
   adjustAttitude(state, b, a, 10);
-  logEvent(state, a, `${factionName(a)} and ${factionName(b)} conclude an alliance.`);
+  logEvent(state, a, `${factionName(a)} and ${factionName(b)} conclude an alliance: ${cause}.`);
   return true;
 }
 
@@ -252,6 +321,9 @@ export function countWars(state: CampaignState, id: FactionId): number {
 
 /** Per-turn drift: attitudes move towards what circumstances imply. */
 export function driftRelations(state: CampaignState, rng: Rng): void {
+  // Collected rather than applied in the loop, because an alliance lapsing
+  // writes to both sides' relations and the loop is reading them.
+  const lapsed: [FactionId, FactionId][] = [];
   for (const [a, factionA] of state.factions) {
     if (a === INDEPENDENT_ID || !factionA.alive) continue;
     for (const [b, rel] of factionA.relations) {
@@ -262,12 +334,22 @@ export function driftRelations(state: CampaignState, rng: Rng): void {
         case 'war':
           delta -= 2;
           break;
-        case 'alliance':
-          delta += rel.attitude < 85 ? 1.2 : 0;
+        case 'alliance': {
+          // An alliance holds while the thing that made it holds. Once the
+          // common enemy has been beaten, the bride is dead and the crusade
+          // is over, the treaty is two courts being polite to each other,
+          // and it cools until it lapses.
+          const cause = allianceCause(state, a, b);
+          delta += cause ? (rel.attitude < 85 ? 1.2 : 0) : -1.8;
+          if (!cause && rel.attitude < ALLIANCE_LAPSES) lapsed.push([a, b]);
           break;
+        }
         case 'trade':
-          // Trade warms a relationship towards friendly, not towards devotion.
-          delta += rel.attitude < 65 ? 0.7 : -0.2;
+          // Trade warms a relationship towards friendly and stops there.
+          // Commerce makes a treaty of commerce; it took a marriage or a
+          // common enemy to make a treaty of alliance, and this ceiling is
+          // deliberately below the bar for one.
+          delta += rel.attitude < 55 ? 0.7 : -0.2;
           break;
         case 'ceasefire':
           delta += 0.5;
@@ -282,6 +364,11 @@ export function driftRelations(state: CampaignState, rng: Rng): void {
       delta += rng.float(-0.3, 0.3);
       adjustAttitude(state, a, b, delta);
     }
+  }
+  for (const [a, b] of lapsed) {
+    if (relation(state, a, b).stance !== 'alliance') continue;
+    setStance(state, a, b, 'trade');
+    logEvent(state, a, `The alliance of ${factionName(a)} and ${factionName(b)} lapses.`);
   }
 }
 

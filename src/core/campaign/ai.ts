@@ -38,6 +38,7 @@ import { getUnitType } from '../data/units';
 import { tryGetFaction, INDEPENDENT_ID } from '../data/factions';
 import { landNeighbours, seaNeighbours } from '../data/adjacency';
 import {
+  allianceCause,
   canMakePeace,
   countWars,
   declareWar,
@@ -1152,7 +1153,12 @@ function manageDiplomacy(state: CampaignState, id: FactionId, rng: Rng): void {
         proposeTrade(state, id, other);
       }
     }
-    if (current.stance === 'trade' && relation(state, other, id).attitude > 62 && rng.chance(0.05)) {
+    // An alliance is asked for when there is a reason for one, and a court
+    // that has a reason does not sit on it for five years: the low chance
+    // that used to be here was carrying the whole of the restraint, and it
+    // carried it badly — over two centuries a one-in-twenty chance a turn is
+    // a certainty, so every trading partner in Europe ended up an ally.
+    if (current.stance === 'trade' && allianceCause(state, id, other) && rng.chance(0.3)) {
       proposeAlliance(state, id, other);
     }
   }
