@@ -16,6 +16,7 @@ import type { BattleState } from '../core/battle/sim';
 import type { BattleUnit, Side } from '../core/battle/types';
 import { FIELD_DEPTH, FIELD_WIDTH } from '../core/battle/types';
 import { tryGetFaction } from '../core/data/factions';
+import { veilOf } from './weather';
 
 /** The ground, which is a pure function of the setup and so drawn once. */
 let plate: HTMLCanvasElement | undefined;
@@ -87,12 +88,18 @@ export function drawBattleRadar(
 
   const mark = (unit: BattleUnit): void => {
     if (unit.stance === 'destroyed' || unit.fled) return;
+    // The radar is under the same weather as the field. It would be a strange
+    // kind of fog that hid an army from the man looking at it and left it on
+    // his map, and the sketch a captain had of where everybody was is exactly
+    // the thing bad light ruined.
+    const seen = veilOf(state, unit.position, scene.playerSide, unit.side);
+    if (seen <= 0.02) return;
     const colour = tryGetFaction(unit.faction)?.colour ?? '#8d8578';
     const x = atX(unit.position.x);
     const y = atY(unit.position.y);
     // Wide enough to show a frontage, which is what tells a line from a column.
     const half = Math.max(1.5, atX(unit.width) / 2);
-    ctx.globalAlpha = unit.stance === 'routing' ? 0.45 : 1;
+    ctx.globalAlpha = (unit.stance === 'routing' ? 0.45 : 1) * seen;
     ctx.fillStyle = colour;
     ctx.fillRect(x - half, y - 1.5, half * 2, 3);
     ctx.globalAlpha = 1;

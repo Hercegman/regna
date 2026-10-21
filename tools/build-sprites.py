@@ -279,16 +279,27 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
     # them as step, stand, other step, stand — which is a four-beat cycle out
     # of three pictures, and the cheapest honest walk there is.
     fleeing = pose.startswith('flee')
+    falling = pose.startswith('fall')
     stride = {
         'step-a': 0.075, 'step-b': -0.075,
         'flee-a': 0.125, 'flee-b': -0.125,
+        'fall-a': 0.06, 'fall-b': -0.03,
     }.get(pose, 0.0)
     lean = 0.09 if fleeing else 0.055 if pose == 'fight' else abs(stride) * 0.25
     crouch = 0.018 if pose == 'fight' else abs(stride) * 0.1
-    if fleeing:
+    if falling:
+        # A man going down, in the one second between being hit and being a
+        # body. The knee folds under him and he loses his height; which way
+        # he goes over is not here at all, because pitching the whole figure
+        # is `pitch`'s job and turning twelve boxes one at a time is not.
+        lean = 0.0
+        crouch = 0.055 if pose == 'fall-a' else 0.115
+    if fleeing or falling:
         # A man running for the treeline has thrown away what he was
         # carrying. It is the one thing that reads as a rout rather than as
-        # a march in the wrong direction.
+        # a march in the wrong direction — and a man being killed lets go of
+        # the same things in the same order, which is why the body he turns
+        # into has its spear lying beside it rather than in its hand.
         shield = False
         spear = False
 
@@ -306,11 +317,13 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
         box(f'{name}-torso', x, y + lean, base + 0.17 - crouch, 0.17, 0.11, 0.2, cloth)
     # Arms swing against the legs, which is the thing that makes a walk a
     # walk rather than a hop. In a rout they go up instead.
-    swing = 0.4 if fleeing else 0.8
-    raised = 0.1 if fleeing else 0.0
-    box(f'{name}-arm-l', x - 0.105, y - stride * swing, base + 0.2 + raised - crouch,
+    swing = 0.0 if falling else 0.4 if fleeing else 0.8
+    raised = 0.12 if falling else 0.1 if fleeing else 0.0
+    # Thrown wide as he goes: a man who is falling is not holding his line.
+    flail = 0.055 if falling else 0.0
+    box(f'{name}-arm-l', x - 0.105 - flail, y - stride * swing, base + 0.2 + raised - crouch,
         0.05, 0.09, 0.16, mail)
-    box(f'{name}-arm-r', x + 0.105, y + stride * swing + lean, base + 0.2 + raised - crouch,
+    box(f'{name}-arm-r', x + 0.105 + flail, y + stride * swing + lean, base + 0.2 + raised - crouch,
         0.05, 0.09, 0.16, mail)
     if cloak:
         # Hung off the shoulders and down the back, which is the one thing
@@ -419,6 +432,24 @@ def spin(degrees):
             obj.matrix_world = turn @ obj.matrix_world
 
 
+def pitch(degrees):
+    """Tips everything built so far forward onto its face.
+
+    `spin` turns a figure about the vertical, which is how he faces a
+    different way. This turns him about the axis across the picture, which is
+    how he falls: he goes over the way he was facing, and because the turn
+    happens before the spin, a man facing down the screen falls down the
+    screen. The pivot is the world origin, which is the ground under his own
+    feet, so he pivots on his boots rather than about his waist.
+    """
+    if not degrees:
+        return
+    turn = mathutils.Matrix.Rotation(math.radians(-degrees), 4, 'X')
+    for obj in bpy.data.objects:
+        if obj.type == 'MESH':
+            obj.matrix_world = turn @ obj.matrix_world
+
+
 def palette_for_men():
     """The materials every figure is made of, in one place."""
     return (
@@ -480,6 +511,27 @@ def fighter(weapon, mounted=False, shield=True, barded=False, pose='idle', facin
     return tall if not mounted else 0.9
 
 
+def falling(pose, facing, kit):
+    """A man in the act of being killed.
+
+    Every other pose on this sheet is rendered once per kind of soldier,
+    because what a man is carrying is the whole of what tells a crossbowman
+    from a pikeman. This one is not, and that is the point: the first things
+    a man lets go of are his shield and his weapon, so a spearman going down
+    and an archer going down are the same picture. It is also why a knight
+    has no horse here. He is coming off it.
+
+    Two frames — buckling, then nearly flat — and the third is the body
+    itself, which `fallen` has drawn since the first commit.
+    """
+    clear()
+    mail, cloth, timber, skin = palette_for_men()
+    man('one', 0, 0, mail, cloth, timber, skin, pose=pose, kit=kit)
+    pitch(30 if pose == 'fall-a' else 62)
+    spin((360 - facing * 45) % 360)
+    return 0.8
+
+
 def general(mounted):
     """The man himself.
 
@@ -533,6 +585,110 @@ def fallen(variant):
         box('spear', 0.2, -0.02, 0, 0.5, 0.028, 0.028, timber)
     spin(math.degrees(turn) * 3)
     return 0.42
+
+
+def engine(pose):
+    """A throwing engine, and the two men who work it.
+
+    The siege class has been in the game since the first commit and had no
+    model, so a trebuchet was drawn as a swordsman: five kinds of engine
+    turning up on the field as infantry. There are two silhouettes worth
+    having and these are both of them. This is the older one — a frame, an
+    axle and an arm — and it covers the ballista, the catapult and the
+    trebuchet, which differ in how they are sprung and not in what they look
+    like from four hundred metres.
+
+    Unlike every other figure on the sheet this one comes with its crew in
+    it. An engine is a machine and a gun team, never one or the other, and
+    one stamp that is both is cheaper and truer than a machine with men
+    arranged around it by the renderer.
+    """
+    clear()
+    mail, cloth, timber, skin = palette_for_men()
+    iron = material('iron', srgb('#55534d'))
+    loosed = pose == 'fight'
+    # The bed: two sleepers along y with a cross-piece at the back.
+    box('sleeper-l', -0.17, 0, 0.02, 0.07, 0.68, 0.07, timber)
+    box('sleeper-r', 0.17, 0, 0.02, 0.07, 0.68, 0.07, timber)
+    box('cross-back', 0, -0.28, 0.05, 0.41, 0.08, 0.06, timber)
+    box('cross-front', 0, 0.28, 0.05, 0.41, 0.08, 0.06, timber)
+    # The uprights the arm swings between, braced back to the bed.
+    box('post-l', -0.17, 0.02, 0.09, 0.08, 0.08, 0.46, timber)
+    box('post-r', 0.17, 0.02, 0.09, 0.08, 0.08, 0.46, timber)
+    for side, x in (('l', -0.17), ('r', 0.17)):
+        brace = box(f'brace-{side}', 0, 0, 0, 0.05, 0.05, 0.42, timber)
+        brace.rotation_euler = (math.radians(38), 0, 0)
+        brace.location = (x, -0.14, 0.06)
+    box('axle', 0, 0.02, 0.52, 0.44, 0.07, 0.07, iron)
+    # The arm: cocked back down the bed, or thrown over the axle and still
+    # swinging. One picture of each is the whole of what a loosing engine
+    # needs, and the difference reads at twenty pixels.
+    arm = box('arm', 0, 0, 0, 0.06, 0.06, 0.66, timber)
+    arm.rotation_euler = (math.radians(-34 if loosed else 125), 0, 0)
+    arm.location = (0, 0.02, 0.54)
+    # The sling at the end of it, and the weight at the other.
+    if loosed:
+        box('sling', 0, 0.42, 0.78, 0.09, 0.11, 0.03, cloth)
+        box('shot', 0, 0.5, 0.86, 0.09, 0.09, 0.09, iron)
+    else:
+        box('sling', 0, -0.44, 0.14, 0.09, 0.12, 0.03, cloth)
+        box('shot', 0, -0.44, 0.08, 0.1, 0.1, 0.1, iron)
+    box('weight', 0, 0.06, 0.2 if loosed else 0.62, 0.17, 0.15, 0.17, iron)
+    # The crew. Out to the sides, because a man standing in front of the arm
+    # is a man the arm is about to go through.
+    man('crew-l', -0.38, -0.06, mail, cloth, timber, skin,
+        shield=False, spear=False, weapon='none', pose='fight' if loosed else 'idle')
+    man('crew-r', 0.38, 0.04, mail, cloth, timber, skin,
+        shield=False, spear=False, weapon='none', pose='idle')
+    return 1.0
+
+
+def cannon(pose):
+    """A gun on a timber bed, and the man who touches it off.
+
+    The other siege silhouette, and the one the late game is fought with: a
+    bombard or a culverin is a barrel lying in a cradle, which is nothing
+    like a frame with an arm on it. A gun that has just fired says so with
+    its own smoke, and that is the only light the sheet draws anywhere —
+    everything else here is lit by the sun.
+    """
+    clear()
+    mail, cloth, timber, skin = palette_for_men()
+    iron = material('iron', srgb('#4b4a46'))
+    bronze = material('bronze', srgb('#8f7038'))
+    firing = pose == 'fight'
+    # The cradle, raked up towards the muzzle.
+    box('bed', 0, 0, 0.08, 0.3, 0.66, 0.1, timber)
+    box('trail', 0, -0.36, 0.05, 0.16, 0.14, 0.09, timber)
+    for side, x in (('l', -0.19), ('r', 0.19)):
+        wheel = cone(f'wheel-{side}', 0, 0, 0, 0.14, 0.05, timber, 10, 0.9)
+        wheel.rotation_euler = (math.radians(90), 0, 0)
+        wheel.location = (x, 0.06, 0.14)
+    # The barrel, with the reinforcing rings a cast gun was banded with.
+    barrel = box('barrel', 0, 0, 0, 0.13, 0.62, 0.13, bronze)
+    barrel.rotation_euler = (math.radians(-7), 0, 0)
+    barrel.location = (0, 0.02, 0.23)
+    for i, at in enumerate((-0.2, 0.0, 0.2)):
+        ring = box(f'ring-{i}', 0, 0, 0, 0.15, 0.045, 0.15, iron)
+        ring.rotation_euler = (math.radians(-7), 0, 0)
+        ring.location = (0, 0.02 + at, 0.23 + at * 0.12)
+    box('breech', 0, -0.3, 0.22, 0.15, 0.1, 0.15, iron)
+    if firing:
+        # The muzzle flash, and the smoke off it. Not the owner's colour:
+        # powder smoke belonged to nobody.
+        flame = material('flame', srgb('#ffdf9c'), emissive=True)
+        smoke = material('smoke', srgb('#b9b4a8'))
+        cone('flash', 0, 0.46, 0.25, 0.09, 0.26, flame, 6)
+        box('smoke-a', 0, 0.56, 0.2, 0.19, 0.19, 0.18, smoke)
+        box('smoke-b', 0.04, 0.74, 0.26, 0.14, 0.14, 0.14, smoke)
+    # The gunner, standing off to the side of the breech where the recoil is
+    # not, with the linstock he fired it with.
+    man('gunner', -0.36, -0.2, mail, cloth, timber, skin,
+        shield=False, spear=False, weapon='none', pose='fight' if firing else 'idle')
+    box('linstock', -0.26, -0.14, 0.2, 0.025, 0.3, 0.025, timber)
+    man('loader', 0.36, -0.12, mail, cloth, timber, skin,
+        shield=False, spear=False, weapon='none', pose='idle')
+    return 1.0
 
 
 def agent():
@@ -823,6 +979,13 @@ def write_png(path, width, height, rgba):
         handle.write(blob)
 
 
+def siege(build, pose, facing):
+    """One of the engines, turned to face the way a man would."""
+    radius = build(pose)
+    spin((360 - facing * 45) % 360)
+    return radius
+
+
 def main():
     camera = setup_scene()
     scratch = os.path.join(ROOT, '.sprite-scratch.png')
@@ -838,10 +1001,10 @@ def main():
     wanted.append(('captain', lambda: general(False)))
     wanted.append(('general', lambda: general(True)))
     # Every kind of soldier, in two kits, eight directions and six poses.
-    # Seven hundred and sixty-eight renders: the price of a battle in which
-    # the men face the men they are fighting, move their legs on the way
-    # there, are not all the same man, and throw away their shields when
-    # they break.
+    # Seven hundred and sixty-eight renders, and the largest single thing on
+    # the sheet: the price of a battle in which the men face the men they are
+    # fighting, move their legs on the way there, are not all the same man,
+    # and throw away their shields when they break.
     kinds = (
         ('spearman', dict(weapon='spear')),
         ('swordsman', dict(weapon='sword')),
@@ -862,6 +1025,28 @@ def main():
                         lambda o=options, p=pose, f=facing, k=kit:
                             fighter(pose=p, facing=f, kit=k, **o),
                     ))
+    # Going down: two frames, in both kits and all eight directions, and no
+    # kinds at all. Thirty-two renders for the second between a man and a
+    # body, where doing it per kind of soldier would have cost two hundred
+    # and fifty-six for a difference nobody could see — he has dropped the
+    # thing that would have told them apart.
+    for kit in range(2):
+        for facing in range(8):
+            for pose in ('fall-a', 'fall-b'):
+                wanted.append((
+                    f'falling_{kit}_{facing}_{pose.replace("-", "")}',
+                    lambda p=pose, f=facing, k=kit: falling(p, f, k),
+                ))
+    # The two siege silhouettes, in the same eight directions. No kits: a
+    # machine is not wearing anything, so it is always kit nought, and the
+    # only two things it does are wait and loose.
+    for name, build in (('engine', engine), ('cannon', cannon)):
+        for facing in range(8):
+            for pose in ('idle', 'fight'):
+                wanted.append((
+                    f'{name}_0_{facing}_{pose}',
+                    lambda b=build, p=pose, f=facing: siege(b, p, f),
+                ))
     wanted.append(('galley', lambda: vessel(True)))
     wanted.append(('roundship', lambda: vessel(False)))
     wanted.append(('agent', lambda: agent()))

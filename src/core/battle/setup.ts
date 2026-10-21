@@ -13,6 +13,8 @@ import type { Army, Fleet, Regiment } from '../campaign/state';
 import type { BattleSetup, BattleUnit, Side } from './types';
 import { FIELD_DEPTH, FIELD_WIDTH } from './types';
 import { frontageOf } from './sim';
+import type { TimeOfDay, Weather } from './weather';
+import { rollTimeOfDay, rollWeather } from './weather';
 
 export interface SideComposition {
   readonly faction: FactionId;
@@ -36,6 +38,14 @@ export interface BattleParams {
   readonly walls?: WallTier;
   /** True when this is a fight between fleets. */
   readonly naval?: boolean;
+  /**
+   * The sky and the hour, when the caller wants to choose them — a custom
+   * battle set up from the main menu, or a test that needs a known one.
+   * Left out, they are rolled from the battle's own seed, which is what the
+   * campaign does and is why a replayed campaign gets the same weather.
+   */
+  readonly weather?: Weather;
+  readonly timeOfDay?: TimeOfDay;
 }
 
 /** The front line each side forms up on. */
@@ -240,6 +250,8 @@ function line(
 export function buildBattle(params: BattleParams): BattleSetup {
   const attackerUnits = deploySide(params.attacker, 'attacker');
   const defenderUnits = deploySide(params.defender, 'defender');
+  const naval = params.naval ?? false;
+  const assault = Boolean(params.walls && params.walls !== 'none');
   return {
     seed: params.seed,
     terrain: params.terrain,
@@ -258,6 +270,8 @@ export function buildBattle(params: BattleParams): BattleSetup {
     attackerCommand: params.attacker.command,
     defenderCommand: params.defender.command,
     isWinter: params.isWinter,
-    naval: params.naval ?? false,
+    weather: params.weather ?? rollWeather(params.seed, params.isWinter, params.terrain),
+    timeOfDay: params.timeOfDay ?? rollTimeOfDay(params.seed, naval, assault),
+    naval,
   };
 }

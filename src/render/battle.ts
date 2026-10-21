@@ -17,17 +17,27 @@
  * ammunition is shooting at something, and dust rises only where men are
  * actually in contact.
  */
-import type { Point } from '../core/types';
+import type { FactionId, Point } from '../core/types';
 import { UNIT_ROLE } from '../core/types';
 import { getUnitType } from '../core/data/units';
 import { tryGetFaction } from '../core/data/factions';
 import type { BattleState } from '../core/battle/sim';
-import { frontage } from '../core/battle/sim';
-import type { BattleSettlement, BattleUnit } from '../core/battle/types';
+import { frontage, isShooting } from '../core/battle/sim';
+import type { BattleSettlement, BattleUnit, Fallen, Side } from '../core/battle/types';
 import { FIELD_DEPTH, FIELD_WIDTH } from '../core/battle/types';
 import { WATER, rampFor, snap, stepFor, tileNoise } from './iso/palette';
 import { armsCanvas } from './arms';
-import { facingIndex, figureFor, figureSprite, kitFor, poseFor } from './figures';
+import {
+  FALL_SECONDS,
+  facingIndex,
+  fallingSprite,
+  figureFor,
+  figureSprite,
+  isEngine,
+  kitFor,
+  poseFor,
+} from './figures';
+import { drawPrecipitation, drawSky, veilOf } from './weather';
 import { dressGround, grainOf } from './iso/terrain';
 import { loadSprites, stamp } from './iso/sprites';
 
@@ -43,6 +53,13 @@ export interface BattleView {
   centre: Point;
   /** True once the player has moved the camera themselves. */
   touched: boolean;
+  /**
+   * Whose eyes this is. Enemy regiments fade out past what the weather and
+   * the hour allow anyone to see; your own never do, because you know where
+   * you put them. Left undefined for a battle nobody is commanding, which
+   * is drawn with the whole field visible.
+   */
+  side: Side | undefined;
 }
 
 /** How many screen pixels go to one pixel of the picture. */
@@ -289,22 +306,115 @@ export function drawBattle(
 
   drawGround(paint, state, frame);
   drawWorks(paint, state, frame);
+  drawFallen(paint, state, frame);
   drawMelee(paint, state, frame);
 
   // Back to front, so that a rank in front hides the one behind it.
   const ordered = [...state.units]
     .filter((unit) => unit.stance !== 'destroyed' && !unit.fled)
     .sort((a, b) => a.position.y - b.position.y);
-  for (const unit of ordered) drawUnit(paint, state, frame, unit);
-  drawVolleys(paint, state, frame);
+  // How plainly each one can be seen from where the player is standing,
+  // worked out once: the standard over a regiment fades with the regiment.
+  const seen = new Map<string, number>();
+  for (const unit of ordered) {
+    seen.set(unit.id, veilOf(state, unit.position, view.side, unit.side));
+  }
+  for (const unit of ordered) drawUnit(paint, state, frame, unit, seen.get(unit.id) ?? 1);
+  drawVolleys(paint, state, frame, seen);
+  // The light, and then what is falling through it. The wash goes under the
+  // rain rather than over it, because rain you cannot see is not weather,
+  // it is a grey screen.
+  drawSky(paint, state, width, height, state.time);
+  drawPrecipitation(paint, state, width, height, state.time);
 
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, view.width, view.height);
   ctx.drawImage(small!, 0, 0, width, height, 0, 0, width * PIXEL, height * PIXEL);
 
-  for (const unit of ordered) drawStandard(ctx, view, frame, unit, state);
-  for (const unit of ordered) drawMoraleBar(ctx, view, frame, unit);
+  for (const unit of ordered) drawStandard(ctx, view, frame, unit, state, seen.get(unit.id) ?? 1);
+  for (const unit of ordered) {
+    if ((seen.get(unit.id) ?? 1) > 0.3) drawMoraleBar(ctx, view, frame, unit);
+  }
   drawSelection(ctx, state, view, frame);
+}
+
+// ---------------------------------------------------------------------------
+// The dead
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the bodies are, nearest last.
+ *
+ * The list only ever grows, so it is sorted again when it has grown and not
+ * once a frame. A long battle ends with a few thousand men on the ground and
+ * re-sorting them sixty times a second to draw the same picture would be the
+ * most expensive thing on this screen by a wide margin.
+ */
+let bodies: { state: BattleState; count: number; sorted: Fallen[] } | undefined;
+
+function fallenInOrder(state: BattleState): readonly Fallen[] {
+  if (!bodies || bodies.state !== state || bodies.count !== state.fallen.length) {
+    bodies = {
+      state,
+      count: state.fallen.length,
+      sorted: [...state.fallen].sort((a, b) => a.y - b.y),
+    };
+  }
+  return bodies.sorted;
+}
+
+const bodyColours = new Map<string, string>();
+
+function colourOf(faction: FactionId): string {
+  let colour = bodyColours.get(faction);
+  if (!colour) {
+    colour = tryGetFaction(faction)?.colour ?? '#9a9a9a';
+    bodyColours.set(faction, colour);
+  }
+  return colour;
+}
+
+/**
+ * The dead, where they died.
+ *
+ * They used to be a scatter pinned to the regiment that had lost them, which
+ * meant a regiment dragged its own dead across the field behind it and took
+ * them away when it marched off. These are the men the simulation actually
+ * killed, at the place and the moment it killed them, and they stay there
+ * for the rest of the day — which is what a battlefield is.
+ *
+ * A man takes a second to go down. For that second he is drawn falling, at
+ * a size running from a standing man's down to a body's, so that the moment
+ * of dying is the one thing on this field that is not a cut between two
+ * pictures. They are never veiled by the weather: a corpse is ground, not
+ * intelligence, and knowing men died over there tells you nothing about who
+ * is standing there now.
+ */
+function drawFallen(ctx: CanvasRenderingContext2D, state: BattleState, frame: Frame): void {
+  if (frame.scale < 0.45 || state.fallen.length === 0) return;
+  const lying = Math.max(5, Math.min(23, frame.scale * 9.5));
+  const standing = Math.max(6, Math.min(34, frame.scale * 13));
+  for (const body of fallenInOrder(state)) {
+    const at = floorOf(frame, body);
+    const y = at.y - lift(frame, state.terrainHeight(body));
+    if (at.x < -40 || at.x > frame.width + 40) continue;
+    if (y < -60 || y > frame.height + 60) continue;
+    const colour = colourOf(body.faction);
+    const since = state.time - body.at;
+    if (since >= 0 && since < FALL_SECONDS) {
+      const through = since / FALL_SECONDS;
+      stamp(
+        ctx,
+        fallingSprite(body.kit, facingIndex(body.facing, SQUASH), since),
+        at.x,
+        y,
+        standing + (lying - standing) * through,
+        colour,
+      );
+    } else {
+      stamp(ctx, body.kit ? 'fallen2' : 'fallen', at.x, y, lying, colour, false);
+    }
+  }
 }
 
 /**
@@ -473,7 +583,9 @@ function drawUnit(
   state: BattleState,
   frame: Frame,
   unit: BattleUnit,
+  veil: number,
 ): void {
+  if (veil <= 0.02) return;
   const type = getUnitType(unit.type);
   const mounted = type.mounted;
   const afloat = type.unitClass === 'warship' || type.unitClass === 'transport';
@@ -486,7 +598,7 @@ function drawUnit(
   if (at.x < -40 || at.x > frame.width + 40) return;
   if (baseY < -60 || baseY > frame.height + 60) return;
 
-  ctx.globalAlpha = unit.stance === 'routing' ? 0.6 : 1;
+  ctx.globalAlpha = (unit.stance === 'routing' ? 0.6 : 1) * veil;
 
   if (afloat) {
     // A hull's length is her own, not a function of how many men are aboard
@@ -505,25 +617,34 @@ function drawUnit(
     return;
   }
 
-  // The dead, lying where the regiment has been fighting: a body a man, as
-  // many as it has lost. The simulation does not keep a body's position and
-  // does not need to — what the eye reads off a field is how much of it has
-  // been fought over. They are pinned to the regiment's position rounded to
-  // the nearest few metres, so a unit shuffling about does not drag its own
-  // dead along behind it a pixel at a time.
-  const lost = Math.max(0, unit.startingSoldiers - unit.soldiers);
-  if (lost > 0 && frame.scale > 0.45) {
-    const bodies = Math.min(30, Math.round(lost / Math.max(5, unit.startingSoldiers / 26)));
-    const anchorX = Math.round(unit.position.x / 7);
-    const anchorY = Math.round(unit.position.y / 7);
-    const size = Math.max(5, Math.min(26, frame.scale * 11));
-    for (let i = 0; i < bodies; i++) {
-      const a = tileNoise(anchorX, anchorY, 13 + i * 5);
-      const b = tileNoise(anchorY, anchorX, 29 + i * 5);
-      const px = at.x + (a - 0.5) * across * 1.3;
-      const py = baseY + (b - 0.25) * frame.scale * 34 * SQUASH;
-      stamp(ctx, b > 0.5 ? 'fallen2' : 'fallen', px, py, size, colour, false);
+  const kind = figureFor(type.unitClass, unit.type);
+  const facing = facingIndex(unit.facing, SQUASH);
+
+  if (isEngine(kind)) {
+    // A siege train is machines, not ranks: one engine to a dozen crew, laid
+    // out along whatever frontage it has, and never fewer than one. Each
+    // sprite carries its own gunners, which is why no men are drawn here.
+    const pieces = Math.max(1, Math.min(6, Math.round(unit.soldiers / 14)));
+    const size = Math.max(10, Math.min(52, frame.scale * 22));
+    const span = Math.max(across, size * pieces * 0.85);
+    const loosing = isShooting(state, unit);
+    for (let i = 0; i < pieces; i++) {
+      // A battery does not loose together. The model fires at a steady rate
+      // rather than in shots, so this is the one thing on the field drawn to
+      // a cadence of its own: each piece shows its loosing frame in turn for
+      // as long as it takes to see, while the regiment is in fact shooting.
+      const working = loosing && (state.time + i * 3.1) % 9 < 1.3;
+      stamp(
+        ctx,
+        figureSprite(kind, 0, facing, working ? 'fight' : 'idle'),
+        at.x - span / 2 + (span / pieces) * (i + 0.5),
+        baseY,
+        size,
+        colour,
+      );
     }
+    ctx.globalAlpha = 1;
+    return;
   }
 
   // The men themselves. Ranks run back into the picture, so each one is
@@ -545,8 +666,6 @@ function drawUnit(
   );
   const rankStep = manSize * (mounted ? 0.5 : 0.42);
   const figures = Math.max(1, Math.round(files * ranks * standing));
-  const kind = figureFor(type.unitClass);
-  const facing = facingIndex(unit.facing, SQUASH);
   // A regiment pressed up against another leans into it. One offset on the
   // whole block, toward whoever it is fighting, and a line of battle stops
   // being two blocks a pace apart and becomes two blocks in contact.
@@ -604,8 +723,10 @@ function drawStandard(
   frame: Frame,
   unit: BattleUnit,
   state: BattleState,
+  veil: number,
 ): void {
   if (unit.stance === 'destroyed' || unit.fled) return;
+  if (veil <= 0.02) return;
   const ground = state.terrainHeight(unit.position);
   const at = floorOf(frame, unit.position);
   const baseY = at.y - lift(frame, ground);
@@ -621,7 +742,7 @@ function drawStandard(
   // regiment is a banner nobody can see.
   const overhead = Math.max(14, frame.scale * 34) * PIXEL * 0.5;
   const top = y - height - overhead;
-  ctx.globalAlpha = unit.stance === 'routing' ? 0.55 : 1;
+  ctx.globalAlpha = (unit.stance === 'routing' ? 0.55 : 1) * veil;
   ctx.fillStyle = 'rgba(10, 12, 10, 0.85)';
   ctx.fillRect(Math.round(x) - 1, Math.round(top), 2, height + Math.max(8, frame.scale * 14));
   // The cloth moves. Four strips of it, each lagging the one before, which
@@ -667,22 +788,22 @@ function drawMelee(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fra
 }
 
 /** Arrows, only where the simulation would have that unit shooting. */
-function drawVolleys(ctx: CanvasRenderingContext2D, state: BattleState, frame: Frame): void {
+function drawVolleys(
+  ctx: CanvasRenderingContext2D,
+  state: BattleState,
+  frame: Frame,
+  seen: ReadonlyMap<string, number>,
+): void {
   const byId = new Map(state.units.map((unit) => [unit.id, unit]));
   ctx.strokeStyle = 'rgba(240, 234, 214, 0.7)';
   ctx.lineWidth = 1;
   for (const unit of state.units) {
-    if (unit.fled || unit.stance === 'destroyed' || unit.stance === 'routing') continue;
-    if (unit.engagedWith.length > 0 || unit.ammunition <= 0) continue;
+    if ((seen.get(unit.id) ?? 1) <= 0.25) continue;
     const type = getUnitType(unit.type);
-    if (UNIT_ROLE[type.unitClass] !== 'missile' || type.range <= 0) continue;
+    if (UNIT_ROLE[type.unitClass] !== 'missile') continue;
+    if (!isShooting(state, unit)) continue;
     const target = unit.order.targetUnit ? byId.get(unit.order.targetUnit) : undefined;
-    if (!target || target.fled || target.stance === 'destroyed') continue;
-    const distance = Math.hypot(
-      target.position.x - unit.position.x,
-      target.position.y - unit.position.y,
-    );
-    if (distance > type.range) continue;
+    if (!target) continue;
 
     const from = floorOf(frame, unit.position);
     const to = floorOf(frame, target.position);

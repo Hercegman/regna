@@ -6,13 +6,26 @@
  * which draws a hundred of them in ranks and wants them facing the men they
  * are fighting, and the card under an army, which draws one standing still.
  */
-import type { UnitClass } from '../core/types';
+import type { UnitClass, UnitTypeId } from '../core/types';
 import type { SpriteName } from './iso/sprites';
 
-/** The eight kinds the sheet has a man for. */
+/**
+ * The eight kinds the sheet has a man for, and the two it has a machine for.
+ *
+ * The engines are here rather than in a corner of their own because a siege
+ * train stands in the line like everything else and the renderer should not
+ * have to ask twice. They carry their own crew in the sprite, which is why
+ * there is no `kit` for them: a trebuchet is not wearing anything.
+ */
 export type Figure =
   | 'spearman' | 'swordsman' | 'pikeman' | 'archer'
-  | 'crossbowman' | 'gunner' | 'knight' | 'lighthorse';
+  | 'crossbowman' | 'gunner' | 'knight' | 'lighthorse'
+  | 'engine' | 'cannon';
+
+/** True for the two that are machines, which have one kit and two poses. */
+export function isEngine(kind: Figure): boolean {
+  return kind === 'engine' || kind === 'cannon';
+}
 
 /**
  * What he is doing.
@@ -25,7 +38,19 @@ export type Figure =
  */
 export type Pose = 'idle' | 'stepa' | 'stepb' | 'fight' | 'fleea' | 'fleeb';
 
-export function figureFor(unitClass: UnitClass): Figure {
+/**
+ * Which figure a kind of soldier is drawn as.
+ *
+ * The type id matters for exactly one class. A siege train is a ballista, a
+ * catapult, a trebuchet, a bombard or a culverin, and the first three are a
+ * frame with an arm on it while the last two are a barrel on a bed — which
+ * is two silhouettes, not five and not one. Until the sheet had either of
+ * them every engine on the field was drawn as a swordsman.
+ */
+export function figureFor(unitClass: UnitClass, type?: UnitTypeId): Figure {
+  if (unitClass === 'siege_engine') {
+    return type === 'bombard' || type === 'culverin' ? 'cannon' : 'engine';
+  }
   switch (unitClass) {
     case 'spearmen':
       return 'spearman';
@@ -68,7 +93,31 @@ export function figureSprite(
   facing: number,
   pose: Pose,
 ): SpriteName {
+  if (isEngine(kind)) {
+    // One kit, and only two things it does: wait, and loose.
+    const working = pose === 'fight' ? 'fight' : 'idle';
+    return `${kind}_0_${facing}_${working}` as SpriteName;
+  }
   return `${kind}_${kit}_${facing}_${pose}` as SpriteName;
+}
+
+/** How long a man takes to go down, in seconds of battle time. */
+export const FALL_SECONDS = 1;
+
+/**
+ * A man in the act of being killed.
+ *
+ * Two frames, and then he is a body. He is not any particular kind of
+ * soldier here and the sheet does not render him as one: the first thing a
+ * man lets go of is what he was holding, so a spearman going down and an
+ * archer going down are the same picture. See `falling` in the sprite tool.
+ *
+ * `since` is how long ago he was hit. Past `FALL_SECONDS` there is no sprite
+ * for him and the caller should be drawing `fallen` instead.
+ */
+export function fallingSprite(kit: number, facing: number, since: number): SpriteName {
+  const frame = since < FALL_SECONDS * 0.45 ? 'falla' : 'fallb';
+  return `falling_${kit}_${facing}_${frame}` as SpriteName;
 }
 
 /** Which kit a man wears, fixed to where he stands in his own block. */

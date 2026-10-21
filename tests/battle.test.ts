@@ -39,6 +39,13 @@ function battle(
     seed: options.seed ?? 'battle-test',
     terrain: options.terrain ?? 'plains',
     isWinter: false,
+    // The weather is pinned here and tried in `weather.test.ts`. Left to the
+    // seed, every test in this file would be measuring melee and missiles
+    // through whatever sky that particular battle happened to roll — and one
+    // of them did, silently, until a seed came up fog and the archers stopped
+    // being able to see what they were shooting at.
+    weather: 'clear',
+    timeOfDay: 'day',
     attacker,
     defender,
   });

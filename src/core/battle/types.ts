@@ -8,6 +8,7 @@
  * the player is shown are the odds that actually apply.
  */
 import type { FactionId, Point, Terrain, UnitTypeId, WallTier } from '../types';
+import type { TimeOfDay, Weather } from './weather';
 
 export type Side = 'attacker' | 'defender';
 
@@ -98,14 +99,63 @@ export interface BattleSetup {
   readonly attackerCommand: number;
   readonly defenderCommand: number;
   readonly isWinter: boolean;
+  /**
+   * What is falling out of the sky, and what hour it is.
+   *
+   * Rolled once from the battle's own seed, before anything moves, so that
+   * replaying a campaign fights the same battle under the same sky. What
+   * they are worth is in `weather.ts`, and the simulation reads it through
+   * `BattleState.conditions` rather than switching on these directly.
+   */
+  readonly weather: Weather;
+  readonly timeOfDay: TimeOfDay;
   /** True for a sea fight: open water, no cover, and nowhere to run. */
   readonly naval: boolean;
 }
 
+/**
+ * One man, down.
+ *
+ * The simulation has always counted casualties and never placed them, which
+ * is why the dead on screen were a scatter of bodies pinned to the regiment
+ * that lost them and vanished the moment it marched off. This is the record
+ * instead: where he fell, which way he was facing when he did, and when —
+ * so that he can be drawn going down for the second it takes and then left
+ * lying there for the rest of the day.
+ *
+ * It is kept only when somebody is watching. An auto-resolved battle runs
+ * the identical model with the recording switched off, because a campaign
+ * turn that resolves nine sieges has no use for forty thousand bodies and
+ * the positions are derived rather than drawn, so leaving them out cannot
+ * change the result.
+ */
+export interface Fallen {
+  readonly x: number;
+  readonly y: number;
+  readonly faction: FactionId;
+  readonly side: Side;
+  /** Facing of the regiment he was standing in, in radians. */
+  readonly facing: number;
+  /** Battle seconds at which he was hit. */
+  readonly at: number;
+  /** Which of the two kits he was wearing, and which body he lies as. */
+  readonly kit: number;
+}
+
 export type BattleOutcome = 'attacker' | 'defender' | 'draw';
+
+/**
+ * Why the fighting stopped.
+ *
+ * Worth recording because two of these are not defeats. An army that is
+ * still standing when the light goes has not lost; it has run out of day,
+ * which happened often enough that commanders planned around it.
+ */
+export type BattleEnding = 'rout' | 'nightfall' | 'stalemate' | 'time';
 
 export interface BattleResult {
   readonly outcome: BattleOutcome;
+  readonly ended: BattleEnding;
   /** Seconds of battle time elapsed. */
   readonly duration: number;
   readonly attackerLosses: number;

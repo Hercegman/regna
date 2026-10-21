@@ -11,14 +11,27 @@ import { clamp, distance, UNIT_ROLE } from '../types';
 import { Rng } from '../rng';
 import { getUnitType } from '../data/units';
 import type {
+  BattleEnding,
   BattleResult,
   BattleSetup,
   BattleUnit,
+  Fallen,
   Side,
 } from './types';
 import { BATTLE_TIME_LIMIT, FIELD_DEPTH, FIELD_WIDTH, STALEMATE_SECONDS, TICK } from './types';
 import { flatTerrain, ridgeTerrain } from './terrain';
 import { planSide } from './ai';
+import type { Conditions } from './weather';
+import { conditionsOf } from './weather';
+
+/**
+ * How many bodies are worth keeping.
+ *
+ * A field strewn with four thousand men is a field strewn; the four
+ * thousand and first tells nobody anything and the list is walked every
+ * frame. Battles rarely reach it — it is a ceiling, not a budget.
+ */
+const MAX_FALLEN = 4000;
 
 export interface BattleState {
   readonly setup: BattleSetup;
@@ -39,9 +52,38 @@ export interface BattleState {
   lastTotal: number;
   /** True once the first casualty has been inflicted. */
   engaged: boolean;
+  /**
+   * What the weather and the hour are worth, worked out once. Everything in
+   * here is read by the model, not by the renderer: these numbers slacken
+   * bowstrings, mire horses and shorten tempers.
+   */
+  readonly conditions: Conditions;
+  /**
+   * Every man who has gone down, where and when, or empty when nobody is
+   * watching. See `Fallen`.
+   */
+  fallen: Fallen[];
+  /**
+   * Fractions of a man owed to the record. Casualties come off a regiment a
+   * tenth of a man at a time; a body is laid out when the tenths make one,
+   * so the field holds exactly as many dead as the battle has killed.
+   */
+  readonly debt: Map<string, number>;
+  readonly recording: boolean;
 }
 
-export function createBattle(setup: BattleSetup): BattleState {
+export interface BattleOptions {
+  /**
+   * Keep the list of the dead. On for a battle somebody is watching, off
+   * for one the campaign resolves in the background — where it would be
+   * thousands of entries a turn for a picture nobody draws. It cannot
+   * change the outcome: no position in the record is drawn from the
+   * battle's generator.
+   */
+  readonly record?: boolean;
+}
+
+export function createBattle(setup: BattleSetup, options: BattleOptions = {}): BattleState {
   const terrain =
     setup.terrain === 'hills' || setup.terrain === 'mountains'
       ? ridgeTerrain(setup.terrain)
@@ -60,7 +102,73 @@ export function createBattle(setup: BattleSetup): BattleState {
     lastCasualtyAt: 0,
     lastTotal: units.reduce((sum, unit) => sum + unit.soldiers, 0),
     engaged: false,
+    conditions: conditionsOf(setup.weather, setup.timeOfDay, setup.terrain),
+    fallen: [],
+    debt: new Map(),
+    recording: options.record ?? false,
   };
+}
+
+// ---------------------------------------------------------------------------
+// The dead
+// ---------------------------------------------------------------------------
+
+/**
+ * Lays out the men a blow has just killed.
+ *
+ * Where a man falls is not in the model and does not need to be: the model
+ * knows how many of a regiment are left, and a regiment is a block of ground
+ * with men standing on it. So a body goes down somewhere in that block, a
+ * little towards whoever is killing them, turned the way the regiment is
+ * facing — and it stays there, because the ground a fight was had on does
+ * not move when the survivors march off it.
+ *
+ * The scatter is a hash of a counter rather than a draw from the battle's
+ * generator. That is the whole reason recording can be switched off without
+ * changing a single outcome.
+ */
+function scatter(seq: number, salt: number): number {
+  const x = Math.sin(seq * 127.1 + salt * 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function recordDeaths(
+  state: BattleState,
+  unit: BattleUnit,
+  killed: number,
+  from: Point | undefined,
+): void {
+  if (!state.recording || killed <= 0) return;
+  const owed = (state.debt.get(unit.id) ?? 0) + killed;
+  let bodies = Math.floor(owed);
+  state.debt.set(unit.id, owed - bodies);
+  if (bodies <= 0) return;
+  if (state.fallen.length + bodies > MAX_FALLEN) bodies = MAX_FALLEN - state.fallen.length;
+
+  const across = frontage(unit);
+  // Towards whoever struck the blow, because the men who die are the men in
+  // front: a regiment's dead lie along the face it was fighting on.
+  const toward = from
+    ? Math.atan2(from.y - unit.position.y, from.x - unit.position.x)
+    : unit.facing;
+  for (let i = 0; i < bodies; i++) {
+    const seq = state.fallen.length;
+    // Wider than the regiment's own frontage, and on purpose. Men who are
+    // hit stumble out of the line before they go down, and a scatter cut
+    // exactly to the block draws a solid mound rather than a field with the
+    // dead on it.
+    const side = (scatter(seq, 13) - 0.5) * across * 1.4;
+    const depth = scatter(seq, 29) * (across * 0.3 + 9);
+    state.fallen.push({
+      x: unit.position.x + Math.cos(unit.facing + Math.PI / 2) * side + Math.cos(toward) * depth,
+      y: unit.position.y + Math.sin(unit.facing + Math.PI / 2) * side + Math.sin(toward) * depth,
+      faction: unit.faction,
+      side: unit.side,
+      facing: toward,
+      at: state.time,
+      kit: scatter(seq, 71) > 0.5 ? 1 : 0,
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +255,9 @@ export function moraleThreshold(state: BattleState, unit: BattleUnit): number {
   if (has(unit, 'berserk')) threshold += 6;
   if (has(unit, 'highly_trained')) threshold += 2;
   if (state.setup.isWinter) threshold -= 1;
+  // Standing in the rain in the dark waiting to be charged by something you
+  // cannot see is its own argument for going home.
+  threshold += state.conditions.morale;
   return Math.max(3, threshold);
 }
 
@@ -185,6 +296,11 @@ function speedOf(state: BattleState, unit: BattleUnit): number {
   else if (terrain === 'desert') speed *= 0.9;
   if (has(unit, 'mountaineer') && (terrain === 'mountains' || terrain === 'hills')) speed /= 0.7;
   if (has(unit, 'desert_hardy') && terrain === 'desert') speed /= 0.9;
+  // Mud, snow, and ground nobody can see the holes in. A horse suffers it
+  // worse than a man does: Agincourt was lost by cavalry that could not get
+  // across a ploughed field, not by cavalry that would not.
+  const footing = state.conditions.footing;
+  speed *= isMounted(unit) ? 1 - (1 - footing) * 1.5 : footing;
   return Math.max(0.2, speed);
 }
 
@@ -322,7 +438,10 @@ function applyMissiles(state: BattleState, dt: number): void {
     const target = pickMissileTarget(state, shooter);
     if (!target) continue;
     const gap = distance(shooter.position, target.position);
-    if (gap > type.range) continue;
+    // You cannot shoot what you cannot see. In anything short of fog this is
+    // further than the longest bow in the game and changes nothing; in fog
+    // it is the length of a street and the archers are spectators.
+    if (gap > Math.min(type.range, state.conditions.visibility)) continue;
 
     // Rate of fire: bows shoot faster than crossbows, guns slower still.
     const shotsPerSecond =
@@ -352,26 +471,64 @@ function applyMissiles(state: BattleState, dt: number): void {
     // draw comes from the battle's own generator, so the variation is
     // reproducible but the same matchup is not a foregone conclusion.
     const variance = state.rng.float(0.82, 1.18);
+    // A wet string has lost its cast and a man shooting into driving snow is
+    // guessing. Powder is worse than either: it does not half-fire, it fails
+    // to go off, which is what happened to the Genoese at Crecy and to every
+    // gun caught in the open by rain for the next three centuries.
+    const conditions = state.conditions.aim * (usesPowder(shooter) ? state.conditions.powder : 1);
     const hits =
       shooter.soldiers * rounds * rangeFactor * skill * protection * density *
-      (type.missileAttack / 11) * 0.09 * variance;
+      (type.missileAttack / 11) * 0.09 * variance * conditions;
 
     const kills = Math.min(target.soldiers, Math.max(0, hits));
     target.soldiers -= kills;
+    recordDeaths(state, target, kills, shooter.position);
     // Being shot at is demoralising out of proportion to the casualties.
     target.shock += (kills / Math.max(1, target.startingSoldiers)) * 26;
   }
 }
 
+/** Guns and handgonnes, which rain stops rather than hinders. */
+function usesPowder(unit: BattleUnit): boolean {
+  const type = getUnitType(unit.type);
+  return (
+    type.unitClass === 'gunpowder_infantry' ||
+    unit.type === 'bombard' ||
+    unit.type === 'culverin'
+  );
+}
+
+/**
+ * Is this regiment shooting at anything, this instant?
+ *
+ * Exactly the question `applyMissiles` answers before it works out hits, and
+ * it lives here because two other things ask it: the renderer, which draws
+ * arrows only where there are arrows, and the sound, which looses a volley
+ * only where one is being loosed. Neither of them may have its own idea of
+ * when a bow is being drawn.
+ */
+export function isShooting(state: BattleState, unit: BattleUnit): boolean {
+  if (unit.fled || unit.stance === 'destroyed' || unit.stance === 'routing') return false;
+  if (unit.stance === 'melee' || unit.engagedWith.length > 0) return false;
+  if (unit.ammunition <= 0) return false;
+  const type = getUnitType(unit.type);
+  if (type.range <= 0) return false;
+  const target = unit.order.targetUnit ? state.byId.get(unit.order.targetUnit) : undefined;
+  if (!target || target.fled || target.stance === 'destroyed') return false;
+  const gap = distance(unit.position, target.position);
+  return gap <= Math.min(type.range, state.conditions.visibility);
+}
+
 function pickMissileTarget(state: BattleState, shooter: BattleUnit): BattleUnit | undefined {
   const type = getUnitType(shooter.type);
+  const reach = Math.min(type.range, state.conditions.visibility);
   let best: BattleUnit | undefined;
   let bestScore = -Infinity;
   for (const candidate of state.units) {
     if (candidate.side === shooter.side) continue;
     if (candidate.stance === 'destroyed' || candidate.fled) continue;
     const gap = distance(shooter.position, candidate.position);
-    if (gap > type.range) continue;
+    if (gap > reach) continue;
     // Prefer close, large, unarmoured targets, and avoid shooting into our own
     // melee unless there is nothing else.
     let score = -gap / 100 + candidate.soldiers / 120;
@@ -436,12 +593,13 @@ function applyMelee(state: BattleState, dt: number): void {
 
       kills = Math.min(other.soldiers, Math.max(0, kills));
       other.soldiers -= kills;
+      recordDeaths(state, other, kills, unit.position);
       other.shock += (kills / Math.max(1, other.startingSoldiers)) * 34;
       if (!isFrontal(other, unit.position)) other.shock += 0.35;
     }
     // Melee is exhausting; armour makes it worse.
     const type = getUnitType(unit.type);
-    const burden = 1 + type.armour * 0.06;
+    const burden = (1 + type.armour * 0.06) * state.conditions.toil;
     unit.fatigue = clamp(unit.fatigue + 0.0022 * burden * dt * (has(unit, 'hardy') ? 0.6 : 1), 0, 1);
     if (unit.chargeTicks > 0) unit.chargeTicks -= 1;
   }
@@ -449,7 +607,11 @@ function applyMelee(state: BattleState, dt: number): void {
   // Movement also tires troops, less than fighting does.
   for (const unit of state.units) {
     if (unit.stance === 'advancing' || unit.stance === 'charging' || unit.stance === 'routing') {
-      unit.fatigue = clamp(unit.fatigue + 0.00055 * dt * (has(unit, 'hardy') ? 0.6 : 1), 0, 1);
+      unit.fatigue = clamp(
+        unit.fatigue + 0.00055 * dt * state.conditions.toil * (has(unit, 'hardy') ? 0.6 : 1),
+        0,
+        1,
+      );
     } else if (unit.stance === 'holding' || unit.stance === 'forming') {
       unit.fatigue = clamp(unit.fatigue - 0.0006 * dt, 0, 1);
     }
@@ -542,9 +704,23 @@ function checkVictory(state: BattleState): void {
   // lines half a kilometre apart are marching towards each other, not standing
   // off, and cutting the battle short there would end it before it began.
   const stalled = state.engaged && state.time - state.lastCasualtyAt > STALEMATE_SECONDS;
+  // The light goes. A battle begun at dusk has about ten minutes of it, and
+  // armies that had not settled the thing by dark went back to their fires —
+  // which is why a commander with the day in hand did not attack at four in
+  // the afternoon.
+  const dark = state.time >= state.conditions.light;
 
-  if (attacker > 0 && defender > 0 && state.time < BATTLE_TIME_LIMIT && !stalled) return;
+  if (attacker > 0 && defender > 0 && state.time < BATTLE_TIME_LIMIT && !stalled && !dark) return;
 
+  const ended: BattleEnding =
+    attacker <= 0 || defender <= 0 ? 'rout' : dark ? 'nightfall' : stalled ? 'stalemate' : 'time';
+
+  const attackerScore = scoreSide(state, 'attacker');
+  const defenderScore = scoreSide(state, 'defender');
+  // Night is not neutral. The attacker has to have won by dark; the defender
+  // only has to still be there, because he is the one standing on the ground
+  // they were arguing about.
+  const margin = dark ? 1.15 : 1;
   const outcome =
     attacker <= 0 && defender <= 0
       ? 'draw'
@@ -553,15 +729,18 @@ function checkVictory(state: BattleState): void {
         : defender <= 0
           ? 'attacker'
           : // Time ran out: the side that kept more of its army holds the field.
-            scoreSide(state, 'attacker') > scoreSide(state, 'defender')
+            attackerScore > defenderScore * margin
             ? 'attacker'
-            : scoreSide(state, 'defender') > scoreSide(state, 'attacker')
+            : defenderScore > attackerScore
               ? 'defender'
-              : 'draw';
+              : dark
+                ? 'defender'
+                : 'draw';
 
   state.finished = true;
   state.result = {
     outcome,
+    ended,
     duration: state.time,
     attackerLosses: startingStrength(state.setup, 'attacker') - remainingSoldiers(state, 'attacker'),
     defenderLosses: startingStrength(state.setup, 'defender') - remainingSoldiers(state, 'defender'),

@@ -36,6 +36,7 @@ function view(): BattleView {
     zoom: 1,
     centre: { x: 0, y: 0 },
     touched: false,
+  side: undefined,
   };
 }
 

@@ -16,6 +16,8 @@ import {
 import { getUnitType } from '../core/data/units';
 import { getRegion } from '../core/data/regions';
 import { getSeaZone } from '../core/data/seas';
+import type { TimeOfDay, Weather } from '../core/battle/weather';
+import { HOUR_NAME, WEATHER_NAME } from '../core/battle/weather';
 import { unitTypeId } from '../core/types';
 import { FACTIONS, factionName } from '../core/data/factions';
 import { CampaignScreen } from './campaignScreen';
@@ -274,7 +276,7 @@ export class App {
     defender.location = attacker.location;
     const plan = planBattle(state, attacker.location, [attacker], [defender]);
     this.state = state;
-    const screen = new BattleScreen(this.host, plan, 'france', () => this.showMenu());
+    const screen = new BattleScreen(this.host, demoWeather(plan), 'france', () => this.showMenu());
     applyBattleParams(screen);
   }
 
@@ -301,6 +303,9 @@ export class App {
     for (const id of [
       'imperial_spearmen', 'imperial_spearmen', 'armoured_sergeants', 'halberdiers',
       'crossbow_militia', 'levy_archers', 'mailed_knights',
+      // A siege train, because nobody stormed a walled town without one and
+      // because this is the demo the engines are looked at in.
+      'trebuchet', 'bombard',
     ]) {
       const type = getUnitType(unitTypeId(id));
       besieger.regiments.push({ type: type.id, soldiers: type.soldiers, experience: 2 });
@@ -308,7 +313,7 @@ export class App {
     besieger.location = target.id;
     const plan = planBattle(state, target.id, [besieger], [], { isAssault: true });
     this.state = state;
-    const screen = new BattleScreen(this.host, plan, 'hre' as FactionId, () =>
+    const screen = new BattleScreen(this.host, demoWeather(plan), 'hre' as FactionId, () =>
       this.showFactionSelect(),
     );
     applyBattleParams(screen);
@@ -333,7 +338,7 @@ export class App {
     stock(genoese, ['war_galley', 'war_galley', 'great_galley', 'great_galley', 'nef']);
     const plan = planNavalBattle(state, 'adriatic_sea' as never, [venetian], [genoese]);
     this.state = state;
-    const screen = new BattleScreen(this.host, plan, 'venice', () => this.showMenu());
+    const screen = new BattleScreen(this.host, demoWeather(plan), 'venice', () => this.showMenu());
     applyBattleParams(screen);
   }
 
@@ -419,6 +424,31 @@ export class App {
 }
 
 /**
+ * `?weather=snow&hour=dusk` on a demo battle.
+ *
+ * The campaign rolls both from the battle's own seed and nothing in the game
+ * lets you choose them, which is correct and makes the five skies and four
+ * hours awkward to look at. This overrides them for the demo battles only,
+ * and an unknown name is ignored rather than trusted.
+ */
+function demoWeather(plan: BattlePlan): BattlePlan {
+  const params = new URLSearchParams(window.location.search);
+  const sky = params.get('weather');
+  const hour = params.get('hour');
+  const weather = sky && sky in WEATHER_NAME ? (sky as Weather) : undefined;
+  const timeOfDay = hour && hour in HOUR_NAME ? (hour as TimeOfDay) : undefined;
+  if (!weather && !timeOfDay) return plan;
+  return {
+    ...plan,
+    setup: {
+      ...plan.setup,
+      ...(weather ? { weather } : {}),
+      ...(timeOfDay ? { timeOfDay } : {}),
+    },
+  };
+}
+
+/**
  * Development parameters that open a battle at a chosen moment: `at=180`
  * advances three minutes before drawing, `play=1` starts the clock, and
  * `resolve=1` runs the whole thing at once.
@@ -429,6 +459,13 @@ function applyBattleParams(screen: BattleScreen): void {
   if (Number.isFinite(at) && at > 0) screen.advanceTo(Math.min(at, 2700));
   const zoom = Number.parseFloat(params.get('bzoom') ?? '');
   if (Number.isFinite(zoom) && zoom > 0) screen.setZoom(zoom);
+  // `blook=714,850` puts the camera over a point of the field in metres,
+  // which is how the siege train at the back of an army gets looked at
+  // without a sequence of drags.
+  const look = (params.get('blook') ?? '').split(',').map(Number);
+  if (look.length === 2 && look.every((value) => Number.isFinite(value))) {
+    screen.lookAt(look[0] as number, look[1] as number);
+  }
   if (params.get('play') === '1') screen.start();
   if (params.get('resolve') === '1') screen.resolveNow();
 }

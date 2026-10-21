@@ -15,6 +15,7 @@ import type { BattleState } from '../core/battle/sim';
 import { createBattle, stepBattle } from '../core/battle/sim';
 import type { BattleResult, BattleUnit, Side } from '../core/battle/types';
 import { BATTLE_TIME_LIMIT, TICK } from '../core/battle/types';
+import { HOUR_NAME, WEATHER_NAME } from '../core/battle/weather';
 import type { BattleView } from '../render/battle';
 import {
   clampBattleCamera,
@@ -66,7 +67,9 @@ export class BattleScreen {
     private readonly onDone: (result: BattleResult) => void,
   ) {
     clear(host);
-    this.battle = createBattle(plan.setup);
+    // Recording on: this is the battle somebody is watching, and the list
+    // of the dead is what puts bodies on the ground where men were killed.
+    this.battle = createBattle(plan.setup, { record: true });
     this.playerSide =
       plan.setup.attacker === playerFaction
         ? 'attacker'
@@ -107,6 +110,7 @@ export class BattleScreen {
       zoom: 1,
       centre: { x: 0, y: 0 },
       touched: false,
+      side: this.playerSide,
     };
     this.attachInput();
     this.resize();
@@ -274,6 +278,14 @@ export class BattleScreen {
     this.draw();
   }
 
+  /** Puts the camera over a point of the field, in metres. */
+  lookAt(x: number, y: number): void {
+    this.view.centre = { x, y };
+    this.view.touched = true;
+    clampBattleCamera(this.view);
+    this.draw();
+  }
+
   private selectedUnit(): BattleUnit | undefined {
     return this.battle.units.find((unit) => unit.id === this.view.selected);
   }
@@ -411,6 +423,16 @@ export class BattleScreen {
           this.plan.zone ? getSeaZone(this.plan.zone).name : pretty(setup.terrain),
         ),
         setup.isWinter && plaque('Season', 'Winter'),
+        plaque('Sky', WEATHER_NAME[setup.weather]),
+        // The light is only worth a plaque when it is running out. A battle
+        // begun at dusk has about ten minutes of it, and a commander who
+        // cannot see that number cannot plan around the thing it decides.
+        this.battle.conditions.light < BATTLE_TIME_LIMIT
+          ? plaque(
+              'Light',
+              `${Math.max(0, Math.ceil((this.battle.conditions.light - this.battle.time) / 60))} min`,
+            )
+          : plaque('Hour', HOUR_NAME[setup.timeOfDay]),
       ),
     );
     this.header.appendChild(el('div', { class: 'hud-purse' }));
@@ -777,13 +799,18 @@ export class BattleScreen {
         : (this.playerSide === 'attacker' && result.outcome === 'attacker') ||
           (this.playerSide === 'defender' && result.outcome === 'defender');
     const title =
-      result.outcome === 'draw'
-        ? 'The field is left undecided'
-        : won === undefined
-          ? `${factionName(result.outcome === 'attacker' ? this.plan.setup.attacker : this.plan.setup.defender)} holds the field`
-          : won
-            ? 'The field is ours'
-            : 'The day is lost';
+      // Night is the one ending that is not a verdict on anybody. The armies
+      // did not break each other; they ran out of day and went back to their
+      // fires, and the side that was standing on the ground keeps it.
+      result.ended === 'nightfall' && result.outcome === 'defender' && won !== true
+        ? 'Night falls, and the line holds'
+        : result.outcome === 'draw'
+          ? 'The field is left undecided'
+          : won === undefined
+            ? `${factionName(result.outcome === 'attacker' ? this.plan.setup.attacker : this.plan.setup.defender)} holds the field`
+            : won
+              ? 'The field is ours'
+              : 'The day is lost';
 
     const overlay = el('div', { class: 'battle-result' },
       el('div', { class: 'result-card' },
@@ -798,6 +825,16 @@ export class BattleScreen {
             count(this.playerSide === 'defender' ? result.attackerLosses : result.defenderLosses),
           ),
           row('Duration', `${Math.round(result.duration / 60)} minutes`),
+          row(
+            'Ended',
+            result.ended === 'rout'
+              ? 'An army broke'
+              : result.ended === 'nightfall'
+                ? 'Darkness'
+                : result.ended === 'stalemate'
+                  ? 'The armies drew apart'
+                  : 'The day ran out',
+          ),
         ),
         el('button', {
           class: 'primary',

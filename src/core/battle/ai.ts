@@ -58,6 +58,7 @@ function nearest(
 function chargeTarget(
   unit: BattleUnit,
   enemies: readonly BattleUnit[],
+  sight: number,
 ): BattleUnit | undefined {
   let best: BattleUnit | undefined;
   let bestScore = -Infinity;
@@ -65,10 +66,16 @@ function chargeTarget(
     if (!active(enemy)) continue;
     const type = getUnitType(enemy.type);
     const role = UNIT_ROLE[type.unitClass];
-    let score = -distance(unit.position, enemy.position) / 150;
-    if (role === 'missile') score += 3;
-    if (role === 'siege') score += 3.5;
-    if (enemy.engagedWith.length > 0) score += 2.2;
+    const gap = distance(unit.position, enemy.position);
+    let score = -gap / 150;
+    // Picking the exposed flank out of a line is a thing a captain does with
+    // his eyes. In fog or in the dark he can see the regiment in front of
+    // him and no further, so the choice collapses back to whatever is
+    // nearest — which is how cavalry was wasted on nights like Barnet.
+    const seen = gap <= sight;
+    if (seen && role === 'missile') score += 3;
+    if (seen && role === 'siege') score += 3.5;
+    if (seen && enemy.engagedWith.length > 0) score += 2.2;
     if (type.unitClass === 'pikemen' || type.abilities.includes('anti_cavalry')) score -= 4;
     if (type.unitClass === 'spearmen') score -= 1.5;
     if (score > bestScore) {
@@ -109,7 +116,7 @@ export function planSide(state: BattleState, side: Side): void {
       const threatened = nearest(unit.position, enemies, (enemy) => distance(unit.position, enemy.position) < 110);
       if (threatened) unit.order = { kind: 'attack', targetUnit: threatened.id };
       else if (morale < 0.55) {
-        const target = chargeTarget(unit, enemies);
+        const target = chargeTarget(unit, enemies, state.conditions.visibility);
         unit.order = target ? { kind: 'attack', targetUnit: target.id } : { kind: 'hold' };
       } else {
         unit.order = { kind: 'move', target: reservePosition(side, ownCentre) };
@@ -142,7 +149,7 @@ export function planSide(state: BattleState, side: Side): void {
     }
 
     if (role === 'cavalry') {
-      const target = chargeTarget(unit, enemies);
+      const target = chargeTarget(unit, enemies, state.conditions.visibility);
       if (target) {
         unit.order = { kind: 'attack', targetUnit: target.id };
       } else {
