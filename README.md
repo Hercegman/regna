@@ -152,8 +152,27 @@ fight at sea.
   throws away — which is the one thing that reads as a rout rather than as a
   march in the wrong direction.
 
-  Behind the fighting the dead lie where the regiment has been — a body a man,
-  on his back with his shield where it fell, in his lord's colours still.
+  And when a man is hit he goes down over a second rather than blinking out of
+  standing and into lying on his back: two frames of falling, pitched the way he
+  was facing, sized down from a standing man to a body. He has dropped his
+  shield and his weapon on the way, which is why there is one falling figure
+  rather than one for every kind of soldier — and why a knight comes off his
+  horse. Then he stays exactly where he fell, for the rest of the day. The dead
+  used to be a scatter pinned to the regiment that had lost them, so a regiment
+  dragged its own dead across the field behind it and took them away when it
+  marched off; now the simulation writes down each man as it kills him and the
+  ground a fight was had on keeps them.
+
+  A siege train is machines rather than ranks. Two silhouettes cover the five
+  kinds — a frame with a throwing arm for the ballista, the catapult and the
+  trebuchet, a barrel on a timber bed for the bombard and the culverin — one
+  engine to a dozen crew, each with its own gunners in the sprite, and a muzzle
+  flash on the gun that has just gone off. Until the sheet had either of them,
+  every engine on the field was drawn as a swordsman.
+
+  <div align="center">
+  <img src="docs/screenshots/engines.png" alt="An Imperial siege train drawn up behind the line: two trebuchets and two bombards with their crews" width="860" />
+  </div>
 
   And no two men beside each other are the same man. Every kind is rendered in
   two kits — a surcoat of his lord's colours over a kite shield under a flat
@@ -178,6 +197,46 @@ fight at sea.
   | Missiles | fall off with range, blunted by armour, and run out — nobody resupplies in the field |
   | Morale | shock from casualties, from being shot at, from a flank attack, and from watching the regiment beside you break |
   | Ground | hills and mountains fight on a ridge, and holding the crest is worth real advantage |
+  | The sky | what is falling, and what hour it is — below |
+
+- **Fought in whatever the morning gave.** Six skies — clear, overcast, rain,
+  storm, snow, fog — and four hours, rolled once from the battle's own seed so a
+  replayed campaign fights the same battle under the same sky. None of it is a
+  filter over the picture: every number the weather sets is read by the
+  simulation, and the fog that thins the field is the fog that stopped the
+  archers shooting.
+
+  | | |
+  | :--- | :--- |
+  | Sight | caps missile range and target selection. Fog closes a field to about a hundred metres, short of a longbow's reach, so an army in it is on top of you before anyone has shot |
+  | Bowstrings | a wet string loses its cast, and poor light costs the aiming |
+  | Powder | rain does not hinder a gun, it stops it — which is what happened to the Genoese at Crecy, and to every gun caught in the open for three centuries after |
+  | Footing | mud and snow, and cavalry suffers half again more than foot does |
+  | Toil | men tire faster in snow, in storm, and under a desert sun |
+  | Nerve | standing in the dark in the rain waiting to be charged by something you cannot see is its own argument for going home |
+  | The light | a battle begun at dusk has about eleven minutes of day left. After that the defender keeps the ground he is standing on, and the attacker needed a clear win rather than a narrow one |
+
+  <div align="center">
+  <img src="docs/screenshots/weather.png" alt="Snow falling on a field at dusk, with six minutes of light left" width="430" /> <img src="docs/screenshots/fog.png" alt="Fog, with the enemy line barely showing through it" width="430" />
+  </div>
+
+  The battle AI is under the same limits. It cannot shoot what it cannot see,
+  and in fog its cavalry stops picking the exposed flank out of a line and
+  charges whatever is nearest — which is how cavalry was wasted on nights like
+  Barnet. Snow stays out of a summer campaign and out of the desert, fog
+  thickens on marsh and coast, fleets do not fight in the dark, and a night
+  attack is four times likelier against a wall, because the dark is most of
+  what a storming party had going for it.
+
+- **Sound, made rather than recorded.** There is no audio file in this
+  repository. A volley of arrows is filtered noise with a sweep on it, steel on
+  a shield is a noise burst and a ring, a horn is three detuned saws through a
+  low-pass, thunder is the same noise with the top taken off, and the bell at
+  the end of a turn is three sine partials at a bell's own ratios. It follows
+  the same rule the picture does: a volley is heard only where the simulation
+  has a regiment shooting, the ring of steel runs at a rate set by the men
+  actually in contact this tick, and a paused battle is silent — because a
+  paused battle is a still picture.
 
 - **Trade is a wager, not an allowance.** A trade road is an ordered path of
   real provinces. Sending a caravan costs money now and pays more on arrival,
@@ -404,8 +463,9 @@ Both are offered again on the faction select screen.
 | `src/core/battle/` | Deployment, the fixed-timestep simulation, the battle AI and the ground. |
 | `src/render/` | The Mercator projection and camera, the province geometry, and the isometric renderer: `iso/` holds the view transform, the elevation, the land mask, the palette and the sprite sheet; `map.ts` and `battle.ts` draw with them. |
 | `src/ui/` | Screens, panels, persistence. Plain DOM, no framework. |
-| `tools/` | `build-geography.py` for the coastline, `build-elevation.py` for the ground, and `build-sprites.py`, which drives Blender to model and render every sprite on the map. |
-| `tests/` | 415 tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
+| `tools/` | `build-geography.py` for the coastline, `build-elevation.py` for the ground, `build-sprites.py`, which drives Blender to model and render every sprite on the map, and `diagnose.ts`, which plays two centuries with nobody at the wheel and flags the numbers that cannot be right. |
+| `src/audio/` | The synthesiser. Web Audio, no files: everything the game makes a noise with is built from noise and oscillators. |
+| `tests/` | Tests, including three-hundred-turn runs that assert the simulation never breaks its own rules. |
 
 Nothing in `src/core/` touches the DOM, calls `Math.random`, or knows the map
 is drawn at all — which is why both renderers could be replaced without a
@@ -432,7 +492,16 @@ army or standing on a town wall.
 npm test             # vitest
 npm run typecheck    # tsc --noEmit, strict
 npm run build        # typecheck, then bundle
+npm run diagnose     # two hundred turns, and what came out of them
 ```
+
+`npm run diagnose` is not a test and does not assert. It plays the campaign
+through, counts the map, the realms, what is under arms and every battle fought
+— including the sky, the hour and how it ended — and then flags anything that
+cannot be right: a province of a hundred million people, a century with two
+battles in it, an alliance between everybody. Those were real faults, and every
+one of them was invisible to a unit test, because each is true at any single
+step and absurd after two hundred.
 
 URL parameters open a known state without a sequence of clicks:
 
@@ -444,6 +513,9 @@ URL parameters open a known state without a sequence of clicks:
 ?faction=venice&agents=spy,priest        a campaign with a few men already in service
 ?demo=siege&at=240                       an assault on a walled town
 ?demo=sea&play=1                         a sea fight, running
+?demo=battle&weather=snow&hour=dusk      the same battle, in snow, with the light going
+?demo=battle&weather=fog&at=360          fog, and an enemy you cannot see until he is on you
+?demo=siege&blook=760,860&bzoom=7        the siege train at the back of a storming army
 ?demo=end&faction=croatia                the closing reckoning
 ```
 
@@ -455,8 +527,11 @@ URL parameters open a known state without a sequence of clicks:
 - [x] An opening guide, because the interface is dense and used to say nothing
 - [x] Civil war: a disputed succession that produces a rival claimant with an army
 - [x] Fog of war, which gives a spy something to sell besides sabotage
-- [ ] Battles fought in winter, in rain, and at night
-- [ ] Sprites for the rest of it: siege engines, baggage, ports and bridges
+- [x] Battles fought in winter, in rain, in fog and at night
+- [x] Sound, synthesised rather than sampled
+- [x] Siege engines that are drawn as siege engines
+- [ ] Sprites for the rest of it: baggage, ports and bridges
+- [ ] Weather that changes during a battle rather than holding for the day
 
 ## Not a reimplementation
 

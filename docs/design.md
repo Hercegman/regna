@@ -84,9 +84,63 @@ order: orders and movement, missile fire, melee, morale, victory check.
   each taking the ground its own numbers need; the wings form on the flanks of
   the centre rather than off on their own. A gap in a line of battle is an
   invitation, so the simulation does not leave any.
+- **Weather and the hour** cap how far anyone can see, slacken bowstrings, wet
+  powder, mire the ground, tire the men and shorten their tempers, and take
+  the day away from a battle begun too late. See below.
 
 Both presentations run the same model. A battle the player watches and a battle
 the campaign resolves for them differ only in whether it is drawn.
+
+## Weather, and the hour
+
+A medieval battle was not fought on a flat green field at noon. It was fought
+in whatever the morning gave, and the two things that decided more fights than
+any general's plan were the ground underfoot and whether the men could see.
+Crecy was fought after a thunderstorm that had soaked the Genoese crossbowmen's
+strings; Agincourt across a ploughed field turned to mud; Barnet in a fog thick
+enough that one Lancastrian wing shot into another and the cry of treason broke
+the army; Towton in driving snow, into the faces of one side and the backs of
+the other.
+
+Six skies — clear, overcast, rain, storm, snow, fog — and four hours: dawn,
+day, dusk, night. Both are **rolled once from the battle's own seed** before
+anything moves, so a replayed campaign fights the same battle under the same
+sky, and neither is stored on the campaign state. Season, ground and what kind
+of fight it is all weight the draw: no snow in a summer campaign or in the
+desert, fog thick on marsh and coast and in forest, storms and snow in the
+mountains, no fleet action at night, and night four times likelier in an
+escalade, because going over a wall in the dark is most of what a storming
+party had going for it.
+
+What they are worth is one table in `core/battle/weather.ts`, reduced to seven
+numbers the simulation reads through `BattleState.conditions`:
+
+| | |
+| :--- | :--- |
+| `visibility` | metres. Caps missile range and target selection, for both sides and for the picture |
+| `aim` | missile accuracy: wind, wet strings, poor light |
+| `powder` | firearms only — rain does not hinder a gun, it stops it |
+| `footing` | movement, and cavalry suffers a half again more than foot |
+| `toil` | how fast men tire; the desert sun counts here too |
+| `morale` | added to every threshold on the field |
+| `light` | seconds of day the battle begins with |
+
+Three of these are worth the detail. **Powder is separate from aim** because
+the two failures are not the same failure: a wet bowstring loses its cast and a
+wet gun does not go off, which is what happened to the Genoese at Crecy and to
+every gun caught in the open by rain for three centuries after. **Fog closes a
+field down to about a hundred metres**, which is short of a longbow's reach —
+so what fog takes is not the killing but the long attrition before it, and an
+army in fog is on top of you before anyone has shot at it. And **the light runs
+out**: a battle begun at dusk has about eleven minutes of fighting in it, after
+which the day is over, the defender keeps the ground he is standing on, and the
+attacker needs a clear win rather than a narrow one to have taken it.
+
+The battle AI is under the same limits as the player. It cannot shoot what it
+cannot see, and in fog or in the dark its cavalry stops picking the exposed
+flank out of a line and charges whatever is nearest, which is how cavalry was
+wasted on nights like Barnet. As on the campaign map, the weather **takes sight
+away from the player rather than giving it to the machine**.
 
 ## The AI
 
@@ -356,6 +410,24 @@ vow, which relieves a quarter of their soldiers' upkeep and declares war on
 whoever holds the place. Taking it pays the taker in standing and plunder;
 letting the call lapse costs everyone who swore and did nothing.
 
+## Looking for what tests cannot see
+
+The four worst faults this project has had were not found by reading the code
+and were not found by a test: a province with a hundred and sixty-two million
+people in it, an AI that never formed a field army and so fought two battles in
+a century, sieges that were started and wandered away from, and everybody
+allied with everybody because nothing capped goodwill. Each of them is *true*
+at every single step and absurd after two hundred of them, which is exactly the
+class of fault a unit test cannot hold.
+
+`npm run diagnose` is the standing version of that. It plays two centuries with
+nobody at the wheel, writes down the map, the realms, what is under arms and
+every battle fought — including what it was fought under, at what hour and how
+it ended — and then flags the numbers that cannot be right. It does not assert
+and it is not part of the build, because a diagnostic that fails the build is a
+diagnostic people stop running. `watchBattles` in `campaign/resolve.ts` exists
+for it and for nothing else: it observes a finished result and cannot write.
+
 ## How a campaign ends
 
 Three ways, and the third is the one that was missing. A realm wins by
@@ -551,13 +623,30 @@ soldier — spear, pike, sword, bow, crossbow, handgun, lance, light horse —
 built from the same dozen boxes with a different thing in the hand, and the
 thing in the hand is the whole of what tells one from another in a
 silhouette this size. Over each regiment stands its realm's banner in its own
-arms, which is what a medieval battlefield was actually read by, and behind it
-lie its dead: a body a man, as many as it has lost, on his back with his
-shield where it fell. The simulation does not keep a body's position and does
-not need to — what the eye reads off a field is how much of it has been
-fought over, and that is the count. They are pinned to the regiment's
-position rounded to the nearest few metres, so a unit shuffling about does
-not drag its own dead along behind it a pixel at a time.
+arms, which is what a medieval battlefield was actually read by. A siege train
+is not men but machines: one engine to a dozen crew, and two silhouettes for
+the five kinds, because a ballista, a catapult and a trebuchet are all a frame
+with an arm on it while a bombard and a culverin are a barrel on a bed. Each
+sprite carries its own gunners. Until the sheet had either of them, every
+engine on the field was drawn as a swordsman.
+
+**The dead are where they died.** They used to be a scatter pinned to the
+regiment that had lost them, which meant a regiment dragged its own dead across
+the field behind it and took them away when it marched off. Now the simulation
+records each man as it kills him — where, which way he was facing, and when —
+and he stays there for the rest of the day, because the ground a fight was had
+on does not move when the survivors march off it. A man takes a second to go
+down: two frames of falling, pitched the way he was facing and sized down from
+a standing man to a body, so dying is the one thing on this field that is not a
+cut between two pictures. He has dropped his shield and his weapon on the way,
+which is why there is one falling figure rather than one per kind of soldier —
+and why a knight comes off his horse.
+
+The record is kept **only when somebody is watching**. A campaign turn that
+resolves nine sieges has no use for forty thousand bodies, so `createBattle`
+takes a `record` flag and the auto-resolve leaves it off. It cannot change an
+outcome: where a body lands is a hash of a counter, never a draw from the
+battle's own generator, which is the whole reason the switch is safe.
 
 **A regiment is the men in it.** Ranks and files from the unit's own formation,
 as many figures as the block has room for, thinning from the back as it takes
@@ -571,6 +660,17 @@ to eleven pixels the metre, so every man in a line is a man. Arrows are drawn on
 where the simulation would have that unit shooting this tick, and dust only
 where units are actually in contact: the picture does not say anything the
 model is not doing.
+
+**The sky is the model, lit.** The wash over the field is the weather the
+simulation is reading: a multiply for the hour — cold and low at dawn, warm and
+dark at dusk, blue at night, because the eye stops reading colour before it
+stops reading shape — and another for the cloud, with a haze on top that is
+thicker towards the top of the screen, which is the far end of the field. Rain
+and snow are drawn from a hash of the drop's own number and the battle clock,
+so nothing is stored and a paused battle holds the rain where it is. Lightning
+is a function of the same clock, so the flash and the crack agree about how
+many strokes there were. Enemy regiments fade out past what the conditions
+allow anyone to see; your own never do, because you know where you put them.
 
 **The battle has its own camera.** A field 1400 m across and a man a metre
 wide do not share a scale. Untouched, the camera frames the two armies; the
@@ -618,6 +718,32 @@ their first frame and draw whatever they have, which for the first frame is
 nothing. A screen that redraws constantly never notices; a battle sitting
 paused before its first tick showed an empty field until the player happened to
 move the mouse.
+
+## Sound
+
+Made, not recorded. There is no audio file in the repository, for the same
+reason there is no hand-drawn sprite and no image of a coat of arms: nothing
+here should be a binary somebody produced once that nobody can change. A volley
+of arrows is filtered noise with a sweep on it, steel on a shield is a noise
+burst and a ring, a horn is three detuned saws through a low-pass, thunder is
+the same noise with the top taken off and a long tail, and the bell at the end
+of a turn is three sine partials at a bell's own ratios. The whole of it is a
+few hundred lines of Web Audio and weighs nothing.
+
+It follows the renderer's rule. A volley is heard only where `isShooting` says
+a regiment is shooting — the same predicate the arrows are drawn from, moved
+into the simulation so the picture and the sound cannot hold different opinions
+about when a bow is drawn. The ring of steel runs at a rate set by the men
+actually in contact this tick. Horns sound for the two things a man in the line
+could be told — something has gone in, something has broken — and are throttled
+hard, because what makes a horn mean anything is that it is not sounding most
+of the time. A paused battle is silent, because a paused battle is a still
+picture.
+
+Nothing in `audio/` can reach the model: it reads state and writes none, and a
+battle fought with the speakers off is the same battle. The context is created
+on the player's first click, because browsers will not allow otherwise and
+because a page opened and left alone should be quiet.
 
 ## What a realm can see
 
@@ -683,5 +809,12 @@ succeeds would be a poor teacher.
   was there last year.
 - **Battle AI is a doctrine, not a search.** Hold a line with the heavy foot,
   shoot with everything, use cavalry against whatever is exposed.
+- **The weather does not change during a battle.** It is rolled once and holds
+  for the day. Rain that starts halfway through would be a better model and a
+  worse thing to plan around.
+- **A battery's cadence is drawn, not simulated.** The model fires missiles at
+  a steady rate rather than in discrete shots, so the moment an engine is shown
+  loosing is a cadence of the renderer's own. It is the one place the picture
+  invents a beat, and it only does so while the regiment is in fact shooting.
 
 Each of these is a place the game could grow, not a thing that is broken.
