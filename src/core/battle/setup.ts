@@ -10,7 +10,7 @@ import type { FactionId, Terrain, UnitTypeId, WallTier } from '../types';
 import { UNIT_ROLE } from '../types';
 import { getUnitType } from '../data/units';
 import type { Army, Fleet, Regiment } from '../campaign/state';
-import type { BattleSetup, BattleUnit, Side } from './types';
+import type { BattleSettlement, BattleSetup, BattleUnit, Side } from './types';
 import { FIELD_DEPTH, FIELD_WIDTH } from './types';
 import { frontageOf } from './sim';
 import type { TimeOfDay, Weather } from './weather';
@@ -106,7 +106,54 @@ function isAfloat(type: UnitTypeId): boolean {
   return unit.unitClass === 'warship' || unit.unitClass === 'transport';
 }
 
-function deploySide(side: SideComposition, which: Side): BattleUnit[] {
+/**
+ * Draws a garrison in behind its own walls.
+ *
+ * Deployment forms a line of battle, which is the right thing for a field
+ * and the wrong thing for a town: a line is three hundred metres wide and a
+ * walled town is a circle a hundred and fifty across, so a garrison drawn up
+ * as a line had most of its regiments standing outside the wall they were
+ * defending. The simulation then — correctly — gave them nothing for it.
+ *
+ * The line is kept and compressed into the works rather than rewritten,
+ * because the order of an army is worth keeping: the foot is still in the
+ * middle, the shooting is still behind it, and the wings are still on the
+ * wings. They are simply all inside now, which is crowded, as a town under
+ * assault was.
+ */
+function manTheWorks(units: BattleUnit[], works: BattleSettlement): void {
+  if (units.length === 0) return;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const unit of units) {
+    minX = Math.min(minX, unit.position.x);
+    maxX = Math.max(maxX, unit.position.x);
+    minY = Math.min(minY, unit.position.y);
+    maxY = Math.max(maxY, unit.position.y);
+  }
+  const room = works.radius * 0.76;
+  const squeeze = Math.min(
+    1,
+    room / Math.max(1, (maxX - minX) / 2),
+    room / Math.max(1, (maxY - minY) / 2),
+  );
+  const midX = (minX + maxX) / 2;
+  const midY = (minY + maxY) / 2;
+  for (const unit of units) {
+    unit.position = {
+      x: works.centre.x + (unit.position.x - midX) * squeeze,
+      y: works.centre.y + (unit.position.y - midY) * squeeze,
+    };
+  }
+}
+
+function deploySide(
+  side: SideComposition,
+  which: Side,
+  works?: BattleSettlement | undefined,
+): BattleUnit[] {
   const slots = flattenSide(side);
   const lanes: Record<Lane, Slot[]> = { centre: [], rear: [], left: [], right: [], reserve: [] };
   let cavalryOrdinal = 0;
@@ -185,6 +232,7 @@ function deploySide(side: SideComposition, which: Side): BattleUnit[] {
     place(slot, x, frontY + depthSign * 130),
   );
 
+  if (works && which === 'defender') manTheWorks(units, works);
   return units;
 }
 
@@ -248,22 +296,23 @@ function line(
 }
 
 export function buildBattle(params: BattleParams): BattleSetup {
-  const attackerUnits = deploySide(params.attacker, 'attacker');
-  const defenderUnits = deploySide(params.defender, 'defender');
   const naval = params.naval ?? false;
   const assault = Boolean(params.walls && params.walls !== 'none');
+  const works: BattleSettlement | undefined =
+    params.walls && params.walls !== 'none'
+      ? {
+          walls: params.walls,
+          centre: { x: FIELD_WIDTH / 2, y: DEFENDER_LINE - 90 },
+          radius: 150,
+          integrity: 1,
+        }
+      : undefined;
+  const attackerUnits = deploySide(params.attacker, 'attacker');
+  const defenderUnits = deploySide(params.defender, 'defender', works);
   return {
     seed: params.seed,
     terrain: params.terrain,
-    settlement:
-      params.walls && params.walls !== 'none'
-        ? {
-            walls: params.walls,
-            centre: { x: FIELD_WIDTH / 2, y: DEFENDER_LINE - 90 },
-            radius: 150,
-            integrity: 1,
-          }
-        : undefined,
+    settlement: works,
     attacker: params.attacker.faction,
     defender: params.defender.faction,
     units: [...attackerUnits, ...defenderUnits],

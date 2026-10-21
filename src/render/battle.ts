@@ -555,7 +555,7 @@ function drawGround(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fr
 
 /** The walls, when the battle is an assault. */
 function drawWorks(ctx: CanvasRenderingContext2D, state: BattleState, frame: Frame): void {
-  const settlement = state.setup.settlement;
+  const settlement = state.settlement;
   if (!settlement) return;
   const centre = floorOf(frame, settlement.centre);
   const radius = settlement.radius * frame.scale;
@@ -575,7 +575,11 @@ function drawWorks(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fra
   } else {
     ctx.stroke();
   }
-  // A few roofs inside, enough to say it is a town.
+  // A few roofs inside, enough to say it is a town — in the colours of
+  // whoever is defending it. They were stamped with no colour at all, which
+  // meant the marker survived the recolour it never got: every town under
+  // assault had magenta banners over magenta roofs.
+  const livery = liveryOf(state.setup.defender);
   for (let i = 0; i < 14; i++) {
     const angle = (i * 2.399963) % (Math.PI * 2);
     const reach = radius * 0.72 * Math.sqrt((i + 0.5) / 14);
@@ -585,6 +589,9 @@ function drawWorks(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fra
       centre.x + Math.cos(angle) * reach,
       centre.y + Math.sin(angle) * reach * SQUASH,
       Math.max(8, radius * 0.34),
+      livery.colour,
+      true,
+      livery.device,
     );
   }
   ctx.restore();

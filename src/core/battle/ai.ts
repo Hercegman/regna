@@ -13,6 +13,7 @@ import { getUnitType } from '../data/units';
 import type { BattleState } from './sim';
 import type { BattleUnit, Side } from './types';
 import { FIELD_DEPTH } from './types';
+import { distance as apart } from '../types';
 
 export type { BattleOrder } from './types';
 
@@ -98,6 +99,21 @@ export function planSide(state: BattleState, side: Side): void {
 
   const attacking = side === state.setup.attacker ? true : side === 'attacker';
   const ownCentre = centreOfMass(own) ?? enemyCentre;
+  /**
+   * A garrison stays on its wall.
+   *
+   * The whole value of a wall is that the men behind it are behind it, and
+   * the planner's ordinary doctrine — close with whatever is nearest — walked
+   * them straight off it and into the open, which is the one thing a
+   * besieged garrison must not do. They hold until the wall is down, and
+   * then they are infantry like everybody else.
+   */
+  const works = state.settlement;
+  const manning = (unit: BattleUnit): boolean =>
+    side === 'defender' &&
+    works !== undefined &&
+    works.integrity > 0.35 &&
+    apart(unit.position, works.centre) <= works.radius;
 
   // A side that has lost most of its army stops trying to win and withdraws.
   const morale = sideCohesion(state, side);
@@ -110,6 +126,20 @@ export function planSide(state: BattleState, side: Side): void {
     if (!active(unit)) continue;
     const type = getUnitType(unit.type);
     const role = UNIT_ROLE[type.unitClass];
+
+    if (manning(unit)) {
+      // Shoot at whatever is in reach from the parapet; otherwise stand.
+      const closing = role === 'missile' || type.range > 0
+        ? nearest(unit.position, enemies, (enemy) => apart(unit.position, enemy.position) < type.range)
+        : undefined;
+      const onto = nearest(unit.position, enemies, (enemy) => apart(unit.position, enemy.position) < 40);
+      unit.order = onto
+        ? { kind: 'attack', targetUnit: onto.id }
+        : closing
+          ? { kind: 'skirmish', targetUnit: closing.id }
+          : { kind: 'hold' };
+      continue;
+    }
 
     if (type.unitClass === 'general') {
       // The general stays behind the line and only commits late.
@@ -125,6 +155,21 @@ export function planSide(state: BattleState, side: Side): void {
     }
 
     if (role === 'siege') {
+      // An engine that has been left where it was unlimbered is an engine
+      // out of range of the wall it was dragged across Europe to knock down.
+      // The rear of an army is six hundred metres from the works and the
+      // longest-ranged thing in the game throws three hundred and sixty, so
+      // it has to come forward, and until it does a siege train is baggage.
+      if (works && side === 'attacker') {
+        const wanted = works.radius + type.range * 0.72;
+        if (apart(unit.position, works.centre) > wanted) {
+          unit.order = {
+            kind: 'move',
+            target: { x: works.centre.x, y: works.centre.y + wanted },
+          };
+          continue;
+        }
+      }
       unit.order = { kind: 'hold' };
       continue;
     }

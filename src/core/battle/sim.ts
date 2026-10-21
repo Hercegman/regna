@@ -6,13 +6,14 @@
  * the simulation reproducible, and every random draw comes from the battle's
  * own generator so that two runs of the same battle are identical.
  */
-import type { Point, UnitTypeId } from '../types';
+import type { Point, UnitTypeId, WallTier } from '../types';
 import { clamp, distance, UNIT_ROLE } from '../types';
 import { Rng } from '../rng';
 import { getUnitType } from '../data/units';
 import type {
   BattleEnding,
   BattleResult,
+  BattleSettlement,
   BattleSetup,
   BattleUnit,
   Fallen,
@@ -79,6 +80,12 @@ export interface BattleState {
    */
   readonly debt: Map<string, number>;
   readonly recording: boolean;
+  /**
+   * The works, when there are any — a copy, because its integrity is worn
+   * down over the course of the assault and the setup it came from has to
+   * stay the same thing twice.
+   */
+  settlement: BattleSettlement | undefined;
 }
 
 export interface BattleOptions {
@@ -121,6 +128,7 @@ export function createBattle(setup: BattleSetup, options: BattleOptions = {}): B
     fallen: [],
     debt: new Map(),
     recording: options.record ?? false,
+    settlement: setup.settlement ? { ...setup.settlement } : undefined,
   };
 }
 
@@ -187,6 +195,82 @@ function recordDeaths(
 }
 
 // ---------------------------------------------------------------------------
+// The works
+// ---------------------------------------------------------------------------
+
+/**
+ * What a wall is worth to the man standing behind it.
+ *
+ * It was worth a great deal, and until now it was worth nothing at all: the
+ * simulation had a settlement on the field from the first commit and never
+ * read it, so storming a stone town was a field battle in which the defender
+ * happened to be a garrison. Two centuries of campaign confirmed it —
+ * attackers were taking walled towns nine times in ten, which is the exact
+ * opposite of the medieval record, where an assault was the expensive way to
+ * take a place and starving it out was the usual one.
+ *
+ * One number per tier, and everything else is derived from it: the defender
+ * fights that much better, the man on the ladder that much worse, the shot
+ * that goes over the parapet that much less often, and the garrison holds
+ * its nerve that much longer.
+ */
+const WALL_DEFENCE: Record<WallTier, number> = {
+  none: 1,
+  palisade: 1.5,
+  wooden: 1.9,
+  stone: 2.6,
+  large_stone: 3.2,
+  epic: 3.8,
+};
+
+/** Below this the wall is down and everything above stops applying. */
+const BREACHED = 0.35;
+
+/** What the works are worth this instant: one once they are breached. */
+function wallFactor(state: BattleState): number {
+  const works = state.settlement;
+  if (!works || works.integrity <= BREACHED) return 1;
+  return WALL_DEFENCE[works.walls] ?? 1;
+}
+
+/**
+ * Is this man behind the wall?
+ *
+ * The defender's, and only while he is actually inside it. A garrison that
+ * sallies out is a garrison in a field, which is what a sally is and why it
+ * was a gamble.
+ */
+function behindWalls(state: BattleState, unit: BattleUnit): boolean {
+  const works = state.settlement;
+  if (!works || works.integrity <= BREACHED) return false;
+  if (unit.side !== 'defender') return false;
+  return distance(unit.position, works.centre) <= works.radius;
+}
+
+/**
+ * Engines knocking the wall down.
+ *
+ * The only thing that breaches one. An army that brought no siege train can
+ * stand in front of a stone town all day and take it only if the garrison
+ * breaks, which is the correct answer and the reason to drag a trebuchet
+ * across Europe.
+ */
+function batterWalls(state: BattleState, dt: number): void {
+  const works = state.settlement;
+  if (!works || works.integrity <= 0) return;
+  let damage = 0;
+  for (const unit of state.units) {
+    if (unit.side !== 'attacker' || unit.fled) continue;
+    if (unit.stance === 'destroyed' || unit.stance === 'routing') continue;
+    const type = getUnitType(unit.type);
+    if (UNIT_ROLE[type.unitClass] !== 'siege' || unit.ammunition <= 0) continue;
+    if (distance(unit.position, works.centre) > type.range + works.radius) continue;
+    damage += unit.soldiers * (type.missileAttack / 11) * 0.000014 * dt;
+  }
+  if (damage > 0) works.integrity = Math.max(0, works.integrity - damage);
+}
+
+// ---------------------------------------------------------------------------
 // Derived unit properties
 // ---------------------------------------------------------------------------
 
@@ -233,6 +317,12 @@ function attackPower(state: BattleState, unit: BattleUnit, against: BattleUnit):
   }
   if (has(unit, 'forest_fighter') && terrain === 'forest') power *= 1.2;
   if (has(unit, 'mountaineer') && (terrain === 'mountains' || terrain === 'hills')) power *= 1.2;
+  // Coming up a ladder at a man who is standing on the parapet waiting for
+  // you. Less of a penalty than the wall is a bonus to him, because the
+  // attacker at least chooses his moment.
+  if (behindWalls(state, against) && !behindWalls(state, unit)) {
+    power /= Math.sqrt(wallFactor(state));
+  }
   return Math.max(0.5, power);
 }
 
@@ -240,17 +330,24 @@ function attackPower(state: BattleState, unit: BattleUnit, against: BattleUnit):
 function defencePower(state: BattleState, unit: BattleUnit, from: BattleUnit): number {
   const type = getUnitType(unit.type);
   let power = type.defence + type.armour + unit.experience * 0.5;
-  if (isFrontal(unit, from.position)) power += type.shield;
+  if (isFrontal(unit, from.position, behindWalls(state, unit))) power += type.shield;
   power *= 1 - unit.fatigue * 0.25;
   if (has(unit, 'shield_wall') && unit.stance === 'melee') power *= 1.1;
   if (has(unit, 'schiltron') && isMounted(from)) power *= 1.4;
   const slope = state.terrainHeight(unit.position) - state.terrainHeight(from.position);
   power *= 1 + clamp(slope / 50, -0.12, 0.15);
+  if (behindWalls(state, unit) && !behindWalls(state, from)) power *= wallFactor(state);
   return Math.max(0.5, power);
 }
 
-/** Is an attack from this position hitting the unit's front or left? */
-function isFrontal(unit: BattleUnit, from: Point): boolean {
+/**
+ * Is an attack from this position hitting the unit's front or left?
+ *
+ * A man on a wall has no flank. Whichever side of him the ladder comes up,
+ * he is behind the same stone, which is most of what a wall is for.
+ */
+function isFrontal(unit: BattleUnit, from: Point, walled = false): boolean {
+  if (walled) return true;
   const angleToAttacker = Math.atan2(from.y - unit.position.y, from.x - unit.position.x);
   let delta = angleToAttacker - unit.facing;
   while (delta > Math.PI) delta -= Math.PI * 2;
@@ -273,6 +370,9 @@ export function moraleThreshold(state: BattleState, unit: BattleUnit): number {
   // Standing in the rain in the dark waiting to be charged by something you
   // cannot see is its own argument for going home.
   threshold += state.conditions.morale;
+  // A garrison with a wall in front of it holds a great deal longer than the
+  // same men in a field, and knows it.
+  if (behindWalls(state, unit)) threshold += (wallFactor(state) - 1) * 4;
   return Math.max(3, threshold);
 }
 
@@ -495,7 +595,12 @@ function applyMissiles(state: BattleState, dt: number): void {
       shooter.soldiers * rounds * rangeFactor * skill * protection * density *
       (type.missileAttack / 11) * 0.09 * variance * conditions;
 
-    const kills = Math.min(target.soldiers, Math.max(0, hits));
+    // Shooting at men behind a parapet, which is shooting at the parapet.
+    const cover = behindWalls(state, target) && !behindWalls(state, shooter)
+      ? 1 / (0.6 + 0.4 * wallFactor(state))
+      : 1;
+
+    const kills = Math.min(target.soldiers, Math.max(0, hits * cover));
     target.soldiers -= kills;
     recordDeaths(state, target, kills, shooter.position);
     // Being shot at is demoralising out of proportion to the casualties.
@@ -594,23 +699,36 @@ function applyMelee(state: BattleState, dt: number): void {
 
       const attack = attackPower(state, unit, other);
       const defend = defencePower(state, other, unit);
+      const walled = behindWalls(state, other) && !behindWalls(state, unit);
       // Soldiers actually in contact, limited by the narrower frontage.
-      const contact = Math.min(unit.soldiers, other.soldiers, Math.min(frontage(unit), frontage(other)) / 0.9);
+      let contact = Math.min(unit.soldiers, other.soldiers, Math.min(frontage(unit), frontage(other)) / 0.9);
+      // A wall is a queue. This is most of what a wall was for and the whole
+      // reason a handful of men behind one could hold off an army: the fight
+      // is as wide as the parapet and no wider, and the men on the ladders
+      // arrive a few at a time however many of them are waiting below. Take
+      // this away and numbers decide an assault, which is what they were
+      // doing before anything here read the walls at all.
+      if (walled) contact = Math.min(contact, frontage(other) / 0.9 / 3);
       const share = 1 / unit.engagedWith.length;
 
       const killRate = 0.055 * (attack / (attack + defend));
       let kills = contact * killRate * dt * share * state.rng.float(0.85, 1.15);
 
       // Being hit in the flank or the rear is far worse than a frontal fight.
-      if (!isFrontal(other, unit.position)) kills *= 1.8;
-      // Outnumbered units are surrounded and cut down faster.
-      if (other.engagedWith.length > 1) kills *= 1 + (other.engagedWith.length - 1) * 0.25;
+      if (!isFrontal(other, unit.position, walled)) kills *= 1.8;
+      // Outnumbered units are surrounded and cut down faster — unless they
+      // are on a wall, where there is nothing to surround them with. Six
+      // regiments converging on one stretch of parapet are six regiments
+      // waiting their turn at it.
+      if (!walled && other.engagedWith.length > 1) {
+        kills *= 1 + (other.engagedWith.length - 1) * 0.25;
+      }
 
       kills = Math.min(other.soldiers, Math.max(0, kills));
       other.soldiers -= kills;
       recordDeaths(state, other, kills, unit.position);
       other.shock += (kills / Math.max(1, other.startingSoldiers)) * 34;
-      if (!isFrontal(other, unit.position)) other.shock += 0.35;
+      if (!isFrontal(other, unit.position, walled)) other.shock += 0.35;
     }
     // Melee is exhausting; armour makes it worse.
     const type = getUnitType(unit.type);
