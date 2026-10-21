@@ -30,6 +30,8 @@ import {
 import { drawBattleRadar, radarToField } from '../render/battleRadar';
 import { whenSpritesReady } from '../render/iso/sprites';
 import { bar, clear, count, el, pretty, row } from './dom';
+import { BattleSound } from '../audio/battleSound';
+import { soundButton } from '../audio/ui';
 import { battleCard, crest, plaque, type BattleCardHandle } from './hud';
 
 const SPEEDS = [1, 2, 4, 8] as const;
@@ -59,6 +61,12 @@ export class BattleScreen {
   private lastFrameTime = 0;
   private lastPanelRefresh = 0;
   private finished = false;
+  /**
+   * What the field sounds like. Driven from the same state the picture is
+   * drawn from and told whether the clock is running, so a paused battle is
+   * as quiet as it is still.
+   */
+  private readonly sound = new BattleSound();
 
   constructor(
     host: HTMLElement,
@@ -344,6 +352,9 @@ export class BattleScreen {
   private pause(): void {
     this.running = false;
     cancelAnimationFrame(this.frame);
+    // One more frame, so that the sound is told the clock has stopped. A
+    // paused battle is a still picture and should be as quiet as one.
+    this.draw();
     this.renderHeader();
   }
 
@@ -383,6 +394,9 @@ export class BattleScreen {
     this.finished = true;
     this.running = false;
     cancelAnimationFrame(this.frame);
+    // The rain and the roar stop with the battle. Whatever was scheduled
+    // before this — the last horn — still plays out.
+    this.sound.stop();
     const result = this.battle.result;
     if (!result) return;
     this.renderHeader();
@@ -660,6 +674,7 @@ export class BattleScreen {
         this.renderPanels();
       }),
       !this.finished && this.orderButton('Resolve', '\u23ed', true, false, () => this.finishNow()),
+      soundButton('order'),
     ));
 
     if (!this.finished) {
@@ -846,6 +861,7 @@ export class BattleScreen {
   }
 
   private draw(): void {
+    this.sound.update(this.battle, this.running && !this.finished);
     drawBattle(this.ctx, this.battle, this.view);
   }
 }

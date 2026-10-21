@@ -26,6 +26,7 @@ import { renderFactionSelect } from './factionSelect';
 import { heraldry, renderBattleSetup, renderMainMenu, type BattleKind } from './menu';
 import { browserSaveMeta, loadFromBrowser, uploadSave } from './persistence';
 import { clear, count, el, row } from './dom';
+import { installSoundGestures } from '../audio/ui';
 
 export class App {
   private campaign: CampaignScreen | undefined;
@@ -38,6 +39,7 @@ export class App {
     const known = requested
       ? FACTIONS.find((faction) => (faction.id as string) === requested)
       : undefined;
+    installSoundGestures();
     // `?demo=battle` opens a sample field battle. It is a development aid for
     // looking at the battle screen without first fighting a campaign to one.
     const demo = new URLSearchParams(window.location.search).get('demo');

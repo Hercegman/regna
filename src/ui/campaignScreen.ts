@@ -147,6 +147,8 @@ import { createCamera, inverseMercator, panCamera, zoomCamera } from '../render/
 import { bar, clear, count, el, money, pretty, row, swatch } from './dom';
 import { crest, plaque, shipCard, unitCard } from './hud';
 import { downloadSave, saveToBrowser } from './persistence';
+import { soundButton } from '../audio/ui';
+import { turnSound } from '../audio/sound';
 
 export interface CampaignScreenHooks {
   /** Hand a battle to the battle screen; resolve when the player is done. */
@@ -1135,6 +1137,7 @@ export class CampaignScreen {
               this.renderAll();
             },
           }, 'Guide'),
+          soundButton(),
         ),
       ),
     );
@@ -2745,6 +2748,9 @@ export class CampaignScreen {
   private async doEndTurn(): Promise<void> {
     if (this.busy) return;
     this.busy = true;
+    // The bell goes as the season turns, which is what a season sounded
+    // like to everyone who was not in a chancery counting it.
+    turnSound();
     this.renderRadar();
     // Yield once so the button repaints before the AI runs.
     await new Promise((resolve) => setTimeout(resolve, 0));
