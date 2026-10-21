@@ -181,6 +181,16 @@ fight at sea.
   regiment mostly coloured and half mostly grey is the difference between a
   body of men and the same man stamped a hundred and twenty times.
 
+  **Every man carries his realm's device on his shield.** Two marker colours
+  rather than one: magenta for whatever belongs to the owner, cyan for what is
+  painted on the board, and the second is swapped for the tincture that realm's
+  own blazon puts there — the ordinary over the field, the other half of a
+  divided one, whatever the charge is in. A black cross on Imperial gold, gold
+  on French blue, white on Danish red. It costs no extra renders, because the
+  division is in the model rather than in a variant of it, and it is the
+  difference between seventy-three realms carrying the same flat board in
+  different paint and seventy-three realms carrying their own.
+
   <div align="center">
   <img src="docs/screenshots/battle.png" alt="A French line and an Imperial one, every man drawn" width="860" />
   </div>
@@ -199,12 +209,40 @@ fight at sea.
   | Ground | hills and mountains fight on a ridge, and holding the crest is worth real advantage |
   | The sky | what is falling, and what hour it is — below |
 
+- **Walls that are worth building.** The simulation had a settlement on the
+  field from the first commit and never once read it, so storming a stone town
+  was a field battle in which the defender happened to be a garrison. Two
+  centuries of campaign said so: attackers took walled towns nine times in ten
+  and paid no more for a wall than for an open field, which is the exact
+  opposite of the medieval record.
+
+  | | |
+  | :--- | :--- |
+  | The garrison | forms *inside* its own walls, and stays there — a line of battle is twice as wide as a town, so most of it used to stand outside the wall it was defending |
+  | Defence | multiplied by the works, from a palisade to the greatest stone |
+  | The ladder | the man coming over fights worse, and shot into the works is blunted |
+  | Frontage | **the fight is as wide as the parapet and no wider.** A man on a wall is never flanked and never surrounded, and the attacker's numbers wait their turn. This is the wall; everything above it is arithmetic that enough men can drown |
+  | The breach | only engines bring a wall down, and an army without a siege train can stand in front of a stone town all day |
+
+  At two to one against a small garrison: six regiments take an open town every
+  time, a wooden one about half the time, and a stone one not at all — and with
+  two trebuchets they take the stone one every time. The trebuchet finally earns
+  the road it was dragged along.
+
+  <div align="center">
+  <img src="docs/screenshots/assault.png" alt="An Imperial assault going in over a breached wall against an English garrison" width="860" />
+  </div>
+
 - **Fought in whatever the morning gave.** Six skies — clear, overcast, rain,
   storm, snow, fog — and four hours, rolled once from the battle's own seed so a
   replayed campaign fights the same battle under the same sky. None of it is a
   filter over the picture: every number the weather sets is read by the
   simulation, and the fog that thins the field is the fog that stopped the
-  archers shooting.
+  archers shooting. And the day does not hold still: about two battles in five
+  see the sky turn, to a neighbouring one rather than an arbitrary one, crossing
+  over half a minute rather than cutting — cloud thickens into rain, a storm
+  blows itself out, fog lifts. Snow lies on the ground as well as falling
+  through the air.
 
   | | |
   | :--- | :--- |
@@ -516,6 +554,7 @@ URL parameters open a known state without a sequence of clicks:
 ?demo=battle&weather=snow&hour=dusk      the same battle, in snow, with the light going
 ?demo=battle&weather=fog&at=360          fog, and an enemy you cannot see until he is on you
 ?demo=siege&blook=760,860&bzoom=7        the siege train at the back of a storming army
+?demo=siege&at=380&bzoom=5&blook=700,260 an assault going in over a breached wall
 ?demo=end&faction=croatia                the closing reckoning
 ```
 
@@ -530,8 +569,11 @@ URL parameters open a known state without a sequence of clicks:
 - [x] Battles fought in winter, in rain, in fog and at night
 - [x] Sound, synthesised rather than sampled
 - [x] Siege engines that are drawn as siege engines
+- [x] Weather that changes during a battle rather than holding for the day
+- [x] Every realm's own device on its men's shields
+- [x] Walls that decide an assault, and siege engines that bring them down
 - [ ] Sprites for the rest of it: baggage, ports and bridges
-- [ ] Weather that changes during a battle rather than holding for the day
+- [ ] A winter palette for the campaign map, not only the battlefield
 
 ## Not a reimplementation
 

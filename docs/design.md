@@ -87,9 +87,66 @@ order: orders and movement, missile fire, melee, morale, victory check.
 - **Weather and the hour** cap how far anyone can see, slacken bowstrings, wet
   powder, mire the ground, tire the men and shorten their tempers, and take
   the day away from a battle begun too late. See below.
+- **Walls** multiply the defence of the men behind them, halve the reach of
+  the men coming over them, give cover against shot, steady the garrison's
+  nerve, and — the part that matters most — cap how many of the attacker's
+  numbers can come to grips at once. See below.
 
 Both presentations run the same model. A battle the player watches and a battle
 the campaign resolves for them differ only in whether it is drawn.
+
+## Walls
+
+The simulation had a settlement on the field from the first commit and never
+once read it. An assault was a field battle in which the defender happened to
+be a garrison, and two centuries of campaign said so plainly: **attackers were
+storming walled towns nine times in ten, and paying no more for a wall than
+for an open field**. That is the exact opposite of the medieval record, where
+an assault was the expensive way to take a place and starving it out was the
+usual one.
+
+One number per tier — `WALL_DEFENCE`, from 1.5 for a palisade to 3.8 for the
+greatest works — and five things come out of it:
+
+| | |
+| :--- | :--- |
+| Defence | the man on the parapet fights that much better |
+| Attack | the man on the ladder fights that much worse, by the square root of it, because he at least chooses his moment |
+| Cover | shot into the works is blunted, and the archers behind it are not |
+| Nerve | the garrison's morale threshold rises with the wall |
+| **Frontage** | **the fight is as wide as the parapet and no wider** |
+
+The last one is the wall. Everything above it is an arithmetic advantage that
+enough men can drown; the frontage cap is why they cannot. The fight is cut to
+a third of the defender's own frontage however many are waiting below, and a
+man on a wall is never flanked and never surrounded, because there is nothing
+to surround him with. Take that away and numbers decide an assault — which is
+precisely what they were doing.
+
+A garrison also **forms inside its own walls**. Deployment draws a line of
+battle, which is right for a field and wrong for a town: a line is three
+hundred metres wide and a walled town is a circle half that across, so most
+of the garrison used to stand outside the wall it was defending. The line is
+compressed into the works rather than rewritten, so the foot is still in the
+middle and the shooting still behind it. They are simply all inside now,
+which is crowded, as a town under assault was. The battle AI holds them
+there: the planner's ordinary doctrine walked them off the wall and into the
+open, which is the one thing a besieged garrison must not do.
+
+**Only engines breach a wall.** They wear its integrity down while they are in
+range, and below 0.35 it is down and none of the above applies. An army that
+brought no siege train can stand in front of a stone town all day and take it
+only if the garrison breaks — which is the correct answer, and the reason to
+drag a trebuchet across Europe. The engines had to be told to come forward to
+do it: the rear of an army is six hundred metres from the works and the
+longest-ranged thing in the game throws three hundred and sixty, so a siege
+train left where it was unlimbered was baggage.
+
+Measured at two to one against a small garrison: six regiments take an open
+town every time, take a wooden one about half the time, and do not take a
+stone one at all — and with two trebuchets they take the stone one every
+time. Across a campaign, storming a wall now costs an attacker about half as
+many men again as a field battle, where it used to cost him nothing.
 
 ## Weather, and the hour
 
@@ -105,7 +162,23 @@ the other.
 Six skies — clear, overcast, rain, storm, snow, fog — and four hours: dawn,
 day, dusk, night. Both are **rolled once from the battle's own seed** before
 anything moves, so a replayed campaign fights the same battle under the same
-sky, and neither is stored on the campaign state. Season, ground and what kind
+sky, and neither is stored on the campaign state.
+
+**The day does not hold still.** The whole of it is rolled at once as a list
+of spells: most battles keep the sky they started under, because a field
+action lasted less than an hour of fighting time and weather does not usually
+turn inside one, but about two in five get a change and a few get two. A
+change moves to a *neighbouring* sky rather than an arbitrary one — cloud
+thickens into rain and rain into a storm, a storm blows itself out, snow
+eases back to cloud, and fog lifts rather than arriving, because the thing
+that makes fog is the night that has already passed. Nothing turns inside the
+first four minutes or in the last two, and a change crosses over half a
+minute rather than cutting: the conditions are mixed across it, so the
+shooting does not fall off a cliff the instant the first drop lands, and the
+picture mixes the two washes over the same half minute. A sky that was
+*named* rather than rolled — a demo battle, a test — holds for the day, since
+a squall arriving ten minutes into something somebody is trying to look at
+would defeat the point of naming it. Season, ground and what kind
 of fight it is all weight the draw: no snow in a summer campaign or in the
 desert, fog thick on marsh and coast and in forest, storms and snow in the
 mountains, no fleet action at night, and night four times likelier in an
@@ -428,6 +501,59 @@ and it is not part of the build, because a diagnostic that fails the build is a
 diagnostic people stop running. `watchBattles` in `campaign/resolve.ts` exists
 for it and for nothing else: it observes a finished result and cannot write.
 
+It has already been wrong twice, and both ways are worth writing down.
+
+**It counted dead realms.** The first version walked every faction's relations
+and counted every alliance it found, including alliances with realms that no
+longer existed, and reported three times as many as there were. A diagnostic
+is a measurement and a measurement can be wrong; the first thing to do with a
+number that looks bad is to check the instrument.
+
+**It counted the tail.** The second version counted events by searching the
+log at the end of the run. The log is capped at two thousand entries, because
+it is a panel in the interface rather than a chronicle, so a two-hundred-turn
+campaign throws most of it away: it reported fifteen wars declared where the
+true figure was two hundred and twenty-seven. Events are now counted once a
+turn, from the entries that turn put there.
+
+**And it learned to ask the better question.** "Attackers win ninety per cent
+of assaults" is not in itself a fault — an army storms a town when it can
+afford to, so it usually wins, and a success rate carries that selection
+inside it. What has no counterfactual in it is the *price*: a wall that costs
+the man coming over it no more than an open field is a wall that is not
+working, and that was true, and it is how the walls got written.
+
+## An alliance needs a reason
+
+Goodwill used to be enough. Trade warmed a relationship to 65 and the bar for
+an alliance was 62, so every trading partner in Europe eventually became an
+ally: over two hundred turns a one-in-twenty chance a turn is a certainty,
+and the only thing holding the number down was the cap of two alliances a
+crown.
+
+A medieval alliance was not the natural end of a warm correspondence. It was
+made for a reason and it lasted as long as the reason did, which is why so
+few of them outlived the war they were made for. So trade now warms to 55 and
+stops — commerce makes a treaty of commerce — the bar is 72, and on top of
+the attitude there must be a **cause**:
+
+| | |
+| :--- | :--- |
+| A marriage | a bride at one court who was born in the other, which is the whole of the bond a marriage makes |
+| A common enemy | somebody they are *both* at war with, and who is stronger than one of them. Two kings fighting the same small neighbour have a coincidence, not a cause |
+| A holy war | both sworn to the same crusade or jihad |
+
+And an alliance with no cause left **cools and lapses**. The league made
+against somebody dissolves when that somebody does.
+
+What this does not fix, and the diagnostic says so, is that the ceiling is
+still what limits the number: raise it from two to four and the average rises
+with it. The reason is visible in the same report — seventy-odd pairs of
+houses are tied by marriage, and the courts of Europe intermarry faster than
+leagues lapse. That is historically the right shape and the cap is the
+model's statement about how many commitments a crown will carry, so it is
+left where it is.
+
 ## How a campaign ends
 
 Three ways, and the third is the one that was missing. A realm wins by
@@ -521,6 +647,19 @@ is a horseman with his standard planted beside him and a captain is the same
 man on foot, which is also the only honest way to show a thing the simulation
 already knows about.
 
+**Two markers, seventy-three realms.** Everything that belongs to an owner is
+rendered in pure magenta and swapped for their colour; everything painted on
+a shield is rendered in pure cyan and swapped for the second tincture out of
+their own blazon — the ordinary laid over the field, or the other half of a
+divided one, or whatever the charge is in. It costs no extra renders, because
+the division is in the model rather than in a variant of it, and it is the
+difference between seventy-three realms carrying the same flat board in
+different paint and seventy-three realms carrying their own device. A cross,
+because a lion at eighteen pixels is four dark ones, and a cross is what most
+shields in Europe actually had on them. A caller that does not know a realm's
+device gets the owner's colour in its place, so nothing is ever drawn with a
+cyan cross on it.
+
 **One sheet, seventy-three realms.** Everything standing on the campaign map
 comes off a single sprite sheet, modelled and rendered by
 `tools/build-sprites.py` rather than drawn. Whatever belongs to an owner is
@@ -601,6 +740,21 @@ rather than as a march in the wrong direction, and his two flights play
 straight against each other because there is no moment of standing still in
 a man who is running. Seven hundred and eighty-eight renders, and offline.
 
+**A prop is turned about itself, not about the world.** The sprite tool
+writes a box's vertices at the position it is handed, so setting an object
+rotation afterwards swung those vertices about the world origin instead of
+about the thing itself — and the spin that faces a figure in one of eight
+directions read `matrix_world`, which Blender had not worked out yet, losing
+the placement of anything that had one. Everything built from plain boxes was
+correct, which is most of this file, which is why it stood so long. What was
+not correct: a couched lance stood upright in front of its knight, a drawn
+bow lay across its archer as a plank, a levelled pike was a pole on the
+ground beside him, and every round shield on the sheet was lying at its
+owner's feet — in seven of the eight directions each. Props are now built at
+the origin, turned, and then placed, and the spin composes against
+`matrix_basis`, which is derived from the object's own location and rotation
+and is never stale.
+
 **And the sheet is cut to fit.** Every render comes back as a square of the
 same side and most of that square is air — a man occupies about a third of
 his. Kept square, this sheet would be five megabytes of texture before the
@@ -660,6 +814,16 @@ to eleven pixels the metre, so every man in a line is a man. Arrows are drawn on
 where the simulation would have that unit shooting this tick, and dust only
 where units are actually in contact: the picture does not say anything the
 model is not doing.
+
+**Snow lies on the ground, it does not only fall through the air.** The wash
+over the finished picture can only darken or veil, so a field under a
+snowstorm came out looking like mud until the ground's own colour ladder went
+white — step for step against the snow ladder, so a shadow on snow is blue
+and a lit slope nearly white. Ploughed fields and steppe grass stop being
+drawn under it, because they are buried; trees do not, because they are not,
+and dark trees on a white field is most of what a winter landscape is. The
+cover follows the sky, so it melts back off over the half minute a change
+takes.
 
 **The sky is the model, lit.** The wash over the field is the weather the
 simulation is reading: a multiply for the hour — cold and low at dawn, warm and
@@ -809,9 +973,6 @@ succeeds would be a poor teacher.
   was there last year.
 - **Battle AI is a doctrine, not a search.** Hold a line with the heavy foot,
   shoot with everything, use cavalry against whatever is exposed.
-- **The weather does not change during a battle.** It is rolled once and holds
-  for the day. Rain that starts halfway through would be a better model and a
-  worse thing to plan around.
 - **A battery's cadence is drawn, not simulated.** The model fires missiles at
   a steady rate rather than in discrete shots, so the moment an engine is shown
   loosing is a cadence of the renderer's own. It is the one place the picture
