@@ -12,25 +12,37 @@ import { defineConfig } from 'vite';
  * cache for a hundred and eighty kilobytes of medieval history that has not
  * moved since the eleventh century.
  *
- * So the data goes in its own chunk, the renderer in another, and what is
- * left is the part that actually gets edited. It also quiets Vite's warning
- * about the size of a single bundle, which was the complaint that prompted
- * this, but the caching is the reason.
+ * So the data goes in its own chunk, the renderer and the sound in another,
+ * and what is left is the part that actually gets edited.
+ *
+ * `codeSplitting` rather than `manualChunks`, because Vite 8 bundles with
+ * Rolldown rather than Rollup and Rolldown does not honour the old hook. It
+ * does not complain about it either: the build succeeds and quietly folds
+ * the chunks back together, which is a failure that shows up nowhere except
+ * in the list of files it wrote. Groups are tried in order and the first
+ * match wins, which is why `data` is written before `simulation` —
+ * `core/data` is inside `core`.
  */
 export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks(id: string) {
-          // `types.ts` goes with the data because the data is the only thing
-          // that cannot do without it: every table in `core/data` imports it
-          // and imports nothing else. Leaving it with the simulation makes
-          // the two chunks import each other, which Rollup will build and
-          // then rightly complain about.
-          if (id.includes('/src/core/data/') || id.endsWith('/src/core/types.ts')) return 'data';
-          if (id.includes('/src/render/') || id.includes('/src/audio/')) return 'presentation';
-          if (id.includes('/src/core/')) return 'simulation';
-          return undefined;
+        codeSplitting: {
+          // Off, or the first group that matches drags everything it imports in
+          // behind it: the renderer imports the simulation, so `presentation`
+          // swallowed `simulation` whole and the chunk simply stopped
+          // existing — a build that succeeds and quietly does the opposite of
+          // what it was asked.
+          includeDependenciesRecursively: false,
+          groups: [
+            // `types.ts` goes with the data because the data is the only
+            // thing that cannot do without it: every table in `core/data`
+            // imports it and imports nothing else. Leaving it with the
+            // simulation makes the two chunks import each other.
+            { name: 'data', test: /[\\/]src[\\/]core[\\/](data[\\/]|types\.ts)/ },
+            { name: 'presentation', test: /[\\/]src[\\/](render|audio)[\\/]/ },
+            { name: 'simulation', test: /[\\/]src[\\/]core[\\/]/ },
+          ],
         },
       },
     },

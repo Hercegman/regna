@@ -51,6 +51,16 @@ function assault(
   });
 }
 
+/**
+ * Twenty-four assaults, because one is an anecdote.
+ *
+ * Each of these fights the battle out to the end, which is a few seconds of
+ * real time, so every test that calls it says how long it is allowed to
+ * take. The default is five seconds: enough when this file runs on its own
+ * and not enough when it runs beside six three-hundred-turn campaigns, which
+ * is the only way a passing suite can start failing without a line of the
+ * simulation changing.
+ */
 function stormed(walls: WallTier | undefined, options: { readonly engines?: boolean } = {}): {
   readonly taken: number;
   readonly cost: number;
@@ -89,24 +99,24 @@ describe('walls', () => {
     // argument for building the wall.
     const stone = stormed('stone');
     expect(stone.taken).toBeLessThan(0.2);
-  });
+  }, 60_000);
 
   it('costs the man coming over it', () => {
     expect(stormed('stone').cost).toBeGreaterThan(stormed(undefined).cost * 2);
-  });
+  }, 60_000);
 
   it('is worth more the better it is built', () => {
     const wooden = stormed('wooden');
     const epic = stormed('epic');
     expect(epic.taken).toBeLessThanOrEqual(wooden.taken);
     expect(epic.cost).toBeGreaterThan(wooden.cost * 0.9);
-  });
+  }, 60_000);
 
   it('comes down to a siege train, and to nothing else', () => {
     const bare = stormed('stone');
     const withEngines = stormed('stone', { engines: true });
     expect(withEngines.taken).toBeGreaterThan(bare.taken + 0.5);
-  });
+  }, 60_000);
 
   it('is battered by engines and by nothing else', () => {
     const quiet = createBattle(assault('stone', 'intact'));
@@ -117,7 +127,7 @@ describe('walls', () => {
     const battering = createBattle(assault('stone', 'battered', { engines: true }));
     for (let i = 0; i < 3000 && !battering.finished; i++) stepBattle(battering);
     expect(battering.settlement!.integrity).toBeLessThan(0.36);
-  });
+  }, 60_000);
 
   it('leaves the setup it was built from alone', () => {
     // The works are worn down over the assault, so the state keeps a copy:
@@ -129,5 +139,5 @@ describe('walls', () => {
     expect(setup.settlement!.integrity).toBe(1);
     const second = createBattle(setup);
     expect(second.settlement!.integrity).toBe(1);
-  });
+  }, 60_000);
 });
