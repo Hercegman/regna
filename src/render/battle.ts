@@ -21,6 +21,7 @@ import type { FactionId, Point } from '../core/types';
 import { UNIT_ROLE } from '../core/types';
 import { getUnitType } from '../core/data/units';
 import { tryGetFaction } from '../core/data/factions';
+import { deviceOf } from '../core/data/heraldry';
 import type { BattleState } from '../core/battle/sim';
 import { frontage, isShooting } from '../core/battle/sim';
 import type { BattleSettlement, BattleUnit, Fallen, Side } from '../core/battle/types';
@@ -363,15 +364,25 @@ function fallenInOrder(state: BattleState): readonly Fallen[] {
   return bodies.sorted;
 }
 
-const bodyColours = new Map<string, string>();
+/**
+ * A realm's two colours, looked up once.
+ *
+ * A field of four thousand bodies asks for these four thousand times a
+ * frame, and both of them are a table lookup and a parse behind a function
+ * call that will give the same answer every time until the game is closed.
+ */
+const liveries = new Map<string, { colour: string; device: string }>();
 
-function colourOf(faction: FactionId): string {
-  let colour = bodyColours.get(faction);
-  if (!colour) {
-    colour = tryGetFaction(faction)?.colour ?? '#9a9a9a';
-    bodyColours.set(faction, colour);
+function liveryOf(faction: FactionId): { colour: string; device: string } {
+  let livery = liveries.get(faction);
+  if (!livery) {
+    livery = {
+      colour: tryGetFaction(faction)?.colour ?? '#9a9a9a',
+      device: deviceOf(faction),
+    };
+    liveries.set(faction, livery);
   }
-  return colour;
+  return livery;
 }
 
 /**
@@ -399,7 +410,7 @@ function drawFallen(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fr
     const y = at.y - lift(frame, state.terrainHeight(body));
     if (at.x < -40 || at.x > frame.width + 40) continue;
     if (y < -60 || y > frame.height + 60) continue;
-    const colour = colourOf(body.faction);
+    const livery = liveryOf(body.faction);
     const since = state.time - body.at;
     if (since >= 0 && since < FALL_SECONDS) {
       const through = since / FALL_SECONDS;
@@ -409,10 +420,12 @@ function drawFallen(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fr
         at.x,
         y,
         standing + (lying - standing) * through,
-        colour,
+        livery.colour,
+        true,
+        livery.device,
       );
     } else {
-      stamp(ctx, body.kit ? 'fallen2' : 'fallen', at.x, y, lying, colour, false);
+      stamp(ctx, body.kit ? 'fallen2' : 'fallen', at.x, y, lying, livery.colour, false, livery.device);
     }
   }
 }
@@ -589,7 +602,7 @@ function drawUnit(
   const type = getUnitType(unit.type);
   const mounted = type.mounted;
   const afloat = type.unitClass === 'warship' || type.unitClass === 'transport';
-  const colour = tryGetFaction(unit.faction)?.colour ?? '#9a9a9a';
+  const { colour, device } = liveryOf(unit.faction);
   const across = frontage(unit) * frame.scale;
   const standing = Math.max(0.05, unit.soldiers / Math.max(1, unit.startingSoldiers));
   const ground = state.terrainHeight(unit.position);
@@ -641,6 +654,8 @@ function drawUnit(
         baseY,
         size,
         colour,
+        true,
+        device,
       );
     }
     ctx.globalAlpha = 1;
@@ -697,6 +712,8 @@ function drawUnit(
         baseY - back + slop,
         manSize,
         colour,
+        true,
+        device,
       );
     }
   }

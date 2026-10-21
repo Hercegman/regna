@@ -35,7 +35,12 @@ const PORTRAIT = 48;
 export function unitCard(
   regiment: Regiment,
   colour: string,
-  options: { readonly onClick?: () => void; readonly selected?: boolean } = {},
+  options: {
+    readonly onClick?: () => void;
+    readonly selected?: boolean;
+    /** What is painted on the shield; see `deviceOf`. */
+    readonly device?: string;
+  } = {},
 ): HTMLElement {
   const type = getUnitType(regiment.type);
   const full = Math.max(1, type.soldiers);
@@ -45,7 +50,12 @@ export function unitCard(
   const canvas = el('canvas', { class: 'card-portrait' });
   canvas.width = PORTRAIT;
   canvas.height = PORTRAIT;
-  paintPortrait(canvas, figureSprite(figureFor(type.unitClass), 0, 0, 'idle'), colour);
+  paintPortrait(
+    canvas,
+    figureSprite(figureFor(type.unitClass, type.id), 0, 0, 'idle'),
+    colour,
+    options.device,
+  );
 
   const card = el('div', {
     class: `unit-card${options.selected ? ' selected' : ''}${regiment.mercenary ? ' hired' : ''}`,
@@ -105,7 +115,12 @@ export function shipCard(
  * breath as the first frame of the map — so this paints whatever it has and
  * paints again when the sheet turns up.
  */
-function paintPortrait(canvas: HTMLCanvasElement, name: SpriteName, colour: string): void {
+function paintPortrait(
+  canvas: HTMLCanvasElement,
+  name: SpriteName,
+  colour: string,
+  device?: string,
+): void {
   const paint = (): void => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -113,7 +128,7 @@ function paintPortrait(canvas: HTMLCanvasElement, name: SpriteName, colour: stri
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     // A sprite is cut down to what is in it, so it has to be put back where
     // it was: centred across the card and standing on the bottom of it.
-    const image = sprite(name, PORTRAIT, colour);
+    const image = sprite(name, PORTRAIT, colour, device);
     if (!image) return;
     ctx.drawImage(
       image,
@@ -181,6 +196,7 @@ export function battleCard(
   experience: number,
   title: string,
   onClick: () => void,
+  device?: string,
 ): BattleCardHandle {
   const canvas = el('canvas', { class: 'card-portrait' });
   canvas.width = PORTRAIT;
@@ -189,6 +205,7 @@ export function battleCard(
     canvas,
     afloat ? 'galley' : figureSprite(mounted ? 'lighthorse' : 'swordsman', 0, 0, 'idle'),
     colour,
+    device,
   );
   const chevrons = Math.min(3, Math.round(experience / 3));
 

@@ -11,7 +11,7 @@
  * why a settlement here can belong to any of seventy-three realms without
  * seventy-three sheets.
  */
-import { SPRITES, SPRITE_CELL, SPRITE_MARKER, SPRITE_SHEET } from '../../core/data/sprites';
+import { SPRITES, SPRITE_CELL, SPRITE_SHEET } from '../../core/data/sprites';
 import type { SpriteName } from '../../core/data/sprites';
 
 export type { SpriteName };
@@ -80,6 +80,7 @@ export function sprite(
   name: SpriteName,
   size: number,
   colour: string | undefined,
+  device?: string | undefined,
 ): HTMLCanvasElement | undefined {
   if (!sheet) return undefined;
   // Quantised above a certain size, because the zoom is continuous and the
@@ -87,7 +88,7 @@ export function sprite(
   // and forty sprites at a size nothing has ever asked for before.
   const wanted = Math.max(4, Math.round(size));
   const pixels = wanted > 20 ? Math.round(wanted / 2) * 2 : wanted;
-  const key = `${name}|${pixels}|${colour ?? '-'}`;
+  const key = `${name}|${pixels}|${colour ?? '-'}|${device ?? '-'}`;
   const known = cache.get(key);
   if (known) return known;
 
@@ -99,7 +100,7 @@ export function sprite(
   cutting.imageSmoothingEnabled = false;
   cutting.drawImage(sheet, box.x, box.y, box.width, box.height, 0, 0, box.width, box.height);
 
-  if (colour) recolour(cutting, box.width, box.height, colour);
+  if (colour) recolour(cutting, box.width, box.height, colour, device);
 
   // A sprite is cut down to what is in it, so it is not square and the size
   // asked for is the square it was rendered in. Scaling by that keeps every
@@ -116,33 +117,56 @@ export function sprite(
   return out;
 }
 
-/** Swaps the marker colour for the owner's, pixel by pixel. */
+/**
+ * Swaps the two marker colours for the realm's, pixel by pixel.
+ *
+ * Magenta is whatever belongs to the owner — the surcoat, the banner, the
+ * trapper, the face of the shield — and cyan is what is painted on the
+ * shield. Two markers rather than one because a shield in a single flat
+ * colour is the same shield for every realm in Europe, and the second costs
+ * nothing: the division is in the model, not in a variant of it.
+ *
+ * Both are tested by the same rule, which is that one channel is low while
+ * the other two are high. The markers survive the render and the fourfold
+ * shrink as strong colours, and nothing else on this sheet is within reach
+ * of either.
+ */
 function recolour(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
   colour: string,
+  device: string | undefined,
 ): void {
-  const value = parseInt(colour.replace('#', ''), 16);
-  const r = (value >> 16) & 255;
-  const g = (value >> 8) & 255;
-  const b = value & 255;
+  const owner = parse(colour);
+  // Always something, never the marker itself. A caller that does not know
+  // or care about a realm's device still must not be handed a shield with a
+  // cyan cross on it, so the fallback is the owner's own colour — which is
+  // exactly what the sheet looked like before there were two markers.
+  const second = device ? parse(device) : owner;
   const image = ctx.getImageData(0, 0, width, height);
   const data = image.data;
   for (let i = 0; i < data.length; i += 4) {
     if (data[i + 3] === 0) continue;
-    // The marker survives the render and the shrink as a strong magenta;
-    // anything close enough to it was part of the banner.
     const red = data[i]!;
     const green = data[i + 1]!;
     const blue = data[i + 2]!;
     if (red > 140 && blue > 140 && green < 110) {
-      data[i] = r;
-      data[i + 1] = g;
-      data[i + 2] = b;
+      data[i] = owner[0];
+      data[i + 1] = owner[1];
+      data[i + 2] = owner[2];
+    } else if (green > 140 && blue > 140 && red < 110) {
+      data[i] = second[0];
+      data[i + 1] = second[1];
+      data[i + 2] = second[2];
     }
   }
   ctx.putImageData(image, 0, 0);
+}
+
+function parse(colour: string): [number, number, number] {
+  const value = parseInt(colour.replace('#', ''), 16);
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
 }
 
 /**
@@ -164,8 +188,9 @@ export function stamp(
   size: number,
   colour?: string,
   shadow = true,
+  device?: string,
 ): void {
-  const image = sprite(name, size, colour);
+  const image = sprite(name, size, colour, device);
   if (!image) return;
   const box = SPRITES[name];
   const scale = image.width / box.width;
@@ -188,5 +213,3 @@ export function stamp(
     Math.round(y - box.anchorY * scale),
   );
 }
-
-void SPRITE_MARKER;

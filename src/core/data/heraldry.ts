@@ -161,6 +161,36 @@ const CHARGES: readonly Charge[] = [
  * shield, and because a fallback that is derived from the name is the same
  * every time rather than different on every reload.
  */
+/**
+ * The two colours a realm's men are painted in.
+ *
+ * A sprite is rendered in two marker colours and the renderer swaps both,
+ * which is how one drawing of a shield carries seventy-three realms' devices
+ * without seventy-three drawings. The first is the owner's livery, which is
+ * the colour the map has always used for them. The second is what is painted
+ * on the shield, and it comes out of the realm's own blazon: the ordinary
+ * laid over the field, or the other half of a divided one, or the tincture
+ * the charge is in — whichever the blazon gives, in that order, because that
+ * is the order of how much of the shield each of them covers.
+ *
+ * A blazon with none of those is a plain field with a beast on it, and the
+ * beast is four dark pixels at this size, so it falls back to the metal or
+ * colour that contrasts with the field — which is what the rule of tincture
+ * would have put there anyway.
+ */
+export function deviceOf(id: FactionId): string {
+  const arms = armsOf(id);
+  const tincture = arms.on ?? arms.second ?? arms.charged ?? contrastWith(arms.field);
+  // A device the same colour as the field is not a device. It happens where
+  // a blazon's charge is in its own field's tincture, which is rare and
+  // unheraldic, but the renderer cannot afford to find out the hard way.
+  return TINCTURES[tincture === arms.field ? contrastWith(arms.field) : tincture];
+}
+
+function contrastWith(field: Tincture): Tincture {
+  return field === 'or' || field === 'argent' ? 'gules' : 'or';
+}
+
 export function armsOf(id: FactionId): Arms {
   const known = ARMS[id as string];
   if (known) return known;

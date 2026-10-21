@@ -28,6 +28,7 @@ import {
 } from '../core/campaign/sight';
 import { REGIONS, getRegion } from '../core/data/regions';
 import { tryGetFaction, INDEPENDENT_ID } from '../core/data/factions';
+import { deviceOf } from '../core/data/heraldry';
 import { TRADE_ROUTES, routesThrough } from '../core/data/trade';
 import type { SeaZoneId } from '../core/data/seas';
 import { SEA_ZONES, getSeaZone } from '../core/data/seas';
@@ -241,6 +242,8 @@ interface Standing {
   readonly sprite: SpriteName;
   readonly size: number;
   readonly colour: string | undefined;
+  /** What is painted on the shield, when the thing has one. */
+  readonly device?: string | undefined;
   /** Where it stands, in the picture's own pixels, already lifted. */
   readonly x: number;
   readonly y: number;
@@ -287,7 +290,16 @@ export function drawMap(
         const here = standing.get(key(tile.tx, tile.ty));
         if (!here) return;
         for (const item of here) {
-          stamp(paint, item.sprite, item.x + item.offsetX, item.y + item.offsetY, item.size, item.colour);
+          stamp(
+            paint,
+            item.sprite,
+            item.x + item.offsetX,
+            item.y + item.offsetY,
+            item.size,
+            item.colour,
+            true,
+            item.device,
+          );
         }
       },
     );
@@ -406,6 +418,7 @@ function gather(
       // there is somebody — an army with a general is led by a horseman and
       // one without by a captain on foot.
       sprite: army.general ? 'general' : 'captain',
+      device: deviceOf(army.faction),
       size: army.general ? unitSize : unitSize * 0.88,
       colour: faction?.colour ?? '#8d8578',
       offsetX: Math.round(transform.halfWidth * 0.8),

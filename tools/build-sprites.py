@@ -45,6 +45,17 @@ SUPERSAMPLE = 4
 #: else, so the swap can never catch anything it should not.
 MARKER = (1.0, 0.0, 1.0)
 
+#: And the second colour a realm is painted in: the device on the shield.
+#:
+#: One marker gave a shield that was a flat rectangle of the owner's colour,
+#: and every shield in Europe looked the same shape in a different paint. A
+#: second one costs nothing — no extra renders, because the division is in
+#: the model rather than in a variant of it — and buys a cross on the kite
+#: shields and a rim on the round ones, in the tincture the realm's own
+#: blazon puts there. Pure cyan, for the same reason magenta was chosen: it
+#: appears nowhere else on this sheet.
+DEVICE = (0.0, 1.0, 1.0)
+
 PALETTE_LEVELS = 10
 
 
@@ -121,6 +132,26 @@ def box(name, cx, cy, cz, sx, sy, sz, mat):
     ]
     faces = [(0, 1, 2, 3), (4, 7, 6, 5), (0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0)]
     return mesh_from(name, verts, faces, mat)
+
+
+def placed(name, sx, sy, sz, mat, at, rot=(0.0, 0.0, 0.0)):
+    """A box turned about its own middle, and only then put where it goes.
+
+    `box` writes its vertices at the position it is handed, so setting an
+    object rotation afterwards swings those vertices about the world origin
+    rather than about the thing itself. Everything built from plain boxes was
+    unaffected, which is most of this file, which is why it stood for a long
+    time — but it is how a couched lance came to stand upright in front of
+    its knight, how a drawn bow lay across its archer as a plank, and how a
+    levelled pike ended up a pole on the ground beside him.
+
+    Built at the origin, turned, and then moved. `at` is where the middle of
+    it ends up.
+    """
+    obj = box(name, 0, 0, -sz / 2, sx, sy, sz, mat)
+    obj.rotation_euler = rot
+    obj.location = at
+    return obj
 
 
 def gable(name, cx, cy, cz, sx, sy, sz, mat):
@@ -342,15 +373,31 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
     if shield:
         # Brought up and across in a fight, which is what a shield is for.
         up = 0.04 if pose == 'fight' else 0.0
+        device = device_material()
+        # A cross on the face of it, in the realm's second tincture. It is
+        # the commonest thing a medieval shield carried and the only device
+        # that survives being eighteen pixels tall — a lion at this size is
+        # four dark pixels. The bars run right through the board so that
+        # whichever face the camera has, it has the cross: a shield seen from
+        # the inside edge shows nothing either way.
         if kit:
             # A round shield, which is the other shape there was and reads as
             # a different thing at twenty pixels.
             disc = cone(f'{name}-shield', 0, 0, 0, 0.095, 0.03, cloth, 8, 0.92)
             disc.rotation_euler = (math.radians(90), 0, 0)
-            disc.location = (x - 0.14, y - 0.01 + lean * 1.4, base + 0.27 + up - crouch)
+            dx = x - 0.14
+            dy = y - 0.01 + lean * 1.4
+            dz = base + 0.27 + up - crouch
+            disc.location = (dx, dy, dz)
+            box(f'{name}-shield-pale', dx, dy - 0.015, dz - 0.085, 0.032, 0.04, 0.17, device)
+            box(f'{name}-shield-fess', dx, dy - 0.015, dz - 0.016, 0.17, 0.04, 0.032, device)
         else:
             box(f'{name}-shield', x - 0.135, y - 0.01 + lean * 1.4, base + 0.19 + up - crouch,
                 0.03, 0.13, 0.17, cloth)
+            box(f'{name}-shield-pale', x - 0.142, y - 0.01 + lean * 1.4,
+                base + 0.19 + up - crouch, 0.034, 0.045, 0.17, device)
+            box(f'{name}-shield-fess', x - 0.142, y - 0.01 + lean * 1.4,
+                base + 0.255 + up - crouch, 0.034, 0.13, 0.04, device)
 
     # What he is carrying, which is the whole of what tells one kind of
     # soldier from another in a silhouette this size.
@@ -360,19 +407,19 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
         if pose == 'fight':
             # Levelled and thrust, which is what a spear line did and the one
             # thing that reads at this size as fighting rather than standing.
-            thrust = box(f'{name}-spear', x + 0.13, y + 0.2, base + 0.3,
-                         0.028, 0.6, 0.028, spear_mat)
-            thrust.rotation_euler = (math.radians(6), 0, 0)
+            placed(f'{name}-spear', 0.028, 0.6, 0.028, spear_mat,
+                   (x + 0.13, y + 0.2, base + 0.31), (math.radians(6), 0, 0))
         else:
             box(f'{name}-spear', x + 0.14, y - 0.02 + lean, base + 0.08,
                 0.028, 0.028, 0.52, spear_mat)
     elif weapon == 'pike':
-        pike = box(f'{name}-pike', x + 0.14, y - 0.02 + lean, base + 0.04,
-                   0.028, 0.028, 0.95, spear_mat)
         if pose == 'fight':
             # Brought down to the level: a pike hedge, not a forest.
-            pike.rotation_euler = (math.radians(72), 0, 0)
-            pike.location = (x + 0.14, y + 0.3, base + 0.34)
+            placed(f'{name}-pike', 0.028, 0.028, 0.95, spear_mat,
+                   (x + 0.14, y + 0.28, base + 0.3), (math.radians(72), 0, 0))
+        else:
+            box(f'{name}-pike', x + 0.14, y - 0.02 + lean, base + 0.04,
+                0.028, 0.028, 0.95, spear_mat)
     elif weapon == 'sword':
         # Raised, because a sword held down is a stick against the leg.
         high = 0.1 if pose == 'fight' else 0.0
@@ -386,9 +433,9 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
         # with it, and that absence is half of what says archer. Drawn, the
         # stave comes across the body and the arm goes back to the ear.
         drawn = pose == 'fight'
-        bow = box(f'{name}-bow', x + (0.02 if drawn else 0.17), y + (0.17 if drawn else -0.02),
-                  base + 0.02, 0.022, 0.035, 0.58, spear_mat)
-        bow.rotation_euler = (0, math.radians(-10), math.radians(80 if drawn else 0))
+        placed(f'{name}-bow', 0.022, 0.035, 0.58, spear_mat,
+               (x + (0.02 if drawn else 0.17), y + (0.17 if drawn else -0.02), base + 0.31),
+               (0, math.radians(-10), math.radians(80 if drawn else 0)))
         box(f'{name}-string', x + (0.02 if drawn else 0.11), y + (0.08 if drawn else -0.02),
             base + 0.1, 0.012, 0.012, 0.42, skin)
         if drawn:
@@ -403,14 +450,14 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
         box(f'{name}-prod', x + 0.06, y - 0.17 + lean + aim, base + 0.3 + aim - crouch,
             0.3, 0.04, 0.04, spear_mat)
     elif weapon == 'gun':
-        barrel = box(f'{name}-gun', x + 0.08, y - 0.1, base + 0.32, 0.04, 0.34, 0.04, mail)
-        barrel.rotation_euler = (math.radians(-10), 0, 0)
+        placed(f'{name}-gun', 0.04, 0.34, 0.04, mail,
+               (x + 0.08, y - 0.1, base + 0.34), (math.radians(-10), 0, 0))
         box(f'{name}-rest', x + 0.2, y - 0.04, base, 0.025, 0.025, 0.36, spear_mat)
     elif weapon == 'lance':
         down = pose == 'fight'
-        lance = box(f'{name}-lance', x + 0.15, y + (0.14 if down else 0.06),
-                    base + (0.2 if down else 0.24), 0.03, 0.78, 0.03, spear_mat)
-        lance.rotation_euler = (math.radians(2 if down else -9), 0, 0)
+        placed(f'{name}-lance', 0.03, 0.78, 0.03, spear_mat,
+               (x + 0.15, y + (0.14 if down else 0.06), base + (0.22 if down else 0.26)),
+               (math.radians(2 if down else -9), 0, 0))
         box(f'{name}-pennon', x + 0.15, y + (0.4 if down else 0.3),
             base + (0.24 if down else 0.3), 0.02, 0.14, 0.1, cloth)
 
@@ -426,10 +473,21 @@ def spin(degrees):
     """
     if not degrees:
         return
+    # `matrix_basis`, not `matrix_world`. The world matrix is worked out by
+    # the dependency graph and is stale until Blender decides to run it, so
+    # reading it here lost the location and rotation of anything that had
+    # been placed by setting them on the object — which is why a lance at any
+    # direction but the first stood upright in front of the knight instead of
+    # being couched, why a drawn bow lay across its archer as a plank, and
+    # why every round shield on the sheet lay on the ground at its owner's
+    # feet. The basis is composed from the object's own location, rotation
+    # and scale, so it is never stale, and nothing here is parented to
+    # anything, which is what makes the two the same thing when both are
+    # right.
     turn = mathutils.Matrix.Rotation(math.radians(degrees), 4, 'Z')
     for obj in bpy.data.objects:
         if obj.type == 'MESH':
-            obj.matrix_world = turn @ obj.matrix_world
+            obj.matrix_world = turn @ obj.matrix_basis
 
 
 def pitch(degrees):
@@ -444,10 +502,11 @@ def pitch(degrees):
     """
     if not degrees:
         return
+    # `matrix_basis` for the same reason it is used in `spin`.
     turn = mathutils.Matrix.Rotation(math.radians(-degrees), 4, 'X')
     for obj in bpy.data.objects:
         if obj.type == 'MESH':
-            obj.matrix_world = turn @ obj.matrix_world
+            obj.matrix_world = turn @ obj.matrix_basis
 
 
 def palette_for_men():
@@ -458,6 +517,11 @@ def palette_for_men():
         material('timber', srgb('#4a3222')),
         material('skin', srgb('#b98f6a')),
     )
+
+
+def device_material():
+    """The realm's second tincture, for what is painted on the shield."""
+    return material('device', DEVICE, emissive=True)
 
 
 def soldiers(mounted):
@@ -581,6 +645,8 @@ def fallen(variant):
     box('helm', 0, 0.22, 0.05, 0.11, 0.11, 0.05, mail)
     if variant:
         box('shield', -0.24, -0.04, 0, 0.14, 0.17, 0.03, cloth)
+        # The same cross he was carrying when he was standing up.
+        box('shield-pale', -0.24, -0.04, 0.03, 0.04, 0.17, 0.004, device_material())
     else:
         box('spear', 0.2, -0.02, 0, 0.5, 0.028, 0.028, timber)
     spin(math.degrees(turn) * 3)
@@ -1117,6 +1183,16 @@ def main():
  */
 
 export const SPRITE_MARKER = {{ r: 255, g: 0, b: 255 }} as const;
+
+/**
+ * And the second: what is painted on the shield.
+ *
+ * A realm has two colours on a shield, not one — the field and whatever is
+ * laid over it — and a single marker gave every shield in Europe the same
+ * flat rectangle in a different paint. This costs no extra renders, because
+ * the division is in the model rather than in a variant of it.
+ */
+export const SPRITE_DEVICE = {{ r: 0, g: 255, b: 255 }} as const;
 
 /** The square every sprite was rendered in, before it was cut down. */
 export const SPRITE_CELL = {cell};

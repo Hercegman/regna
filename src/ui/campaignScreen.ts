@@ -147,6 +147,7 @@ import { createCamera, inverseMercator, panCamera, zoomCamera } from '../render/
 import { bar, clear, count, el, money, pretty, row, swatch } from './dom';
 import { crest, plaque, shipCard, unitCard } from './hud';
 import { downloadSave, saveToBrowser } from './persistence';
+import { deviceOf } from '../core/data/heraldry';
 import { soundButton } from '../audio/ui';
 import { turnSound } from '../audio/sound';
 
@@ -756,10 +757,16 @@ export class CampaignScreen {
     const strip = el('div', { class: 'card-row' });
     if (chosen) {
       const colour = tryGetFaction(chosen.faction)?.colour ?? '#8d8578';
-      for (const regiment of chosen.regiments) strip.appendChild(unitCard(regiment, colour));
+      const device = deviceOf(chosen.faction);
+      for (const regiment of chosen.regiments) {
+        strip.appendChild(unitCard(regiment, colour, { device }));
+      }
     } else if (watched && region.garrison.length > 0) {
       const colour = owner?.colour ?? '#8d8578';
-      for (const regiment of region.garrison) strip.appendChild(unitCard(regiment, colour));
+      const device = deviceOf(region.owner);
+      for (const regiment of region.garrison) {
+        strip.appendChild(unitCard(regiment, colour, { device }));
+      }
     } else if (!watched) {
       strip.appendChild(el('p', { class: 'hud-hint' },
         'Nobody of ours is there to count what is standing in it.',

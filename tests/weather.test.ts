@@ -8,6 +8,8 @@ import { getUnitType } from '../src/core/data/units';
 import { FIELD_DEPTH, FIELD_WIDTH } from '../src/core/battle/types';
 import type { TimeOfDay, Weather } from '../src/core/battle/weather';
 import { conditionsOf, rollTimeOfDay, rollWeather } from '../src/core/battle/weather';
+import { deviceOf, armsOf, TINCTURES } from '../src/core/data/heraldry';
+import { FACTIONS } from '../src/core/data/factions';
 
 function regiment(type: string, soldiers?: number, experience = 0): Regiment {
   const unit = getUnitType(unitTypeId(type));

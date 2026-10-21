@@ -9,6 +9,7 @@
 import { UNIT_ROLE } from '../core/types';
 import { getUnitType } from '../core/data/units';
 import { factionName, tryGetFaction } from '../core/data/factions';
+import { deviceOf } from '../core/data/heraldry';
 import { getSeaZone } from '../core/data/seas';
 import type { BattlePlan } from '../core/campaign';
 import type { BattleState } from '../core/battle/sim';
@@ -519,6 +520,7 @@ export class BattleScreen {
           this.renderPanels();
           this.draw();
         },
+        deviceOf(unit.faction),
       );
       this.cards.set(unit.id, card);
       row.appendChild(card.root);
