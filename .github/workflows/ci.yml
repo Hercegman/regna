@@ -1,0 +1,85 @@
+# What has to be true of every commit.
+#
+# Three things, in the order they are cheapest to be wrong about: the types,
+# then the build, then four hundred and fifty tests. The tests take the best
+# part of ten minutes because six of them play three hundred turns of campaign
+# and assert that the simulation never breaks its own rules, which is the kind
+# of thing that cannot be checked quickly and is exactly the kind of thing
+# worth checking.
+#
+# Nothing here renders a sprite. The sheet is built offline by Blender and
+# checked in, which is the whole reason `tools/build-sprites.py` is a tool and
+# not a build step.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+# A second push supersedes the first. There is no value in finishing a run
+# against a commit that is already behind.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Types, build and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The version in .nvmrc, so that what runs here is what the game is
+          # developed on rather than whatever the runner happened to ship.
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+  diagnose:
+    name: Two centuries, with somebody counting
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # This is not a gate and it must never become one. It plays two hundred
+      # turns with nobody at the wheel and reports what came out — a province
+      # of a hundred million people, a century with two battles in it, a wall
+      # that costs the man coming over it nothing. Every one of those was
+      # real, and every one of them is true at any single step and absurd
+      # after two hundred, which is why no test holds them.
+      #
+      # It does not assert, so it cannot fail the run. What it does is leave
+      # the report on the summary page of every build, where a number that has
+      # drifted is visible to anyone who looks.
+      - name: Play it through
+        run: |
+          {
+            echo '## Two hundred turns'
+            echo
+            echo '```'
+            npm run diagnose --silent -- 200 ci
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"

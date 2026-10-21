@@ -1,0 +1,24 @@
+# Who tells us when a dependency has moved.
+#
+# The game ships nothing but its own code — the bundle has no runtime
+# dependency at all — so everything here is a build or a test tool and nothing
+# that goes wrong in one of them can reach a player. That is the reason the
+# interval is weekly rather than daily and the reason minor and patch bumps
+# are grouped into one pull request: six separate ones a week for tooling is
+# noise, and noise is how a security alert gets ignored.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      tooling:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

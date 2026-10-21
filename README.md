@@ -533,6 +533,11 @@ npm run build        # typecheck, then bundle
 npm run diagnose     # two hundred turns, and what came out of them
 ```
 
+Node is pinned in `.nvmrc`. Every push runs the first three on GitHub Actions,
+and runs `diagnose` alongside them — not as a gate, because it does not
+assert, but so that the report is on the summary page of every build and a
+number that has drifted is visible to anyone who looks.
+
 `npm run diagnose` is not a test and does not assert. It plays the campaign
 through, counts the map, the realms, what is under arms and every battle fought
 — including the sky, the hour and how it ended — and then flags anything that
