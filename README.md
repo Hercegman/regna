@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-d9b55f?style=flat-square&labelColor=12161a)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white&labelColor=12161a)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-6-646cff?style=flat-square&logo=vite&logoColor=white&labelColor=12161a)](https://vite.dev)
-[![Tests](https://img.shields.io/badge/tests-415%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
+[![Tests](https://img.shields.io/badge/tests-453%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
 [![Runtime deps](https://img.shields.io/badge/runtime%20dependencies-none-8b91a0?style=flat-square&labelColor=12161a)](#architecture)
 
 [Why](#why-regna) · [The world](#the-world) · [Features](#features) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Playing](#playing) · [Architecture](#architecture) · [Roadmap](#roadmap)
@@ -78,32 +78,42 @@ fight at sea.
   | The ground | read from an averaged copy of the elevation whose posts are about as far apart as a tile is wide, or a mountain range becomes a field of spikes |
   | Provinces | divided by a Voronoi diagram of the settlements, computed by half-plane clipping and cached |
   | The ground | mottled from the tile's own coordinates and dressed with what grows on it — woods, worked fields with the furrows in them, scrub, boulders — so a plain is a plain and not a sheet of one green |
+  | Places in it | what grows where is asked at a coarser grain than a tile and smoothed between the answers, so the dressing comes out in stands and clearings instead of scattered one to a tile at the same thinness everywhere. The ground's own colour follows the same patches, so the dark going is the going with the trees in it |
+  | Ploughland | belongs to the field and not to the tile: a block of tiles ploughed one way, the next block across it, and an unploughed baulk between them with whatever grew in it. Fixed to the tile, every tile turned its own way and a mile of farmland averaged out into one grey hatch |
   | Height | has the last word on the ground: above the treeline it is bare rock and above that snow, and the line wanders, because one drawn straight across a continent is a contour and not a treeline |
   | The shore | a shelf of pale water wherever the sea touches land, a strand of sand wherever the land touches sea, and the real Natural Earth coast drawn over the join |
   | Rivers | the great ones, drawn: the Rhine, the Danube, the Dnieper, the Volga, the Nile. A river is the strongest line in a landscape and the eye finds everything else from it |
   | Frontiers | chained into continuous runs before they are stroked, so a corner is a corner, and the whole lot drawn on its own plate and cut to the coastline — a border running across open water is the one thing that most gives away a map drawn from a diagram |
   | Arms | every realm bears its own, drawn from a blazon rather than loaded from a folder of pictures: beside the name of every town it holds, on the banner over every army it has in the field, on its crest in the chrome, and on the wall of shields at the front of the game |
   | Texture | each tile takes a handful of marks a shade either side of its own colour, in places fixed to its coordinates — six fills a tile, and the whole difference between ground you read and a chart you look at |
-  | Shadows | one dark ellipse under everything standing on the ground, which is what makes it stand there rather than float |
+  | Shadows | everything standing on the ground throws its own shape, sheared over and pressed flat — a man with his shield up throws a shadow with the shield in it. The shear is baked into the sprite once at each size, so laying a shadow down costs what drawing the man costs, which matters when the frame holds two thousand of them |
   | Ownership | a weak wash on the tile tops, a band of the owner's colour laid inside his own frontier, and his shield beside the name of every town he holds — because the first question anyone asks of a map like this is whose |
   | Settlements | sized against the zoom and not against the tile, so a town covers a fixed piece of ground: pull back and Verona is a mark on Italy rather than a model sitting on top of it |
   | Position | every sprite records where its own model stood, and is stamped by that point rather than by the middle of its frame — so a town lands on its coordinates and a spear leaning out of the frame does not move the settlement carrying it |
   | Armies | the man in command. An army with a general is a horseman with his standard planted beside him, one without is a captain on foot; either way what is standing in the province is a person, not a counter |
-  | Sprites | one sheet; anything belonging to an owner is rendered in pure magenta and swapped for his colour, which is how one drawing serves seventy-three realms |
+  | Sprites | one sheet; anything belonging to an owner is rendered in magenta and swapped for his colour, which is how one drawing serves seventy-three realms. The magenta is lit rather than flat — green stays at nought while red and blue carry how brightly that face was lit — so what is swapped in is the realm's colour standing in the light the rest of the model was standing in, and a surcoat has a shoulder and a flank instead of being a rectangle of paint |
+  | Shrinking | a ninety-pixel model becomes a twenty-pixel man by averaging, not by keeping one pixel in five. Nearest-neighbour decided whether a four-pixel limb survived by where the grid happened to fall, and the grid moves every time the camera does, which is how men used to arrive on the field with one arm. The alpha is hardened again afterwards and the outermost ring darkened, which gives every figure the line between it and the grass that it needs |
   | Battles | the same picture at the scale of one field — pulled back a regiment is a body of men under a standard, closed in it is the men themselves in their ranks and files |
   | Names | drawn afterwards at the screen's own resolution, because a place name in six-pixel type is not a style, it is unreadable — and on the town it belongs to, which means the town is stamped at its own coordinates rather than at the middle of whichever tile it fell in |
 
-- **An interface of stone and parchment.** A plaque along the top for the realm,
-  the calendar and the treasury; a band along the bottom for the men and the
+- **Instruments over the world, and paper for reading.** The map is the whole
+  screen and the chrome floats on it: a panel at the top for the realm, the
+  calendar and the treasury; panels along the bottom for the men and the
   orders — every regiment as a card with its own soldier on it in its own
-  colours, its strength under it and its experience in the corner; the radar in
-  the corner, which is flat and north-up because a small isometric map is
+  colours, its strength under it and its experience in the corner; the radar
+  in the corner, which is flat and north-up because a small isometric map is
   unreadable and a small flat one with the countries painted in is a map of
-  Europe; and a parchment that unrolls over the map when there is something to
-  read and rolls away when there is not. The map is the screen, not a panel of
-  it.
+  Europe. All of it is dark glass with a hairline of light on it and one
+  amber that means *this is live*, because a frame around the picture is a
+  thing that says the picture stops here, and it does not: the ground runs
+  under the panels and out to every edge.
 
-  The battlefield wears the same frame, because it is the same game. What
+  What is for reading rather than for watching is still paper. A parchment
+  unrolls over the map when there is a province to go through or an order of
+  battle to read, and rolls away when there is not — a dossier is a different
+  act from a glance at a gauge, and it should not look like one.
+
+  The battlefield wears the same instruments, because it is the same game. What
   differs is what a card has to say: in a battle a regiment is men who are also
   tired and frightened, so the card carries heart as well as strength, and the
   radar shades the ground by height — which is the one thing about a
@@ -532,6 +542,16 @@ npm run typecheck    # tsc --noEmit, strict
 npm run build        # typecheck, then bundle
 npm run diagnose     # two hundred turns, and what came out of them
 ```
+
+Two aids for the part of the work that only an eye can judge. The sprite
+sheet is eight hundred and fifty renders and the better part of an hour, so
+`REGNA_SPRITES=spearman_0_0_idle,knight_0_2_fight` builds only those and
+writes them to `.sprite-preview.png` instead of over the real sheet, which
+turns a change to a model into a twenty-second loop. And `/figures.html`,
+served by `npm run dev`, lays every kind of soldier out at the sizes the
+battlefield actually draws him at, in two realms' colours, on the colour of
+grass — because a shield that reads beautifully in the sheet is two dark
+pixels on the field, and the sheet is not where the question is settled.
 
 Node is pinned in `.nvmrc`. Every push runs the first three on GitHub Actions,
 checks that the bundle is still split into the chunks it is supposed to be —
