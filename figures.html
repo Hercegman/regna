@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Regna — the figures</title>
+    <!--
+      A page for looking at the sprite sheet the way the battlefield uses it.
+
+      The battle draws a man at somewhere between six and thirty-four pixels,
+      which is the only size at which any of these decisions can be judged: a
+      shield that reads beautifully in the sheet may be two dark pixels on the
+      field, and a change that fixes the field may do nothing to the sheet.
+      So this lays every kind of soldier out at the sizes the game actually
+      asks for, in a realm's colours, on the colour of grass, with the shadows
+      the field would give them.
+
+        npm run dev   →   http://localhost:5173/figures.html
+
+      A development aid. It is not part of the game and nothing imports it.
+    -->
+    <style>
+      body {
+        margin: 0;
+        background: #12161a;
+        color: #c8cbd0;
+        font: 13px/1.5 ui-monospace, monospace;
+      }
+      h1 { font-size: 14px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 14px 16px 0; margin: 0; }
+      p { padding: 0 16px; margin: 4px 0 12px; color: #8b91a0; }
+      canvas { display: block; image-rendering: pixelated; margin: 0 16px 20px; }
+    </style>
+  </head>
+  <body>
+    <h1>Regna — the figures</h1>
+    <p id="note">Loading the sheet…</p>
+    <canvas id="field"></canvas>
+    <canvas id="sheet"></canvas>
+    <script type="module">
+      import { loadSprites, stamp, sprite } from '/src/render/iso/sprites.ts';
+
+      // Two realms, so that the recolouring is being judged and not one paint.
+      const REALMS = [
+        { colour: '#2f4fa0', device: '#e8d070' },
+        { colour: '#a02828', device: '#dcdcdc' },
+      ];
+      const KINDS = ['spearman', 'swordsman', 'pikeman', 'archer',
+                     'crossbowman', 'gunner', 'knight', 'lighthorse'];
+      // The range `drawUnit` works in: `frame.scale * 13`, clamped.
+      const SIZES = [8, 12, 16, 22, 30, 44, 72];
+      const GRASS = '#52782f';
+
+      await loadSprites();
+      document.getElementById('note').textContent =
+        'Every kind at the sizes the battle uses, both kits, in two realms. Below: one rank of each at twenty-two pixels.';
+
+      const pixel = 3;
+      const field = document.getElementById('field');
+      const rowHeight = 92;
+      field.width = 1180;
+      field.height = KINDS.length * rowHeight + 20;
+      const ctx = field.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.fillStyle = GRASS;
+      ctx.fillRect(0, 0, field.width, field.height);
+      ctx.font = '11px ui-monospace, monospace';
+
+      KINDS.forEach((kind, row) => {
+        const base = row * rowHeight + 76;
+        ctx.fillStyle = 'rgba(12,16,10,0.55)';
+        ctx.fillText(kind, 8, row * rowHeight + 16);
+        let x = 90;
+        for (const size of SIZES) {
+          for (const kit of [0, 1]) {
+            for (const realm of REALMS) {
+              for (const pose of ['idle', 'fight']) {
+                stamp(ctx, `${kind}_${kit}_0_${pose}`, x, base, size,
+                      realm.colour, true, realm.device);
+                x += Math.max(10, size * 0.62);
+              }
+            }
+          }
+          x += 10;
+        }
+      });
+
+      // And a block of men, which is what the field actually shows: the
+      // question is never how one man looks but whether a hundred of them
+      // read as ranks.
+      const sheet = document.getElementById('sheet');
+      sheet.width = 1180;
+      sheet.height = 240;
+      const block = sheet.getContext('2d');
+      block.imageSmoothingEnabled = false;
+      block.fillStyle = GRASS;
+      block.fillRect(0, 0, sheet.width, sheet.height);
+      const size = 22;
+      for (let side = 0; side < 2; side++) {
+        const realm = REALMS[side];
+        for (let rank = 2; rank >= 0; rank--) {
+          for (let file = 0; file < 26; file++) {
+            const kit = ((file * 73856093) ^ (rank * 19349663)) >>> 3 & 1;
+            stamp(block, `spearman_${kit}_${side ? 4 : 0}_${rank === 0 ? 'fight' : 'idle'}`,
+                  20 + file * 14 + (rank % 2 ? 7 : 0),
+                  side * 120 + 86 - rank * 9,
+                  size, realm.colour, true, realm.device);
+          }
+        }
+      }
+
+      for (const canvas of [field, sheet]) {
+        canvas.style.width = `${canvas.width * pixel / 2}px`;
+      }
+    </script>
+  </body>
+</html>

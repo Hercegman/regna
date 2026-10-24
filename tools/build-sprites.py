@@ -41,8 +41,17 @@ AZIMUTH = 45.0
 CELL = 96
 SUPERSAMPLE = 4
 
-#: Stands in for whatever the owner's colour is. Pure magenta appears nowhere
-#: else, so the swap can never catch anything it should not.
+#: Stands in for whatever the owner's colour is.
+#:
+#: A surface, not a light. It used to be emissive, which made it come out of
+#: the render as flat (255, 0, 255) on every face — so a surcoat was one
+#: rectangle of the owner's paint with no lit side and no shaded one, and a
+#: block of men in a single colour read as a stain rather than as men. Lit
+#: like everything else, it comes out as (k, 0, k) instead: the green channel
+#: is nought whatever the light does, because green times nought is nought,
+#: so the marker still cannot be confused with anything on the sheet, and k
+#: carries how brightly that face was lit. The game multiplies the realm's
+#: colour by k, and a surcoat has a shoulder and a flank again.
 MARKER = (1.0, 0.0, 1.0)
 
 #: And the second colour a realm is painted in: the device on the shield.
@@ -53,10 +62,17 @@ MARKER = (1.0, 0.0, 1.0)
 #: the model rather than in a variant of it — and buys a cross on the kite
 #: shields and a rim on the round ones, in the tincture the realm's own
 #: blazon puts there. Pure cyan, for the same reason magenta was chosen: it
-#: appears nowhere else on this sheet.
+#: appears nowhere else on this sheet — and, like the first, it is lit rather
+#: than emitted, so the red channel is the one that stays at nought.
 DEVICE = (0.0, 1.0, 1.0)
 
-PALETTE_LEVELS = 10
+#: How many steps of each channel survive the shrink.
+#:
+#: The banding is the look, so this stays short. It is longer than it was by
+#: four steps, because the figures now carry real shading on their own
+#: surfaces rather than three flat faces, and ten steps turned a shoulder
+#: into a staircase.
+PALETTE_LEVELS = 14
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +107,17 @@ def srgb(hex_colour):
     return tuple(((value >> shift) & 255) / 255.0 ** 1 for shift in (16, 8, 0)) if False else tuple(
         (((value >> shift) & 255) / 255.0) ** 2.2 for shift in (16, 8, 0)
     )
+
+
+def shared(name, colour):
+    """A material made once per sprite and used by everything that asks.
+
+    A body of men is twenty figures, and each of them wants the same leather
+    for his boots and the same steel for his spearhead. Making those twice a
+    man is forty materials nobody needs; `clear` throws the shared one away
+    between sprites along with everything else that has stopped being used.
+    """
+    return bpy.data.materials.get(name) or material(name, colour)
 
 
 def material(name, colour, emissive=False):
@@ -242,7 +269,7 @@ def settlement(rank, walls):
     plaster = material('plaster', srgb('#cbbf9f'))
     stone = material('stone', srgb('#9a978c'))
     timber = material('timber', srgb('#5a3f24'))
-    cloth = material('cloth', MARKER, emissive=True)
+    cloth = material('cloth', MARKER)
 
     # How much of the ground it covers, and how many roofs are on it.
     spread = 0.7 + rank * 0.28
@@ -334,8 +361,26 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
         shield = False
         spear = False
 
+    # Leather and steel: the two values the figure did not have.
+    #
+    # A man made of mail, cloth, wood and skin has four colours in him, and
+    # three of them are close enough in value that at twenty pixels he is a
+    # coloured block with a face on top. Boots, hands, a belt and a head on
+    # the spear are not detail for its own sake: they are the dark line
+    # where a leg meets the ground, the light one where an arm ends, and the
+    # bright point that says the thing he is holding is a weapon.
+    leather = shared('leather', srgb('#45321f'))
+    steel = shared('steel', srgb('#a8aab0'))
+
     box(f'{name}-leg-l', x - 0.045, y + stride, base, 0.055, 0.08, 0.17 - crouch, mail)
     box(f'{name}-leg-r', x + 0.045, y - stride, base, 0.055, 0.08, 0.17 - crouch, mail)
+    if not falling:
+        # Boots. A leg that stops is a leg that has been cut off at the
+        # ankle; a leg that ends in something darker than itself is standing
+        # on the ground. Slightly over the width of the leg so that the step
+        # is visible from the side the camera is on.
+        box(f'{name}-boot-l', x - 0.045, y + stride, base, 0.063, 0.09, 0.042, leather)
+        box(f'{name}-boot-r', x + 0.045, y - stride, base, 0.063, 0.09, 0.042, leather)
     if kit:
         # The second man in every two: mail to the chest with a coloured
         # band over it rather than a surcoat of his lord's colours all the
@@ -356,6 +401,16 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
         0.05, 0.09, 0.16, mail)
     box(f'{name}-arm-r', x + 0.105 + flail, y + stride * swing + lean, base + 0.2 + raised - crouch,
         0.05, 0.09, 0.16, mail)
+    # The belt, which is where a man stops being a chest and starts being
+    # legs. One dark course across the middle of him, and the surcoat above
+    # it reads as cloth hanging off a body rather than as a painted panel.
+    box(f'{name}-belt', x, y + lean, base + 0.185 - crouch, 0.176, 0.117, 0.028, leather)
+    # And the hands, at the bottom of the arms where they belong. Two light
+    # pixels against the mail, and the arm has an end.
+    box(f'{name}-hand-l', x - 0.105 - flail, y - stride * swing,
+        base + 0.2 + raised - crouch, 0.056, 0.095, 0.045, skin)
+    box(f'{name}-hand-r', x + 0.105 + flail, y + stride * swing + lean,
+        base + 0.2 + raised - crouch, 0.056, 0.095, 0.045, skin)
     if cloak:
         # Hung off the shoulders and down the back, which is the one thing
         # that says a man is somebody at this size.
@@ -370,6 +425,11 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
         box(f'{name}-nasal', x, y + lean + 0.055, base + 0.44 - crouch, 0.022, 0.03, 0.07, mail)
     else:
         box(f'{name}-helm', x, y + lean, base + 0.47 - crouch, 0.115, 0.115, 0.06, mail)
+        # A brim under the flat helm and a dark course where the eyes are.
+        # Between them they turn a grey cube into a head wearing something,
+        # and they are the difference the first rank of a block shows.
+        box(f'{name}-brim', x, y + lean, base + 0.452 - crouch, 0.132, 0.132, 0.024, leather)
+        box(f'{name}-slit', x, y + lean + 0.05, base + 0.452 - crouch, 0.08, 0.04, 0.02, leather)
     if shield:
         # Brought up and across in a fight, which is what a shield is for.
         up = 0.04 if pose == 'fight' else 0.0
@@ -409,25 +469,39 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
             # thing that reads at this size as fighting rather than standing.
             placed(f'{name}-spear', 0.028, 0.6, 0.028, spear_mat,
                    (x + 0.13, y + 0.2, base + 0.31), (math.radians(6), 0, 0))
+            # The head, which is the only part of a spear anybody was afraid
+            # of and the only part that catches the light.
+            placed(f'{name}-spear-head', 0.042, 0.12, 0.042, steel,
+                   (x + 0.13, y + 0.47, base + 0.338), (math.radians(6), 0, 0))
         else:
             box(f'{name}-spear', x + 0.14, y - 0.02 + lean, base + 0.08,
                 0.028, 0.028, 0.52, spear_mat)
+            box(f'{name}-spear-head', x + 0.14, y - 0.02 + lean, base + 0.58,
+                0.042, 0.042, 0.1, steel)
     elif weapon == 'pike':
         if pose == 'fight':
             # Brought down to the level: a pike hedge, not a forest.
             placed(f'{name}-pike', 0.028, 0.028, 0.95, spear_mat,
                    (x + 0.14, y + 0.28, base + 0.3), (math.radians(72), 0, 0))
+            placed(f'{name}-pike-head', 0.042, 0.042, 0.11, steel,
+                   (x + 0.14, y + 0.28 - 0.452 * math.sin(math.radians(72)),
+                    base + 0.3 + 0.452 * math.cos(math.radians(72))),
+                   (math.radians(72), 0, 0))
         else:
             box(f'{name}-pike', x + 0.14, y - 0.02 + lean, base + 0.04,
                 0.028, 0.028, 0.95, spear_mat)
+            box(f'{name}-pike-head', x + 0.14, y - 0.02 + lean, base + 0.96,
+                0.042, 0.042, 0.11, steel)
     elif weapon == 'sword':
         # Raised, because a sword held down is a stick against the leg.
         high = 0.1 if pose == 'fight' else 0.0
         box(f'{name}-arm-up', x + 0.11, y + lean, base + 0.3 + high - crouch, 0.05, 0.08, 0.14, mail)
-        box(f'{name}-sword', x + 0.11, y - 0.01 + lean, base + 0.44 + high - crouch,
-            0.035, 0.035, 0.26, mail)
+        box(f'{name}-grip', x + 0.11, y - 0.01 + lean, base + 0.4 + high - crouch,
+            0.03, 0.03, 0.05, leather)
+        box(f'{name}-sword', x + 0.11, y - 0.01 + lean, base + 0.46 + high - crouch,
+            0.035, 0.035, 0.24, steel)
         box(f'{name}-guard', x + 0.11, y - 0.01 + lean, base + 0.44 + high - crouch,
-            0.12, 0.04, 0.03, mail)
+            0.12, 0.04, 0.03, steel)
     elif weapon == 'bow':
         # A stave taller than he is, held out from the body. No shield goes
         # with it, and that absence is half of what says archer. Drawn, the
@@ -450,13 +524,18 @@ def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
         box(f'{name}-prod', x + 0.06, y - 0.17 + lean + aim, base + 0.3 + aim - crouch,
             0.3, 0.04, 0.04, spear_mat)
     elif weapon == 'gun':
-        placed(f'{name}-gun', 0.04, 0.34, 0.04, mail,
+        placed(f'{name}-gun', 0.04, 0.34, 0.04, steel,
                (x + 0.08, y - 0.1, base + 0.34), (math.radians(-10), 0, 0))
+        box(f'{name}-stock-butt', x + 0.08, y - 0.26, base + 0.3,
+            0.045, 0.1, 0.055, leather)
         box(f'{name}-rest', x + 0.2, y - 0.04, base, 0.025, 0.025, 0.36, spear_mat)
     elif weapon == 'lance':
         down = pose == 'fight'
         placed(f'{name}-lance', 0.03, 0.78, 0.03, spear_mat,
                (x + 0.15, y + (0.14 if down else 0.06), base + (0.22 if down else 0.26)),
+               (math.radians(2 if down else -9), 0, 0))
+        placed(f'{name}-lance-head', 0.044, 0.12, 0.044, steel,
+               (x + 0.15, y + (0.52 if down else 0.44), base + (0.235 if down else 0.32)),
                (math.radians(2 if down else -9), 0, 0))
         box(f'{name}-pennon', x + 0.15, y + (0.4 if down else 0.3),
             base + (0.24 if down else 0.3), 0.02, 0.14, 0.1, cloth)
@@ -513,7 +592,7 @@ def palette_for_men():
     """The materials every figure is made of, in one place."""
     return (
         material('mail', srgb('#5a5852')),
-        material('cloth', MARKER, emissive=True),
+        material('cloth', MARKER),
         material('timber', srgb('#4a3222')),
         material('skin', srgb('#b98f6a')),
     )
@@ -521,7 +600,7 @@ def palette_for_men():
 
 def device_material():
     """The realm's second tincture, for what is painted on the shield."""
-    return material('device', DEVICE, emissive=True)
+    return shared('device', DEVICE)
 
 
 def soldiers(mounted):
@@ -760,7 +839,7 @@ def cannon(pose):
 def agent():
     """A hooded man on foot: no mail, no banner, nothing to identify him."""
     clear()
-    cloak = material('cloak', MARKER, emissive=True)
+    cloak = material('cloak', MARKER)
     dark = material('dark', srgb('#3b372f'))
     skin = material('skin', srgb('#b98f6a'))
     box('leg-l', -0.04, 0, 0, 0.05, 0.07, 0.14, dark)
@@ -777,7 +856,7 @@ def caravan():
     """A pack animal under its load, with the load in the owner's colours."""
     clear()
     beast = material('beast', srgb('#5b452c'))
-    load = material('load', MARKER, emissive=True)
+    load = material('load', MARKER)
     box('body', 0, 0, 0.14, 0.18, 0.46, 0.18, beast)
     box('neck', 0, 0.24, 0.26, 0.12, 0.14, 0.16, beast)
     box('head', 0, 0.3, 0.4, 0.11, 0.16, 0.1, beast)
@@ -791,7 +870,7 @@ def vessel(oared):
     """A hull: a galley with her oars out, or a round ship under sail."""
     clear()
     oak = material('oak', srgb('#6b4a28'))
-    cloth = material('cloth', MARKER, emissive=True)
+    cloth = material('cloth', MARKER)
     pale = material('sail', srgb('#ddd6c2'))
     length = 1.5 if oared else 1.0
     beam = 0.22 if oared else 0.4
@@ -829,6 +908,21 @@ def tree(tall):
 # Rendering
 # ---------------------------------------------------------------------------
 
+def tweak(holder, name, value):
+    """Sets a render setting if this Blender has one by that name.
+
+    EEVEE's options move between releases — the ambient occlusion that was a
+    checkbox in one version is a corner of the ray tracing panel in the next.
+    The sheet has to keep building on whatever is installed, so anything that
+    is a nicety rather than a requirement is set through here and skipped
+    where it does not exist.
+    """
+    if holder is not None and hasattr(holder, name):
+        setattr(holder, name, value)
+        return True
+    return False
+
+
 def setup_scene():
     scene = bpy.context.scene
     scene.render.engine = 'BLENDER_EEVEE_NEXT'
@@ -840,26 +934,74 @@ def setup_scene():
     scene.render.resolution_y = CELL * SUPERSAMPLE
     scene.render.filter_size = 0.0
 
+    # Shadows and the short-range darkening in a corner. A figure is two
+    # dozen boxes pushed into each other, and without either of them the
+    # seams between them do not exist: an arm against a chest is the same
+    # value as the chest, so the whole man flattens into a silhouette with
+    # some colours on it. This is the single thing that makes him read as
+    # having a front, a side and a gap under his arm.
+    # Which of them this Blender actually had, so a sheet that comes out
+    # flat is traceable to the version that built it rather than to the
+    # models.
+    report = []
+    def note(name, ok):
+        report.append(f'{name}={"set" if ok else "missing"}')
+        return ok
+    note('shadows', tweak(scene.eevee, 'use_shadows', True))
+    note('raytracing', tweak(scene.eevee, 'use_raytracing', True))
+    note('fast gi', tweak(scene.eevee, 'use_fast_gi', True))
+    tweak(scene.eevee, 'fast_gi_resolution', '1')
+    tweak(getattr(scene.eevee, 'ray_tracing_options', None), 'use_denoise', True)
+    tweak(getattr(scene.eevee, 'ray_tracing_options', None), 'resolution_scale', '1')
+    tweak(scene.eevee, 'shadow_ray_count', 4)
+    tweak(scene.eevee, 'shadow_step_count', 8)
+    tweak(scene.eevee, 'taa_render_samples', 48)
+    print('  eevee: ' + ', '.join(report), flush=True)
+
     camera_data = bpy.data.cameras.new('camera')
     camera_data.type = 'ORTHO'
     camera = bpy.data.objects.new('camera', camera_data)
     scene.collection.objects.link(camera)
     scene.camera = camera
 
+    # Three lights, the way a figure is lit rather than the way a scene is.
+    #
+    # The key comes over the viewer's left shoulder, which is where the
+    # ground's own shading puts the sun, so a man and the tile he stands on
+    # agree about where the light is. It is warm, and it is slightly soft:
+    # a hard sun on a stack of boxes gives every edge a razor, and once the
+    # render is shrunk by four those razors are the only thing left.
     sun = bpy.data.objects.new('sun', bpy.data.lights.new('sun', 'SUN'))
-    sun.data.energy = 2.6
-    sun.data.angle = 0.0
+    sun.data.energy = 1.9
+    sun.data.angle = math.radians(7.0)
+    sun.data.color = srgb('#fff1d6')
     sun.rotation_euler = (math.radians(55), 0, math.radians(-25))
     scene.collection.objects.link(sun)
 
+    # The sky, from the other side and cool, so the shaded face of a man is
+    # blue-grey rather than black. Two colours of light rather than one is
+    # most of what separates a model from a diagram.
     fill = bpy.data.objects.new('fill', bpy.data.lights.new('fill', 'SUN'))
-    fill.data.energy = 0.5
-    fill.rotation_euler = (math.radians(120), 0, math.radians(150))
+    fill.data.energy = 0.2
+    fill.data.angle = math.radians(40.0)
+    fill.data.color = srgb('#9ab6e0')
+    fill.rotation_euler = (math.radians(118), 0, math.radians(152))
     scene.collection.objects.link(fill)
+
+    # And a weak one up off the ground in front, which keeps a man's legs and
+    # the underside of a horse from going to a single dead value. Warm,
+    # because what it is standing in is a field.
+    bounce = bpy.data.objects.new('bounce', bpy.data.lights.new('bounce', 'SUN'))
+    bounce.data.energy = 0.1
+    bounce.data.angle = math.radians(60.0)
+    bounce.data.color = srgb('#c8bb92')
+    bounce.rotation_euler = (math.radians(-28), 0, math.radians(35))
+    scene.collection.objects.link(bounce)
+
     scene.world = bpy.data.worlds.new('world')
     scene.world.use_nodes = True
-    scene.world.node_tree.nodes['Background'].inputs['Color'].default_value = (0.26, 0.3, 0.38, 1)
-    scene.world.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.18
+    scene.world.node_tree.nodes['Background'].inputs['Color'].default_value = (0.24, 0.28, 0.37, 1)
+    scene.world.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.085
     return camera
 
 
@@ -1122,6 +1264,24 @@ def main():
     wanted.append(('tree', lambda: tree(True)))
     wanted.append(('scrub', lambda: tree(False)))
 
+    # A way to look at one thing without waiting for eight hundred.
+    #
+    # The whole sheet is a long render, and most of what is being judged when
+    # the models change is one figure: whether his hands read, whether the
+    # shield is still a shield. REGNA_SPRITES=spearman_0_0_idle,knight_0_2_fight
+    # builds those and writes a sheet of nothing else, which is for looking at
+    # and not for committing.
+    only = [n for n in os.environ.get('REGNA_SPRITES', '').split(',') if n]
+    out_png, out_ts = OUT_PNG, OUT_TS
+    if only:
+        wanted = [item for item in wanted if item[0] in only]
+        if not wanted:
+            raise SystemExit(f'No sprite named in REGNA_SPRITES exists: {only}')
+        # Never over the real sheet: a partial one would take the game's
+        # whole wardrobe away until somebody noticed.
+        out_png = os.path.join(ROOT, '.sprite-preview.png')
+        out_ts = os.path.join(ROOT, '.sprite-preview.ts')
+
     pieces = []
     for name, build in wanted:
         radius = build()
@@ -1146,8 +1306,8 @@ def main():
             sheet[start:start + piece_w * 4] = bits[row * piece_w * 4:(row + 1) * piece_w * 4]
         index.append((name, x, y, piece_w, piece_h, ax, ay))
 
-    os.makedirs(os.path.dirname(OUT_PNG), exist_ok=True)
-    write_png(OUT_PNG, sheet_w, sheet_h, sheet)
+    os.makedirs(os.path.dirname(out_png), exist_ok=True)
+    write_png(out_png, sheet_w, sheet_h, sheet)
     if os.path.exists(scratch):
         os.remove(scratch)
 
@@ -1157,7 +1317,7 @@ def main():
         for name, x, y, w, h, ax, ay in index
     )
     cell = CELL
-    with open(OUT_TS, 'w') as handle:
+    with open(out_ts, 'w') as handle:
         handle.write(f'''/**
  * Where each sprite sits on the sheet.
  *
@@ -1166,10 +1326,13 @@ def main():
  * angle the tiles allow and shrinks the result onto a short palette. Do not
  * edit by hand.
  *
- * Anything belonging to whoever owns a thing is rendered in pure magenta and
+ * Anything belonging to whoever owns a thing is rendered in magenta and
  * swapped for the owner's colour when the sprite is first asked for. That is
  * how these games coloured a hundred companies from one drawing, and it is
- * why a settlement here can be any of seventy-three.
+ * why a settlement here can be any of seventy-three. The magenta is a
+ * surface rather than a light, so the green channel stays at nought while
+ * red and blue carry how brightly that face was lit: the swap reads that
+ * back and puts the realm's colour in at the light it was standing in.
  *
  * `anchorX` and `anchorY` are where the model's own origin — the middle of
  * the ground it stands on — fell in its frame. The map stamps a sprite by
@@ -1206,7 +1369,7 @@ export const SPRITES = {{
 
 export type SpriteName = keyof typeof SPRITES;
 ''')
-    print(f'wrote {os.path.relpath(OUT_PNG, ROOT)} and {os.path.relpath(OUT_TS, ROOT)}')
+    print(f'wrote {os.path.relpath(out_png, ROOT)} and {os.path.relpath(out_ts, ROOT)}')
 
 
 if __name__ == '__main__':

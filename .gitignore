@@ -8,3 +8,8 @@ tools/ne_50m_*.json
 
 # Blender, kept outside the repo in ~/.local/opt
 tools/blender/
+
+# Scratch from tools/build-sprites.py
+.sprite-scratch.png
+.sprite-preview.png
+.sprite-preview.ts
