@@ -22,6 +22,39 @@
   --parchment: #ecdfbb;
   --ink: #2e2419;
   --display: ui-serif, "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  /*
+   * The chrome over the world.
+   *
+   * Everything the player reads while the world is still visible behind it —
+   * the clock, the cards, the orders, the minimap — is a sheet of dark glass
+   * with a hairline of light along its edge and nothing else: no bevel, no
+   * grain, no brass. Carved stone was a frame around the picture, and a
+   * frame is a thing that says the picture stops here. Glass does not stop
+   * it: the field runs under the panels and out to the edges of the screen,
+   * and what is laid over it reads as instruments rather than as furniture.
+   *
+   * One amber, and it means the same thing everywhere: this is live, or
+   * this is what you chose.
+   */
+  --glass: rgba(13, 17, 21, 0.84);
+  --glass-raised: rgba(255, 255, 255, 0.055);
+  --glass-line: rgba(226, 238, 252, 0.12);
+  --glass-edge: rgba(226, 238, 252, 0.2);
+  --glass-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  /*
+   * How much room the floating chrome takes along the top and the bottom.
+   *
+   * The panels size themselves to what is written on them, but three other
+   * things have to keep out from under them — the guide, the chronicle and
+   * the scroll — and none of them can ask a panel how tall it came out. So
+   * the figure is stated once here and they all clear it. It is generous
+   * rather than exact, because a panel that grows a line and starts hiding
+   * the chronicle is a worse fault than a finger of empty field.
+   */
+  --chrome-top: 3.5rem;
+  --chrome-bottom: 10.2rem;
+  --amber: #e8b63c;
+  --amber-wash: rgba(232, 182, 60, 0.14);
   --good: #7fb069;
   --bad: #e2574c;
   --warn: #e5a33a;
@@ -402,69 +435,108 @@ button.faction-chip.chosen {
  * is the right weight at any size of window.
  */
 
-.campaign-screen {
-  display: flex;
-  flex-direction: column;
+/*
+ * The world, and the instruments over it.
+ *
+ * The map used to be a panel between two bars, which costs it the top and
+ * bottom eighth of the screen whether or not anything is written there. Now
+ * it is the whole screen and the bars float on it, so the ground runs to
+ * every edge and the panels sit where they are needed with the world showing
+ * between them.
+ */
+.campaign-screen, .battle-screen {
+  position: relative;
   height: 100%;
-  background: var(--stone-dark);
+  overflow: hidden;
+  background: var(--bg-sunken);
 }
 
-.map-holder { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.map-holder { position: absolute; inset: 0; overflow: hidden; }
 .map-canvas { display: block; cursor: grab; }
 
 /* ---- the plaque along the top ---- */
 
 .hud-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: stretch;
-  gap: 0.8rem;
-  padding: 0.35rem 0.75rem;
-  background:
-    linear-gradient(180deg, #3a332a 0%, #262019 42%, #1b1611 100%);
-  border-bottom: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgba(216, 190, 132, 0.28), 0 2px 6px rgba(0, 0, 0, 0.55);
+  align-items: start;
+  gap: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  /* The bar itself is nothing. Only its three groups are panels, and the
+     gaps between them are the world. */
+  pointer-events: none;
 }
+.hud-top > * { pointer-events: auto; }
 
-.hud-realm { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+/*
+ * One sheet of glass.
+ *
+ * Every panel in the chrome is this and differs only in what is written on
+ * it, which is the whole of why a dozen separate instruments read as one
+ * instrument panel.
+ */
+.hud-realm, .battle-sides, .hud-calendar, .hud-purse,
+.hud-cards, .hud-command, .hud-radar {
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  border-radius: 7px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(7px);
+}
+/* The battle's right-hand group is empty until there is something to say. */
+.hud-purse:empty { background: none; border-color: transparent; box-shadow: none; }
+
+.hud-realm { display: flex; align-items: center; gap: 0.6rem; min-width: 0; padding: 0.3rem 0.6rem; }
 .realm-titles { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
 .realm-titles strong {
-  font-family: var(--display);
-  font-size: 1.02rem;
-  letter-spacing: 0.04em;
-  color: var(--gilt);
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #f2f5f8;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .realm-titles .muted { font-size: 0.74rem; letter-spacing: 0.03em; }
 
-.hud-calendar, .hud-purse { display: flex; align-items: center; gap: 0.4rem; }
+.hud-calendar, .hud-purse { display: flex; align-items: center; gap: 0; padding: 0.1rem; }
 .hud-purse { justify-content: flex-end; }
 
+/*
+ * One reading on the panel.
+ *
+ * No frame of its own: a plaque used to be a little brass tablet screwed to
+ * the stone, which at six readings across the top of the screen is six
+ * frames inside a seventh. What separates them now is a hairline and the
+ * space either side of it, which is all a column of figures has ever needed.
+ */
 .plaque {
   display: flex;
   flex-direction: column;
   align-items: center;
   min-width: 4.1rem;
-  padding: 0.14rem 0.5rem 0.2rem;
-  background: linear-gradient(180deg, #221c15, #15110d);
-  border: 1px solid #4b3f2a;
-  border-radius: 2px;
-  box-shadow: inset 0 1px 0 rgba(200, 170, 110, 0.2), inset 0 -1px 0 rgba(0, 0, 0, 0.6);
+  padding: 0.16rem 0.7rem 0.22rem;
+  border-left: 1px solid var(--glass-line);
 }
+.plaque:first-child { border-left: 0; }
 .plaque-label {
-  font-size: 0.56rem;
-  letter-spacing: 0.16em;
+  font-size: 0.54rem;
+  letter-spacing: 0.17em;
   text-transform: uppercase;
-  color: #8e7f63;
+  color: #7d8894;
 }
 .plaque-value {
-  font-family: var(--display);
-  font-size: 0.96rem;
+  font-size: 0.95rem;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: #e9e0c8;
-  line-height: 1.25;
+  letter-spacing: 0.01em;
+  color: #f2f5f8;
+  line-height: 1.3;
 }
 
 /* The shield a realm is known by, on plaques, cards and army markers. */
@@ -482,63 +554,73 @@ button.faction-chip.chosen {
 }
 .hud-realm .crest { width: 1.5rem; height: 1.8rem; }
 
-.hud-tools { display: flex; gap: 0.25rem; margin-left: 0.4rem; }
+.hud-tools { display: flex; gap: 0.2rem; margin: 0 0.3rem 0 0.5rem; }
 button.tool {
-  font-size: 0.72rem;
-  letter-spacing: 0.05em;
-  padding: 0.3em 0.55em;
-  color: #d9cba6;
-  background: linear-gradient(180deg, #3a3126, #221c15);
-  border: 1px solid #4b3f2a;
-  border-radius: 2px;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  padding: 0.32em 0.6em;
+  color: #c3ccd6;
+  background: var(--glass-raised);
+  border: 1px solid var(--glass-line);
+  border-radius: 5px;
 }
-button.tool:hover:not(:disabled) { background: linear-gradient(180deg, #4b4030, #2b241b); border-color: var(--gilt-dim); }
+button.tool:hover:not(:disabled) { background: rgba(255, 255, 255, 0.11); border-color: var(--glass-edge); color: #f2f5f8; }
 
 .holy-badge {
-  padding: 0.22em 0.6em;
-  font-size: 0.74rem;
-  border-radius: 2px;
-  color: #c9bb98;
-  background: linear-gradient(180deg, #332b20, #1d1813);
-  border: 1px solid #4b3f2a;
+  margin: 0 0.3rem;
+  padding: 0.24em 0.6em;
+  font-size: 0.72rem;
+  border-radius: 5px;
+  color: #c3ccd6;
+  background: var(--glass-raised);
+  border: 1px solid var(--glass-line);
 }
-.holy-badge.calling { border-color: var(--gilt-dim); color: var(--gilt); }
+.holy-badge.calling { border-color: rgba(232, 182, 60, 0.5); color: var(--amber); }
 .holy-badge.sworn { border-color: #4f7a3f; color: var(--good); }
 .holy-badge.revolt { border-color: #7a3b33; color: var(--bad); }
-.coin { color: var(--gilt); font-variant-numeric: tabular-nums; }
+.coin { color: var(--amber); font-variant-numeric: tabular-nums; }
 .coin::before { content: "\0192 "; opacity: 0.7; }
 .income { font-variant-numeric: tabular-nums; }
 
 /* ---- the band along the bottom ---- */
 
 .hud-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 0.6rem;
-  align-items: stretch;
-  padding: 0.45rem 0.7rem 0.5rem;
-  background:
-    linear-gradient(180deg, #3b332a 0%, #272017 10%, #1d1812 70%, #120f0b 100%);
-  border-top: 2px solid #000;
-  box-shadow: inset 0 2px 0 rgba(201, 168, 76, 0.35), 0 -3px 10px rgba(0, 0, 0, 0.6);
-  min-height: 8.6rem;
+  gap: 0.55rem;
+  align-items: end;
+  padding: 0.6rem 0.65rem;
+  pointer-events: none;
 }
+.hud-bottom > * { pointer-events: auto; }
 
-.hud-cards { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.hud-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.4rem 0.55rem 0.5rem;
+}
 .cards-banner {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  padding-bottom: 0.18rem;
-  border-bottom: 1px solid rgba(201, 168, 76, 0.22);
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--glass-line);
 }
 .cards-place {
-  font-family: var(--display);
-  font-size: 0.92rem;
-  letter-spacing: 0.04em;
-  color: var(--gilt);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #e6ebf1;
 }
-.cards-meta { font-size: 0.74rem; color: var(--text-muted); }
+.cards-meta { font-size: 0.72rem; color: #7d8894; }
 .army-pick {
   padding: 0.1em 0.25em;
   background: none;
@@ -546,7 +628,7 @@ button.tool:hover:not(:disabled) { background: linear-gradient(180deg, #4b4030, 
   border-radius: 2px;
   line-height: 1;
 }
-.army-pick.active { border-color: var(--gilt); background: rgba(201, 168, 76, 0.14); }
+.army-pick.active { border-color: var(--amber); background: var(--amber-wash); }
 
 .card-row {
   display: flex;
@@ -561,15 +643,14 @@ button.tool:hover:not(:disabled) { background: linear-gradient(180deg, #4b4030, 
   position: relative;
   flex: none;
   width: 3rem;
-  background: linear-gradient(180deg, #2c251d, #14100c);
+  background: rgba(255, 255, 255, 0.045);
   overflow: hidden;
-  border: 1px solid #574a32;
-  border-radius: 2px;
-  box-shadow: inset 0 1px 0 rgba(222, 198, 142, 0.18);
+  border: 1px solid var(--glass-line);
+  border-radius: 5px;
   cursor: default;
 }
-.unit-card:hover { border-color: var(--gilt); }
-.unit-card.selected { border-color: var(--gilt); box-shadow: 0 0 0 1px var(--gilt); }
+.unit-card:hover { border-color: var(--glass-edge); background: rgba(255, 255, 255, 0.09); }
+.unit-card.selected { border-color: var(--amber); background: var(--amber-wash); }
 .unit-card.hired { border-style: dashed; }
 .card-banner { height: 4px; background: var(--banner, #888); border-bottom: 1px solid rgba(0, 0, 0, 0.6); }
 .card-portrait {
@@ -578,7 +659,7 @@ button.tool:hover:not(:disabled) { background: linear-gradient(180deg, #4b4030, 
   aspect-ratio: 1;
   height: auto;
   image-rendering: pixelated;
-  background: radial-gradient(circle at 50% 70%, #3c3426 0%, #191410 80%);
+  background: radial-gradient(circle at 50% 72%, rgba(255, 255, 255, 0.07) 0%, rgba(0, 0, 0, 0.2) 82%);
 }
 .card-chevrons {
   position: absolute;
@@ -586,92 +667,87 @@ button.tool:hover:not(:disabled) { background: linear-gradient(180deg, #4b4030, 
   right: 2px;
   font-size: 0.42rem;
   letter-spacing: -0.06em;
-  color: var(--gilt);
+  color: var(--amber);
   text-shadow: 0 0 2px #000;
 }
-.card-strength { height: 4px; background: #0b0908; border-top: 1px solid rgba(0, 0, 0, 0.8); }
-.card-strength-fill { height: 100%; background: #6e9c56; }
-.card-strength-fill.worn { background: #c99a3a; }
-.card-strength-fill.spent { background: #b2493f; }
+.card-strength { height: 4px; background: rgba(0, 0, 0, 0.5); }
+.card-strength-fill { height: 100%; background: #7fb069; }
+.card-strength-fill.worn { background: var(--amber); }
+.card-strength-fill.spent { background: #e2574c; }
 
-.hud-hint { margin: 0.5rem 0 0; color: var(--text-muted); font-size: 0.82rem; font-style: italic; }
+.hud-hint { margin: 0.5rem 0 0; color: #7d8894; font-size: 0.78rem; }
 
 /* ---- the orders in the middle ---- */
 
 .hud-command {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.4rem;
   min-width: 15rem;
   max-width: 28rem;
-  padding: 0 0.7rem;
-  border-left: 1px solid rgba(0, 0, 0, 0.6);
-  border-right: 1px solid rgba(0, 0, 0, 0.6);
-  box-shadow: inset 1px 0 0 rgba(201, 168, 76, 0.12), inset -1px 0 0 rgba(201, 168, 76, 0.12);
+  padding: 0.45rem 0.6rem 0.55rem;
 }
-.command-head { display: flex; flex-direction: column; line-height: 1.25; }
-.command-head strong { font-family: var(--display); color: #e4d9ba; font-size: 0.88rem; letter-spacing: 0.03em; }
-.command-head .muted { font-size: 0.74rem; }
+.command-head { display: flex; flex-direction: column; line-height: 1.3; }
+.command-head strong { color: #f2f5f8; font-size: 0.84rem; font-weight: 600; letter-spacing: 0.01em; }
+.command-head .muted { font-size: 0.72rem; color: #7d8894; }
 .command-row { display: flex; flex-wrap: wrap; gap: 0.25rem; align-content: flex-start; }
 
 button.order {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.1rem;
+  gap: 0.12rem;
   min-width: 3.4rem;
-  padding: 0.2rem 0.4rem 0.25rem;
-  color: #d8caa6;
-  background: linear-gradient(180deg, #3b3226, #211b14);
-  border: 1px solid #574a32;
-  border-radius: 2px;
-  box-shadow: inset 0 1px 0 rgba(222, 198, 142, 0.18);
+  padding: 0.24rem 0.4rem 0.28rem;
+  color: #c3ccd6;
+  background: var(--glass-raised);
+  border: 1px solid var(--glass-line);
+  border-radius: 5px;
 }
 button.order:hover:not(:disabled) {
-  background: linear-gradient(180deg, #4d4231, #2a2219);
-  border-color: var(--gilt-dim);
-  color: #f0e6ca;
+  background: rgba(255, 255, 255, 0.11);
+  border-color: var(--glass-edge);
+  color: #f2f5f8;
 }
-button.order.active { border-color: var(--gilt); color: var(--gilt); background: linear-gradient(180deg, #4a3d24, #241d12); }
-button.order.danger { border-color: #74352d; color: #e8b3ab; }
+button.order.active { border-color: var(--amber); color: var(--amber); background: var(--amber-wash); }
+button.order.danger { border-color: rgba(226, 87, 76, 0.5); color: #f0a79f; }
 .order-glyph { font-size: 1rem; line-height: 1; }
 .order-label { font-size: 0.58rem; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; }
 
 /* ---- the radar ---- */
 
-.hud-radar { display: flex; gap: 0.5rem; align-items: stretch; }
+.hud-radar { display: flex; gap: 0.5rem; align-items: stretch; padding: 0.45rem 0.5rem; }
 .radar-frame {
-  padding: 3px;
-  background: linear-gradient(180deg, #4a3f2c, #231d15);
-  border: 1px solid #000;
-  border-radius: 3px;
-  box-shadow: inset 0 1px 0 rgba(222, 198, 142, 0.3), 0 1px 3px rgba(0, 0, 0, 0.7);
+  padding: 2px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--glass-line);
+  border-radius: 5px;
 }
 .radar-canvas {
   display: block;
   width: 15rem;
   height: 8rem;
-  border: 1px solid #0a0f14;
+  border-radius: 3px;
   cursor: crosshair;
 }
 .radar-side { display: flex; flex-direction: column; justify-content: space-between; gap: 0.35rem; }
 .radar-scrolls { display: flex; gap: 0.25rem; }
 
+/* The one thing on the screen that is not glass: the move that ends the turn. */
 button.end-turn {
-  font-family: var(--display);
-  font-size: 0.92rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 0.5em 0.9em;
-  color: #1d1505;
-  background: linear-gradient(180deg, #e2c877 0%, #c9a84c 45%, #8e7129 100%);
-  border: 1px solid #5d4a1c;
-  border-radius: 3px;
-  box-shadow: inset 0 1px 0 rgba(255, 246, 214, 0.75), 0 2px 4px rgba(0, 0, 0, 0.6);
+  font-size: 0.78rem;
   font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.62em 1.1em;
+  color: #14100a;
+  background: var(--amber);
+  border: 1px solid #f0cc70;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(232, 182, 60, 0.28);
 }
-button.end-turn:hover:not(:disabled) { background: linear-gradient(180deg, #f3e0a0, #d9b85c 45%, #9d7f2f); }
-button.end-turn:disabled { opacity: 0.55; }
+button.end-turn:hover:not(:disabled) { background: #f3c758; }
+button.end-turn:disabled { opacity: 0.4; box-shadow: none; }
 
 /* ---- the scroll ---- */
 
@@ -679,8 +755,8 @@ button.end-turn:disabled { opacity: 0.55; }
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  top: 1.4rem;
-  bottom: 1.4rem;
+  top: calc(var(--chrome-top) + 0.4rem);
+  bottom: calc(var(--chrome-bottom) + 0.4rem);
   width: min(34rem, 86%);
   display: flex;
   flex-direction: column;
@@ -694,7 +770,7 @@ button.end-turn:disabled { opacity: 0.55; }
   box-shadow:
     0 0 0 1px rgba(201, 168, 76, 0.45),
     0 14px 44px rgba(0, 0, 0, 0.66);
-  z-index: 4;
+  z-index: 7;
 }
 .scroll-panel.hidden { display: none; }
 /* The rollers it is wound on, standing a little proud of the paper. */
@@ -819,7 +895,7 @@ button.scroll-close:hover { color: #2e2419; border-color: #a98f5d; }
 .guide-box {
   position: absolute;
   right: 0.9rem;
-  top: 0.9rem;
+  top: var(--chrome-top);
   width: min(21rem, 42%);
   color: var(--ink);
   background:
@@ -859,23 +935,27 @@ button.scroll-close:hover { color: #2e2419; border-color: #a98f5d; }
 .guide-why { margin: 0.35rem 0 0.2rem 1.5em; color: #5e4e32; }
 .guide-where { margin: 0 0 0.3rem 1.5em; color: #8a6514; font-weight: 600; }
 
+/* The chronicle, which sits on the field above the cards rather than under them. */
 .log-box {
   position: absolute;
-  left: 0.75rem;
-  bottom: 0.75rem;
-  width: min(32rem, 54%);
-  max-height: 9rem;
+  left: 0.65rem;
+  bottom: var(--chrome-bottom);
+  width: min(30rem, 50%);
+  max-height: 8.4rem;
   overflow: hidden;
-  background: linear-gradient(180deg, rgba(20, 17, 12, 0.82), rgba(12, 10, 7, 0.86));
-  border: 1px solid #3c3222;
-  border-radius: 3px;
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  border-radius: 7px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(7px);
   padding: 0.45rem 0.7rem;
-  font-size: 0.8rem;
-  line-height: 1.45;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #c3ccd6;
   pointer-events: none;
 }
 .log-line { display: flex; gap: 0.6em; }
-.log-year { color: var(--gilt); font-variant-numeric: tabular-nums; }
+.log-year { color: #7d8894; font-variant-numeric: tabular-nums; }
 
 /* Panels keep their old shape; only their surroundings changed. */
 .panel-header { padding: 0.9rem 1rem 0.5rem; }
@@ -930,28 +1010,37 @@ button.scroll-close:hover { color: #2e2419; border-color: #a98f5d; }
  * decides the day.
  */
 
-.battle-screen {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  background: var(--stone-dark);
-}
-.battle-field { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.battle-field { position: absolute; inset: 0; overflow: hidden; }
 .battle-canvas { display: block; }
 
 .battle-top { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
-.battle-sides { display: flex; align-items: center; gap: 0.9rem; min-width: 0; }
-.side-summary { display: flex; align-items: center; gap: 0.45em; font-size: 0.86rem; min-width: 0; }
+.battle-sides {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  min-width: 0;
+  padding: 0.34rem 0.7rem;
+}
+.side-summary { display: flex; align-items: center; gap: 0.45em; font-size: 0.8rem; min-width: 0; }
 .side-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--display);
-  letter-spacing: 0.02em;
-  color: #e4d9ba;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #f2f5f8;
 }
-.side-strength { font-variant-numeric: tabular-nums; color: var(--text-muted); }
-.versus { color: #8e7f63; font-size: 0.74rem; font-style: italic; }
+.side-strength { font-variant-numeric: tabular-nums; color: #9aa6b2; }
+/* What the two of them are doing to each other, kept to one line: it sits
+   between two names that are already fighting for the same width. */
+.versus {
+  flex: none;
+  white-space: nowrap;
+  color: #6d7884;
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
 
 /* A battle card carries a name and a second bar. */
 .unit-card.battle { width: 3.9rem; cursor: pointer; }
@@ -961,34 +1050,35 @@ button.scroll-close:hover { color: #2e2419; border-color: #a98f5d; }
   line-height: 1.25;
   letter-spacing: 0.02em;
   text-align: center;
-  color: #c3b791;
+  color: #aab4c0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.card-morale { height: 3px; background: #0b0908; }
+.card-morale { height: 3px; background: rgba(0, 0, 0, 0.5); }
 .card-morale-fill { height: 100%; background: #6f9cc0; }
-.card-morale-fill.shaken { background: #c99a3a; }
-.card-morale-fill.breaking { background: #b2493f; }
-.unit-card.routing { border-color: #a1443a; box-shadow: 0 0 0 1px rgba(178, 73, 63, 0.6); }
+.card-morale-fill.shaken { background: var(--amber); }
+.card-morale-fill.breaking { background: #e2574c; }
+.unit-card.routing { border-color: #e2574c; background: rgba(226, 87, 76, 0.14); }
 .unit-card.gone { opacity: 0.32; filter: grayscale(1); }
 
 .command-gauges { display: flex; flex-wrap: wrap; gap: 0.1rem 0.7rem; }
 .gauge { display: flex; align-items: center; gap: 0.35em; font-size: 0.7rem; }
-.gauge-label { color: #8e7f63; letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.56rem; }
+.gauge-label { color: #7d8894; letter-spacing: 0.09em; text-transform: uppercase; font-size: 0.55rem; }
 
 .radar-canvas.battle-radar { width: 12rem; height: 8.5rem; }
 .speed-row { display: flex; gap: 0.15rem; }
 button.speed {
   flex: 1;
-  padding: 0.14em 0.3em;
-  font-size: 0.7rem;
-  color: #c6b793;
-  background: linear-gradient(180deg, #332b20, #1d1813);
-  border: 1px solid #4b3f2a;
-  border-radius: 2px;
+  padding: 0.18em 0.3em;
+  font-size: 0.68rem;
+  color: #c3ccd6;
+  background: var(--glass-raised);
+  border: 1px solid var(--glass-line);
+  border-radius: 5px;
 }
-button.speed.active { border-color: var(--gilt); color: var(--gilt); }
+button.speed:hover:not(:disabled) { background: rgba(255, 255, 255, 0.11); border-color: var(--glass-edge); }
+button.speed.active { border-color: var(--amber); color: var(--amber); background: var(--amber-wash); }
 
 .battle-result { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(8, 11, 14, 0.78); z-index: 6; }
 .result-card {
