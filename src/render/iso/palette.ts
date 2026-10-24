@@ -20,16 +20,33 @@ import type { Terrain } from '../../core/types';
 /** Dark to light. Index 2 is the flat, unlit ground. */
 export type Ramp = readonly [string, string, string, string, string];
 
+/**
+ * Ground is the backdrop, and it was painted like the subject.
+ *
+ * The ladders used to run at the saturation the colour names suggest: a
+ * field was grass green and a steppe was straw yellow, both of them as
+ * strong a paint as the men standing on them. That is the one thing that
+ * cannot be, because the men are the subject and the field is what they are
+ * standing on — a bright green ground and a blue surcoat are two colours
+ * arguing, and at twenty pixels the ground wins.
+ *
+ * So every ladder here is pulled a quarter of the way towards its own grey
+ * and taken down a little, and the ladder itself is stretched to make up for
+ * it: muting a colour flattens the difference between a lit face and a
+ * shaded one, and that difference is what makes a hillside a hillside.
+ * Ground that is quieter and has more shape in it, which is what a field
+ * under an open sky actually looks like from a distance.
+ */
 const RAMPS: Readonly<Record<Terrain, Ramp>> = {
-  plains: ['#2f4a1c', '#3f6024', '#52782f', '#669039', '#7ca84a'],
-  farmland: ['#3c4a16', '#54641d', '#6d8027', '#879a33', '#a0b346'],
-  forest: ['#17300f', '#1f3f16', '#2a521d', '#366527', '#447c33'],
-  hills: ['#3e4a1c', '#546024', '#6c7a2e', '#86913b', '#9fa84f'],
-  mountains: ['#423e38', '#57514a', '#6f685e', '#8a8277', '#a49c90'],
-  marsh: ['#283a2b', '#344c38', '#436047', '#547458', '#67886b'],
-  steppe: ['#4b4a26', '#636030', '#7b783c', '#938f4a', '#aaa65c'],
-  desert: ['#6d5b33', '#8c7543', '#a99056', '#c3a96c', '#d9c087'],
-  coastal: ['#36461f', '#49602b', '#5d7837', '#739045', '#89a658'],
+  plains: ['#2f4123', '#3d522b', '#516a3a', '#678348', '#799657'],
+  farmland: ['#39421f', '#4c5629', '#667337', '#818e48', '#95a259'],
+  forest: ['#192a14', '#20351a', '#2d4824', '#3b5b31', '#476d3c'],
+  hills: ['#3a4324', '#4c542d', '#656e3b', '#7f864d', '#93995d'],
+  mountains: ['#3c3a36', '#4d4945', '#66615a', '#827d75', '#979189'],
+  marsh: ['#28342a', '#324235', '#435646', '#566b58', '#657b68'],
+  steppe: ['#44442c', '#575536', '#706e46', '#898658', '#9b9867'],
+  desert: ['#61553a', '#796a49', '#97865f', '#b2a078', '#c4b38d'],
+  coastal: ['#343f25', '#445330', '#596c40', '#718452', '#829662'],
 };
 
 /** Deep water to shallow. */
@@ -130,17 +147,17 @@ export const OWNER_WASH = 0.1;
 /** The things standing on the ground, in the few colours they are painted. */
 export const DECOR = {
   /** Broadleaf, conifer, and the shadow both cast. */
-  leaf: ['#2b5222', '#356128', '#24451c'],
-  conifer: ['#1d3f1f', '#255026', '#182f18'],
-  scrub: ['#5e6a33', '#74803f'],
+  leaf: ['#2e4828', '#38552f', '#263c21'],
+  conifer: ['#203722', '#29462a', '#1a291a'],
+  scrub: ['#58603b', '#6c7449'],
   /** A furrow in a worked field, and the baulk between two of them. */
-  furrow: ['#7d8a36', '#94a042', '#60702a'],
-  rock: ['#6b6459', '#857d71', '#4d4740'],
+  furrow: ['#747d45', '#899152', '#5a6536'],
+  rock: ['#625d56', '#7a756c', '#46423e'],
   /** The great rivers, and the thread of light down the middle of one. */
-  river: '#2a5f8a',
-  riverLight: '#3d7ba8',
+  river: '#325572',
+  riverLight: '#456f8d',
   /** Where the water breaks on the shore. */
-  surf: '#7fb3cc',
+  surf: '#80a3b4',
 } as const;
 
 /** Mixes two hex colours. */
@@ -183,4 +200,73 @@ export function tileNoise(tx: number, ty: number, salt = 0): number {
   h = (h ^ (h >>> 13)) * 1274126177;
   h = h ^ (h >>> 16);
   return ((h >>> 0) % 65536) / 65536;
+}
+
+/**
+ * What kind of place this part of the ground is.
+ *
+ * `tileNoise` is the wrong grain for this and always was. It gives every
+ * tile its own number with no relation to its neighbour's, which is right
+ * for the speckle in the grass and wrong for everything larger: a field
+ * dressed from it has trees scattered one to a tile from edge to edge, at
+ * the same thinness everywhere, because nothing knows that the tile next to
+ * it is part of the same wood.
+ *
+ * This asks the question at a coarser grain and smooths between the
+ * answers, so what comes back changes slowly across the ground: high here
+ * and for the next ten tiles, low over there. Dressing drawn against it
+ * comes out in stands and clearings — a copse at one end of the field, bare
+ * going at the other, rough ground along the line between — which is what
+ * country looks like, and what gives the eye something to judge distance by.
+ *
+ * `size` is how many tiles a patch runs for. Fed the same `salt` it always
+ * answers the same, so nothing crawls when the camera moves.
+ */
+export function patchOf(tx: number, ty: number, size: number, salt = 0): number {
+  const fx = tx / size;
+  const fy = ty / size;
+  const x0 = Math.floor(fx);
+  const y0 = Math.floor(fy);
+  // Smoothstep rather than a straight blend, so a patch has a soft middle
+  // and a definite edge instead of looking like a stretched chequerboard.
+  const ease = (t: number): number => t * t * (3 - 2 * t);
+  const ax = ease(fx - x0);
+  const ay = ease(fy - y0);
+  const topLeft = tileNoise(x0, y0, salt);
+  const topRight = tileNoise(x0 + 1, y0, salt);
+  const lowLeft = tileNoise(x0, y0 + 1, salt);
+  const lowRight = tileNoise(x0 + 1, y0 + 1, salt);
+  const top = topLeft + (topRight - topLeft) * ax;
+  const low = lowLeft + (lowRight - lowLeft) * ax;
+  return top + (low - top) * ay;
+}
+
+/**
+ * Which worked field a tile belongs to, and how that field was ploughed.
+ *
+ * Ploughland was not a continuous texture, it was somebody's strip next to
+ * somebody else's, and the thing you see from a hill is the boundaries: one
+ * block running one way, the next running the other. Fixing the direction
+ * to the tile gave the opposite — every tile its own direction, which at
+ * any distance averages out to a single grey hatch.
+ *
+ * So a field is a block of tiles, and this says which block a tile is in.
+ * `edge` is true where the block ends, which is where the baulk goes.
+ */
+export const FIELD_TILES = 4;
+
+export function fieldOf(tx: number, ty: number): {
+  along: number;
+  tone: number;
+  edgeX: boolean;
+  edgeY: boolean;
+} {
+  const fx = Math.floor(tx / FIELD_TILES);
+  const fy = Math.floor(ty / FIELD_TILES);
+  return {
+    along: tileNoise(fx, fy, 77) > 0.5 ? 1 : -1,
+    tone: tileNoise(fx, fy, 91),
+    edgeX: ((tx % FIELD_TILES) + FIELD_TILES) % FIELD_TILES === 0,
+    edgeY: ((ty % FIELD_TILES) + FIELD_TILES) % FIELD_TILES === 0,
+  };
 }

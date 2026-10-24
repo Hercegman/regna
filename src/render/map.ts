@@ -38,6 +38,7 @@ import { provinceShapes, type ProvinceShape } from './provinces';
 import { LAKE_RINGS, LAND_RINGS, RIVER_LINES } from '../core/data/geography';
 import { DECOR } from './iso/palette';
 import { armsCanvas } from './arms';
+import { drawGrade } from './grade';
 import { loadGround, type Ground } from './iso/elevation';
 import { drawGround, type TilePaint } from './iso/terrain';
 import { loadSprites, stamp, type SpriteName } from './iso/sprites';
@@ -310,6 +311,12 @@ export function drawMap(
     drawRoutes(paint, state, view, transform);
     drawHighlights(paint, view, transform);
   }
+
+  // The corners down, and the whole afternoon pulled together. Laid on the
+  // small canvas and not the screen, so the shade in a corner is picture
+  // pixels like everything else — a smooth gradient over a picture made of
+  // steps is the one thing that gives away that the steps are a choice.
+  drawGrade(paint, smallWidth, smallHeight);
 
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, width, height);

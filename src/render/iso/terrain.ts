@@ -34,8 +34,10 @@ import {
   SHALLOWS,
   SNOW_LINE,
   WATER,
+  fieldOf,
   groundRamp,
   mix,
+  patchOf,
   snap,
   stepFor,
   tileNoise,
@@ -268,7 +270,10 @@ export function drawGround(
           if (halfWidth > 4) {
             speckle(ctx, cx, cy, halfWidth, halfHeight, ramp, mottle, tx, ty);
           }
-          dressGround(ctx, cx, cy, halfWidth, halfHeight, terrain, metres, tx, ty, jitter);
+          dressGround(
+            ctx, cx, cy, halfWidth, halfHeight, terrain, metres, tx, ty, jitter,
+            0, patchOf(tx, ty, 7, 23),
+          );
         }
       }
 
@@ -319,6 +324,17 @@ export function dressGround(
    * white for half a turn.
    */
   snow = 0,
+  /**
+   * What kind of place this is, nought to one, changing slowly across the
+   * ground: `patchOf`. High is thick going — a stand of trees, scrub, a
+   * worked field; low is bare. Everything below reads its thresholds off
+   * this instead of off the tile's own number, which is what turns scatter
+   * into stands and clearings.
+   *
+   * A half by default, so a caller that does not care gets what the tile
+   * always used to do.
+   */
+  patch = 0.5,
 ): void {
   // Above the treeline nothing grows; what is up there is stone.
   if (metres > SNOW_LINE) return;
@@ -341,11 +357,19 @@ export function dressGround(
     };
   };
 
+  // How far the place itself moves a threshold. A tile in a thick patch
+  // grows what a tile half a step luckier used to grow; a tile in a bare one
+  // grows nothing it would not have grown anyway. The tile's own number
+  // still decides where inside the patch each thing stands, so a wood is a
+  // wood and not a grid of trees.
+  const thick = (patch - 0.5) * 0.46;
+
   switch (terrain) {
     case 'forest': {
       // A wood is trees all over it, in two kinds, because a forest of one
-      // tree repeated is a wallpaper.
-      const count = jitter > 0.3 ? 3 : 2;
+      // tree repeated is a wallpaper — and it is not the same wood all the
+      // way across: it closes up in places and opens into clearings.
+      const count = patch > 0.66 ? 4 : patch > 0.38 ? 3 : jitter > 0.5 ? 2 : 1;
       for (let i = 0; i < count; i++) {
         const spot = at(i * 3);
         tree(ctx, spot.x, spot.y, halfWidth, tileNoise(tx, ty, i + 40) > 0.45, metres > 800);
@@ -353,30 +377,34 @@ export function dressGround(
       break;
     }
     case 'hills':
-      if (jitter > 0.52) {
+      if (jitter > 0.52 - thick) {
         const spot = at(0);
         tree(ctx, spot.x, spot.y, halfWidth * 0.85, false, metres > 700);
       }
-      if (jitter < 0.3) bush(ctx, at(5).x, at(5).y, halfWidth);
+      if (jitter < 0.3 + thick) bush(ctx, at(5).x, at(5).y, halfWidth);
       break;
     case 'mountains':
       if (jitter > 0.45) boulder(ctx, x, y, halfWidth, jitter);
-      else if (jitter < 0.2) tree(ctx, at(0).x, at(0).y, halfWidth * 0.8, false, true);
+      else if (jitter < 0.2 + thick) tree(ctx, at(0).x, at(0).y, halfWidth * 0.8, false, true);
       break;
     case 'farmland':
       furrows(ctx, x, y, halfWidth, halfHeight, tx, ty, jitter);
       break;
     case 'plains':
     case 'coastal':
-      if (jitter > 0.88) tree(ctx, at(0).x, at(0).y, halfWidth * 0.9, true, false);
-      else if (jitter > 0.74) furrows(ctx, x, y, halfWidth, halfHeight, tx, ty, jitter);
+      // A copse where the going is thick, a worked strip where it is middling,
+      // and open grass over the rest of it.
+      if (jitter > 0.88 - thick * 1.6) tree(ctx, at(0).x, at(0).y, halfWidth * 0.9, true, false);
+      else if (patch > 0.56 && jitter > 0.5) {
+        furrows(ctx, x, y, halfWidth, halfHeight, tx, ty, jitter);
+      } else if (jitter > 0.8) bush(ctx, at(5).x, at(5).y, halfWidth);
       break;
     case 'steppe':
     case 'desert':
-      if (jitter > 0.9) bush(ctx, at(0).x, at(0).y, halfWidth);
+      if (jitter > 0.9 - thick * 1.4) bush(ctx, at(0).x, at(0).y, halfWidth);
       break;
     case 'marsh':
-      if (jitter > 0.7) bush(ctx, at(0).x, at(0).y, halfWidth);
+      if (jitter > 0.7 - thick) bush(ctx, at(0).x, at(0).y, halfWidth);
       break;
     default:
       break;
@@ -462,6 +490,20 @@ function boulder(
  * than as the pixels of three strokes, because there are a thousand fields
  * on the screen and a thousand times thirty fills is a dropped frame.
  */
+/**
+ * Ploughland, by the field rather than by the tile.
+ *
+ * Which way the plough went used to be fixed to the tile, so every tile
+ * turned its own way and a mile of farmland averaged out into one grey
+ * hatch. Ploughland does not look like that from a hill: it looks like
+ * blocks, this one running with the slope and the next one across it, with
+ * a baulk between them where nobody ploughed. The blocks are what the eye
+ * reads, and they are the only thing on an open field that gives it a
+ * measure.
+ *
+ * So the direction and the tone belong to the field, and the baulk is drawn
+ * on the tiles that fall on its edge.
+ */
 function furrows(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -472,14 +514,14 @@ function furrows(
   ty: number,
   jitter: number,
 ): void {
-  // Which way the plough went, fixed to the tile so a field never turns.
-  const along = tileNoise(tx, ty, 77) > 0.5 ? 1 : -1;
+  const field = fieldOf(tx, ty);
+  const along = field.along;
   const reach = halfWidth * 0.62;
   ctx.save();
   // Faint. A furrow is a shadow in a field, not a line drawn on one, and at
   // two screen pixels to the picture pixel a hard one is a stripe.
   ctx.globalAlpha = 0.42;
-  ctx.strokeStyle = jitter > 0.5 ? DECOR.furrow[0]! : DECOR.furrow[2]!;
+  ctx.strokeStyle = field.tone > 0.5 ? DECOR.furrow[0]! : DECOR.furrow[2]!;
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (let i = -1; i <= 1; i++) {
@@ -490,6 +532,26 @@ function furrows(
     ctx.lineTo(x + ox + reach, y + oy - along * reach * 0.5);
   }
   ctx.stroke();
+
+  // The baulk: the unploughed strip where one man's land stops. Drawn along
+  // the two sides of the tile that face the next field, which is what turns
+  // a texture into a holding with a boundary.
+  if (field.edgeX || field.edgeY) {
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = DECOR.furrow[2]!;
+    ctx.beginPath();
+    if (field.edgeX) {
+      ctx.moveTo(x - halfWidth, y);
+      ctx.lineTo(x, y - halfHeight);
+    }
+    if (field.edgeY) {
+      ctx.moveTo(x, y - halfHeight);
+      ctx.lineTo(x + halfWidth, y);
+    }
+    ctx.stroke();
+    // And whatever grew in it, because nothing was mown there.
+    if (jitter > 0.72) bush(ctx, Math.round(x), Math.round(y - halfHeight * 0.4), halfWidth * 0.8);
+  }
   ctx.restore();
 }
 

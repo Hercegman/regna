@@ -26,7 +26,7 @@ import type { BattleState } from '../core/battle/sim';
 import { frontage, isShooting } from '../core/battle/sim';
 import type { BattleSettlement, BattleUnit, Fallen, Side } from '../core/battle/types';
 import { FIELD_DEPTH, FIELD_WIDTH } from '../core/battle/types';
-import { WATER, rampFor, snap, snowy, stepFor, tileNoise } from './iso/palette';
+import { WATER, patchOf, rampFor, snap, snowy, stepFor, tileNoise } from './iso/palette';
 import { armsCanvas } from './arms';
 import {
   FALL_SECONDS,
@@ -39,6 +39,7 @@ import {
   poseFor,
 } from './figures';
 import { drawPrecipitation, drawSky, snowCover, veilOf } from './weather';
+import { drawGrade } from './grade';
 import { dressGround, grainOf } from './iso/terrain';
 import { loadSprites, stamp } from './iso/sprites';
 
@@ -327,6 +328,10 @@ export function drawBattle(
   // it is a grey screen.
   drawSky(paint, state, width, height, state.time);
   drawPrecipitation(paint, state, width, height, state.time);
+  // And the camera's own two pence: the corners down, and everything pulled
+  // a little towards the same afternoon. On the small canvas, so the corner
+  // shade is made of picture pixels like the rest of it.
+  drawGrade(paint, width, height);
 
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, view.width, view.height);
@@ -482,14 +487,18 @@ function drawGround(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fr
       if (Math.max(yN, yE, yS, yW) + skirt < -4) continue;
 
       const lean = (west - east) * 0.08 + (south - north) * 0.04;
-      // A field is not one colour. A tile's own number nudges it a step up or
-      // down the ladder, which is most of what makes these pictures look like
-      // country instead of a sheet of paint.
-      // Subtle. A field is not a chequerboard, and at two screen pixels to
-      // the picture pixel a quarter of the tiles a step lighter reads as a
-      // pattern rather than as grass.
+      // A field is not one colour, and it is not one colour per tile either.
+      //
+      // The tile's own number gives the speckle, which is grass. What gives
+      // the ground its shape at any distance is coarser than a tile and has
+      // to be: a stretch of thicker growing a dozen tiles across, and a bare
+      // one beside it. Judged on the same patches that decide what grows
+      // here, so the colour and the cover agree — the dark going is the
+      // going with the trees in it.
       const grain = Math.sin(tx * 127.1 + ty * 311.7) * 43758.5453;
-      const nudge = grain - Math.floor(grain) > 0.86 ? 1 : 0;
+      const speck = grain - Math.floor(grain) > 0.88 ? 1 : 0;
+      const place = patchOf(tx, ty, 7, 23);
+      const nudge = speck + (place > 0.63 ? 1 : place < 0.33 ? -1 : 0);
       const face = (which: 'top' | 'left' | 'right'): string =>
         snap(ramp[Math.max(0, Math.min(4, stepFor(which, lean) - (which === 'top' ? nudge : 0)))]!);
 
@@ -547,6 +556,7 @@ function drawGround(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fr
           ty,
           tileNoise(tx, ty),
           cover,
+          patchOf(tx, ty, 7, 23),
         );
       }
     }
@@ -793,10 +803,29 @@ function drawStandard(
   ctx.globalAlpha = 1;
 }
 
-/** Dust where two units are actually in contact. */
+/** How many puffs go up along one contact, and how long each one lasts. */
+const PUFFS = 7;
+const PUFF_SECONDS = 3.4;
+
+/**
+ * Dust where two units are actually in contact.
+ *
+ * It used to be one flat ellipse laid between the two regiments, which says
+ * that something is happening there and nothing else: a disc of the same
+ * paint, the same size, in the same place, for as long as the fight lasts.
+ * Dust does not do that. It goes up in gouts where feet are, it thins as it
+ * rises, and it is never the same shape twice.
+ *
+ * So: a line of puffs across the contact, each with its own size and its own
+ * moment, every one of them a function of the clock and of which pair of
+ * regiments it belongs to and of nothing else. Nothing is stored, nothing
+ * accumulates, and a battle paused at the same second draws the same dust —
+ * which is the rule the whole field is drawn under.
+ */
 function drawMelee(ctx: CanvasRenderingContext2D, state: BattleState, frame: Frame): void {
   const byId = new Map(state.units.map((unit) => [unit.id, unit]));
   const seen = new Set<string>();
+  let index = 0;
   for (const unit of state.units) {
     if (unit.fled || unit.stance === 'destroyed') continue;
     for (const otherId of unit.engagedWith) {
@@ -805,15 +834,34 @@ function drawMelee(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fra
       seen.add(pair);
       const other = byId.get(otherId);
       if (!other || other.fled) continue;
+      index += 1;
       const a = floorOf(frame, unit.position);
       const b = floorOf(frame, other.position);
       const mx = (a.x + b.x) / 2;
       const my = (a.y + b.y) / 2;
-      const reach = Math.max(6, Math.hypot(a.x - b.x, a.y - b.y) * 0.7);
-      ctx.fillStyle = 'rgba(226, 214, 184, 0.28)';
-      ctx.beginPath();
-      ctx.ellipse(mx, my, reach, reach * SQUASH, 0, 0, Math.PI * 2);
-      ctx.fill();
+      // Along the line between the two of them, which is where the men are.
+      const span = Math.max(10, Math.hypot(a.x - b.x, a.y - b.y));
+      const alongX = (b.x - a.x) / span;
+      const alongY = (b.y - a.y) / span;
+      const reach = Math.max(6, span * 0.7);
+      for (let puff = 0; puff < PUFFS; puff++) {
+        const own = tileNoise(index, puff, 13);
+        const drift = tileNoise(index, puff, 29);
+        // Each puff keeps its own place in the cycle, so the line of them is
+        // never one breath in and out together.
+        const age = ((state.time / PUFF_SECONDS) + own) % 1;
+        const along = ((puff + 0.5) / PUFFS - 0.5) * reach * 1.5;
+        const size = reach * (0.2 + own * 0.22) * (0.55 + age * 0.75);
+        const x = mx + alongX * along + (drift - 0.5) * reach * 0.3;
+        // Up and off the ground as it ages, which is the whole of what makes
+        // it dust rather than a stain.
+        const y = my + alongY * along * SQUASH - age * reach * 0.42;
+        const fade = (1 - age) * (age < 0.18 ? age / 0.18 : 1) * 0.3;
+        ctx.fillStyle = `rgba(216, 206, 180, ${fade.toFixed(3)})`;
+        ctx.beginPath();
+        ctx.ellipse(x, y, size, size * 0.72, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 }
