@@ -19,7 +19,7 @@
  * outline, and the shape is thrown on the ground behind him as a shadow.
  * Each is written up where it is done.
  */
-import { SPRITES, SPRITE_CELL, SPRITE_SHEET } from '../../core/data/sprites';
+import { SPRITES, SPRITE_CELL, SPRITE_MAN, SPRITE_SHEET } from '../../core/data/sprites';
 import type { SpriteName } from '../../core/data/sprites';
 
 export type { SpriteName };
@@ -75,7 +75,17 @@ export function whenSpritesReady(redraw: () => void): void {
  * while costs less than tracking which of them was used when.
  */
 const cache = new Map<string, HTMLCanvasElement>();
-const CACHE_LIMIT = 4000;
+/**
+ * Raised, because the sheet grew.
+ *
+ * A battle asks for eight kinds of soldier in two kits, eight facings and
+ * nine poses, in two realms' colours: two and a half thousand entries at one
+ * zoom. At four thousand the first touch of the wheel threw the lot away and
+ * rebuilt it in a single frame, which is the one moment the player is
+ * guaranteed to be looking. Six thousand holds what is on screen and most of
+ * what the next notch of zoom will ask for.
+ */
+const CACHE_LIMIT = 6000;
 
 /**
  * The silhouettes, for the shadows they cast.
@@ -319,6 +329,27 @@ function parse(colour: string): [number, number, number] {
  * frame moves the whole settlement. Rounded to whole pixels so it never
  * lands between two of them.
  */
+/**
+ * The size to draw a sprite at so that the man in it stands a given height.
+ *
+ * Every sprite is framed to fit what is in it, which is the right way to
+ * spend the pixels and costs one thing that went unnoticed for a long time:
+ * the cell stops meaning a fixed amount of world. A swordsman's cell covers
+ * about two thirds of a unit, a pikeman's covers one and a half because of
+ * the pike, and a knight's nearly two because of the horse. Asked for at the
+ * same number of pixels, all three come out the same height overall — which
+ * means the pikeman is two thirds the man the swordsman is and the knight is
+ * a third of him, riding past infantry that stood a head taller.
+ *
+ * So a caller drawing people says how tall the people should be and this
+ * works out what to ask the sprite for. A regiment of pikes and a regiment
+ * of spears now stand the same height as each other, and a man on a horse is
+ * a man on a horse.
+ */
+export function atManHeight(name: SpriteName, height: number): number {
+  return (height * SPRITES[name].world) / SPRITE_MAN;
+}
+
 /**
  * Where the sun is, as far as the ground is concerned.
  *

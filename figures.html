@@ -36,7 +36,7 @@
     <canvas id="field"></canvas>
     <canvas id="sheet"></canvas>
     <script type="module">
-      import { loadSprites, stamp, sprite } from '/src/render/iso/sprites.ts';
+      import { loadSprites, stamp, sprite, atManHeight } from '/src/render/iso/sprites.ts';
 
       // Two realms, so that the recolouring is being judged and not one paint.
       const REALMS = [
@@ -73,7 +73,8 @@
           for (const kit of [0, 1]) {
             for (const realm of REALMS) {
               for (const pose of ['idle', 'fight']) {
-                stamp(ctx, `${kind}_${kit}_0_${pose}`, x, base, size,
+                const name = `${kind}_${kit}_0_${pose}`;
+                stamp(ctx, name, x, base, atManHeight(name, size),
                       realm.colour, true, realm.device);
                 x += Math.max(10, size * 0.62);
               }
@@ -94,7 +95,8 @@
       document.getElementById('field').after(cycle);
       cycle.style.imageRendering = 'pixelated';
       cycle.style.margin = '0 16px 20px';
-      const frames = ['stepa', 'pass', 'stepb', 'pass', 'idle', 'fight', 'fleea', 'fleeb'];
+      const frames = ['stepa', 'pass', 'stepb', 'pass',
+                      'idle', 'brace', 'shout', 'fight', 'fleea', 'fleeb'];
       cycle.width = frames.length * 72 + 40;
       cycle.height = 152;
       const walk = cycle.getContext('2d');
@@ -104,7 +106,8 @@
       walk.font = '10px ui-monospace, monospace';
       ['spearman', 'archer', 'knight'].forEach((kind, row) => {
         frames.forEach((frame, i) => {
-          stamp(walk, `${kind}_0_0_${frame}`, 60 + i * 72, 46 + row * 48, 40,
+          const name = `${kind}_0_0_${frame}`;
+          stamp(walk, name, 60 + i * 72, 46 + row * 48, atManHeight(name, 34),
                 REALMS[0].colour, true, REALMS[0].device);
           if (row === 0) {
             walk.fillStyle = 'rgba(12,16,10,0.6)';
@@ -130,10 +133,12 @@
         for (let rank = 2; rank >= 0; rank--) {
           for (let file = 0; file < 26; file++) {
             const kit = ((file * 73856093) ^ (rank * 19349663)) >>> 3 & 1;
-            stamp(block, `spearman_${kit}_${side ? 4 : 0}_${rank === 0 ? 'fight' : 'idle'}`,
+            const pose = rank === 0 ? 'fight' : (file % 5 === 0 ? 'shout' : 'brace');
+            const name = `spearman_${kit}_${side ? 4 : 0}_${pose}`;
+            stamp(block, name,
                   20 + file * 14 + (rank % 2 ? 7 : 0),
                   side * 120 + 86 - rank * 9,
-                  size, realm.colour, true, realm.device);
+                  atManHeight(name, size), realm.colour, true, realm.device);
           }
         }
       }

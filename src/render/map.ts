@@ -41,7 +41,7 @@ import { armsCanvas } from './arms';
 import { drawGrade } from './grade';
 import { loadGround, type Ground } from './iso/elevation';
 import { drawGround, type TilePaint } from './iso/terrain';
-import { loadSprites, stamp, type SpriteName } from './iso/sprites';
+import { atManHeight, loadSprites, stamp, type SpriteName } from './iso/sprites';
 import {
   floorAt,
   floorAtLatLon,
@@ -426,7 +426,11 @@ function gather(
       // one without by a captain on foot.
       sprite: army.general ? 'general' : 'captain',
       device: deviceOf(army.faction),
-      size: army.general ? unitSize : unitSize * 0.88,
+      // Asked for at the height of the man, not of the picture. A general
+      // is on a horse and a captain is on his feet, and the frame fits
+      // whatever is in it — so drawn at one size the man on the horse came
+      // out the smaller of the two, which is the one thing he is not.
+      size: atManHeight(army.general ? 'general' : 'captain', unitSize * 0.82),
       colour: faction?.colour ?? '#8d8578',
       offsetX: Math.round(transform.halfWidth * 0.8),
       offsetY: Math.round(transform.halfHeight * 0.9) + (nudge % 2) * 2,
@@ -452,7 +456,7 @@ function gather(
     const geography = getRegion(agent.location);
     add(geography.lon, geography.lat, {
       sprite: 'agent',
-      size: Math.max(6, unitSize * 0.7),
+      size: atManHeight('agent', Math.max(6, unitSize * 0.62)),
       colour: tryGetFaction(agent.faction)?.colour ?? '#8d8578',
       offsetX: -Math.round(transform.halfWidth * 0.9),
       offsetY: -Math.round(transform.halfHeight * 0.4),
@@ -466,7 +470,7 @@ function gather(
     const geography = getRegion(where);
     add(geography.lon, geography.lat, {
       sprite: 'caravan',
-      size: Math.max(6, unitSize * 0.7),
+      size: atManHeight('caravan', Math.max(6, unitSize * 0.62)),
       colour: tryGetFaction(caravan.faction)?.colour ?? '#8d8578',
       offsetX: Math.round(transform.halfWidth * 0.3),
       offsetY: -Math.round(transform.halfHeight * 0.8),

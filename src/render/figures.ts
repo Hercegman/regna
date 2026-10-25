@@ -45,8 +45,19 @@ export function isEngine(kind: Figure): boolean {
  * because a man running has no moment of standing still in him — and he has
  * thrown away his shield, which is the one thing that reads as a rout rather
  * than as a march the wrong way.
+ *
+ * `brace` and `shout` are what a man does when he is not doing anything.
+ * That sounds like nothing and it is most of a battle: two lines stand
+ * fifty yards apart for a quarter of an hour before either moves, and drawn
+ * out of `idle` alone that is two hundred identical statues. One is the
+ * guard — weight down, shield up, expecting to be hit — and the other is
+ * him roaring at the men opposite with his spear over his head, which is
+ * what the sources say they were all doing and what nobody has ever drawn
+ * at this scale.
  */
-export type Pose = 'idle' | 'pass' | 'stepa' | 'stepb' | 'fight' | 'fleea' | 'fleeb';
+export type Pose =
+  | 'idle' | 'pass' | 'brace' | 'shout'
+  | 'stepa' | 'stepb' | 'fight' | 'fleea' | 'fleeb';
 
 /**
  * Which figure a kind of soldier is drawn as.
@@ -168,8 +179,13 @@ export function poseFor(
   index: number,
 ): Pose {
   if (stance === 'melee' || stance === 'skirmishing') {
-    // Not all at once: a line in contact has men swinging and men recovering.
-    return Math.floor(seconds * 2.2 + index * 0.41) % 2 === 0 ? 'fight' : 'idle';
+    // Not all at once: a line in contact has men swinging and men recovering,
+    // and what a man does between swings is get back behind his shield.
+    // Every so often he puts his head up and shouts instead, which is the
+    // one thing that makes a melee look like men rather than like machinery.
+    const beat = Math.floor(seconds * 2.2 + index * 0.41) % 6;
+    if (beat === 0 || beat === 2 || beat === 4) return 'fight';
+    return beat === 3 ? 'shout' : 'brace';
   }
   if (stance === 'routing') {
     // Faster than a march and with no stand in it: he is running.
@@ -177,16 +193,32 @@ export function poseFor(
   }
   if (stance === 'advancing' || stance === 'charging') {
     const beat = Math.floor(seconds * (stance === 'charging' ? 4.5 : 2.8) + index * 0.37) % 4;
-    return beat === 0 ? 'stepa' : beat === 2 ? 'stepb' : 'pass';
+    if (beat === 0) return 'stepa';
+    if (beat === 2) return 'stepb';
+    // The pass — and, on a charge, now and then a man throws his weapon up
+    // and roars instead of taking the quiet beat. Never two beats running,
+    // so the gait survives it.
+    if (stance === 'charging' && Math.floor(seconds * 0.9 + index * 0.53) % 5 === 0) {
+      return 'shout';
+    }
+    return 'pass';
   }
   // Standing, which is not the same as being a statue.
   //
-  // A regiment waiting in line was every man in one pose, held exactly, for
-  // as long as the order lasted — and a hundred identical frozen figures is
-  // the one arrangement that reads as a texture rather than as men. Nothing
-  // dramatic is wanted here: a man shifts his weight onto the other foot
-  // every ten seconds or so, each on his own clock, so at any moment a few
-  // in the block are moving and the rest are not. That is what a body of men
-  // standing in a field actually looks like from a distance.
-  return Math.floor(seconds * 0.6 + index * 0.31) % 7 === 0 ? 'pass' : 'idle';
+  // A regiment waiting in line used to be every man in one pose, held
+  // exactly, for as long as the order lasted — and two hundred identical
+  // frozen figures is the one arrangement that reads as a texture rather
+  // than as men. So each man runs his own slow round of it: he shifts his
+  // weight, he settles behind his shield, he puts his head up and shouts at
+  // the line opposite, and the rest of the time he stands.
+  //
+  // Slow, and spread by who he is, so that at any moment a quarter of the
+  // block is doing something and no two neighbours are doing it together.
+  // A line where everybody roars at once is a chorus, which is worse than
+  // a statue.
+  const beat = Math.floor(seconds * 0.55 + index * 0.37) % 11;
+  if (beat === 0) return 'pass';
+  if (beat === 3 || beat === 8) return 'brace';
+  if (beat === 5) return 'shout';
+  return 'idle';
 }

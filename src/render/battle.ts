@@ -41,7 +41,7 @@ import {
 import { drawPrecipitation, drawSky, snowCover, veilOf } from './weather';
 import { drawGrade } from './grade';
 import { dressGround, grainOf } from './iso/terrain';
-import { loadSprites, stamp } from './iso/sprites';
+import { atManHeight, loadSprites, stamp } from './iso/sprites';
 
 export interface BattleView {
   /** Updated when the window is resized. */
@@ -408,8 +408,8 @@ function liveryOf(faction: FactionId): { colour: string; device: string } {
  */
 function drawFallen(ctx: CanvasRenderingContext2D, state: BattleState, frame: Frame): void {
   if (frame.scale < 0.45 || state.fallen.length === 0) return;
-  const lying = Math.max(5, Math.min(23, frame.scale * 9.5));
-  const standing = Math.max(6, Math.min(34, frame.scale * 13));
+  const lying = Math.max(5, Math.min(22, frame.scale * 9));
+  const standing = Math.max(6, Math.min(32, frame.scale * 12));
   for (const body of fallenInOrder(state)) {
     const at = floorOf(frame, body);
     const y = at.y - lift(frame, state.terrainHeight(body));
@@ -419,18 +419,20 @@ function drawFallen(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fr
     const since = state.time - body.at;
     if (since >= 0 && since < FALL_SECONDS) {
       const through = since / FALL_SECONDS;
+      const going = fallingSprite(body.kit, facingIndex(body.facing, SQUASH), since);
       stamp(
         ctx,
-        fallingSprite(body.kit, facingIndex(body.facing, SQUASH), since),
+        going,
         at.x,
         y,
-        standing + (lying - standing) * through,
+        atManHeight(going, standing + (lying - standing) * through),
         livery.colour,
         true,
         livery.device,
       );
     } else {
-      stamp(ctx, body.kit ? 'fallen2' : 'fallen', at.x, y, lying, livery.colour, false, livery.device);
+      const down = body.kit ? 'fallen2' : 'fallen';
+      stamp(ctx, down, at.x, y, atManHeight(down, lying), livery.colour, false, livery.device);
     }
   }
 }
@@ -671,12 +673,13 @@ function drawUnit(
       // a cadence of its own: each piece shows its loosing frame in turn for
       // as long as it takes to see, while the regiment is in fact shooting.
       const working = loosing && (state.time + i * 3.1) % 9 < 1.3;
+      const piece = figureSprite(kind, 0, facing, working ? 'fight' : 'idle');
       stamp(
         ctx,
-        figureSprite(kind, 0, facing, working ? 'fight' : 'idle'),
+        piece,
         at.x - span / 2 + (span / pieces) * (i + 0.5),
         baseY,
-        size,
+        atManHeight(piece, size),
         colour,
         true,
         device,
@@ -696,14 +699,23 @@ function drawUnit(
   // standing back, or the ranks land on top of each other and a regiment is
   // one row of heads.
   const ranks = type.unitClass === 'pikemen' || type.unitClass === 'spearmen' ? 4 : 3;
-  const manSize = Math.max(6, Math.min(34, frame.scale * 13));
+  // How tall the men are, in pixels, and it means the men: every sprite is
+  // framed to fit what is in it, so a pike or a horse in the frame used to
+  // shrink the man to make room. `atManHeight` undoes that at the stamp, so
+  // this number is the height of a figure and not the height of a picture
+  // that has a figure somewhere in it.
+  const manSize = Math.max(6, Math.min(32, frame.scale * 12));
   // As many files as will stand shoulder to shoulder across the frontage the
-  // simulation is using, and no more.
+  // simulation is using, and no more. A horse takes a good deal more room
+  // than a man both ways, and now that it is drawn at the size a horse
+  // actually is, it has to be given that room: packed at a footman's
+  // spacing a troop of cavalry is one brown mass with heads on top.
+  const abreast = manSize * (mounted ? 0.78 : 0.4);
   const files = Math.max(
     1,
-    Math.min(Math.round(unit.soldiers / ranks), Math.round(across / (manSize * 0.4))),
+    Math.min(Math.round(unit.soldiers / ranks), Math.round(across / abreast)),
   );
-  const rankStep = manSize * (mounted ? 0.5 : 0.42);
+  const rankStep = manSize * (mounted ? 0.82 : 0.42);
   const figures = Math.max(1, Math.round(files * ranks * standing));
   // A regiment pressed up against another leans into it. One offset on the
   // whole block, toward whoever it is fighting, and a line of battle stops
@@ -729,12 +741,13 @@ function drawUnit(
         state.time,
         placed,
       );
+      const sprite = figureSprite(kind, kitFor(file, rank), facing, pose);
       stamp(
         ctx,
-        figureSprite(kind, kitFor(file, rank), facing, pose),
+        sprite,
         x + (rank === 0 ? press : 0),
         baseY - back + slop,
-        manSize,
+        atManHeight(sprite, manSize),
         colour,
         true,
         device,

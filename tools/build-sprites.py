@@ -456,6 +456,14 @@ def swing(origin, angle, length, sideways=0.0):
 #: and turned him into a pair of stilts with a parcel on top. The trunk is
 #: the part the eye measures everything else against, and it has to be the
 #: longest single run on the figure.
+#: How tall a man is, crown to sole, in these units.
+#:
+#: Written down rather than left implicit because the game needs it: every
+#: sprite is framed to fit what is in it, so the cell covers a different
+#: amount of world from one to the next, and a man can only be drawn the
+#: same size as the man beside him if both ends know what a man measures.
+MAN_HEIGHT = 0.618
+
 ANKLE = 0.028
 KNEE = 0.158
 HIP = 0.292
@@ -492,6 +500,18 @@ STANCE = {
                    shoL=25,  elbL=20, shoR=-26, elbR=26),
     'fight':  dict(lean=15, drop=0.022, hipL=27,  kneeL=36, hipR=-31, kneeR=11,
                    shoL=-16, elbL=44, shoR=34,  elbR=46),
+    # Set, with his weight down and his shield up: what a man in a line does
+    # between swings, and what he does for the quarter hour before anybody
+    # swings at all. It is not a pose a line was ever drawn in, and a line
+    # that has never been drawn in it reads as a line of men waiting for a
+    # bus rather than as a line of men expecting to be hit.
+    'brace':  dict(lean=11, drop=0.030, hipL=15,  kneeL=24, hipR=-17, kneeR=26,
+                   shoL=28,  elbL=64, shoR=-16, elbR=52),
+    # And roaring at the other line, which is most of what men in the front
+    # rank of a medieval battle were doing with themselves: weight back,
+    # chest out, and whatever he is holding thrown up over his head.
+    'shout':  dict(lean=-11, drop=0.002, hipL=13, kneeL=11, hipR=-15, kneeR=13,
+                   shoL=-20, elbL=32, shoR=148, elbR=14),
     'flee-a': dict(lean=21, drop=0.012, hipL=48,  kneeL=20, hipR=-34, kneeR=78,
                    shoL=-48, elbL=74, shoR=42,  elbR=66),
     'flee-b': dict(lean=21, drop=0.012, hipL=-34, kneeL=78, hipR=48,  kneeR=20,
@@ -694,9 +714,16 @@ def carry(name, weapon, pose, hands, elbows, mail, steel, timber, cloth, leather
     right = hands['r']
     left = hands['l']
     fighting = pose == 'fight'
+    # The hand is over his head in a shout, and a spear that stands on the
+    # ground from a hand up there is a spear through his own skull. What is
+    # in that hand is brandished: up, forward and well clear of him.
+    aloft = pose == 'shout'
 
     if weapon == 'spear':
-        if fighting:
+        if aloft:
+            butt = (right[0] - 0.01, right[1] - 0.20, right[2] - 0.16)
+            point = (right[0] + 0.01, right[1] + 0.26, right[2] + 0.30)
+        elif fighting:
             butt = (right[0], right[1] - 0.16, right[2] - 0.02)
             point = (right[0], right[1] + 0.40, right[2] + 0.03)
         else:
@@ -709,7 +736,10 @@ def carry(name, weapon, pose, hands, elbows, mail, steel, timber, cloth, leather
         limb(f'{name}-spear-head', point, head_to, 0.022, 0.004, steel, 5)
 
     elif weapon == 'pike':
-        if fighting:
+        if aloft:
+            butt = (right[0] - 0.01, right[1] - 0.34, right[2] - 0.30)
+            point = (right[0] + 0.02, right[1] + 0.42, right[2] + 0.52)
+        elif fighting:
             # Brought down to the level: a hedge, not a forest. Both hands on
             # it, which is why it comes across the body.
             butt = (right[0], right[1] - 0.30, right[2] - 0.06)
@@ -759,6 +789,10 @@ def carry(name, weapon, pose, hands, elbows, mail, steel, timber, cloth, leather
         # the thing was recognised. Brought up to the shoulder to shoot.
         mid = ((right[0] + left[0]) / 2, (right[1] + left[1]) / 2 + 0.02,
                (right[2] + left[2]) / 2 + (0.05 if fighting else 0.0))
+        if aloft:
+            # One hand is over his head. A crossbow slung between it and the
+            # other would stand on end, so it hangs off the hand that stayed.
+            mid = (left[0] + 0.040, left[1] + 0.030, left[2] + 0.050)
         limb(f'{name}-stock', (mid[0], mid[1] - 0.14, mid[2] - 0.01),
              (mid[0], mid[1] + 0.16, mid[2]), 0.016, 0.012, timber, 4)
         limb(f'{name}-prod', (mid[0] - 0.15, mid[1] + 0.12, mid[2]),
@@ -767,6 +801,8 @@ def carry(name, weapon, pose, hands, elbows, mail, steel, timber, cloth, leather
     elif weapon == 'gun':
         mid = ((right[0] + left[0]) / 2 + 0.01, (right[1] + left[1]) / 2,
                (right[2] + left[2]) / 2 + 0.06)
+        if aloft:
+            mid = (left[0] + 0.045, left[1] + 0.020, left[2] + 0.060)
         limb(f'{name}-butt', (mid[0], mid[1] - 0.17, mid[2] - 0.03),
              (mid[0], mid[1] - 0.04, mid[2] - 0.01), 0.022, 0.016, leather, 5)
         limb(f'{name}-barrel', (mid[0], mid[1] - 0.04, mid[2] - 0.01),
@@ -778,7 +814,10 @@ def carry(name, weapon, pose, hands, elbows, mail, steel, timber, cloth, leather
         # Couched: tucked under the arm and run forward past the horse's head.
         tuck = (elbows['r'][0] + 0.012, elbows['r'][1] - 0.16, elbows['r'][2] - 0.01)
         point = (right[0] + 0.004, right[1] + 0.74, right[2] + 0.02)
-        if pose != 'fight':
+        if aloft:
+            tuck = (right[0] - 0.01, right[1] - 0.26, right[2] - 0.22)
+            point = (right[0] + 0.02, right[1] + 0.36, right[2] + 0.42)
+        elif pose != 'fight':
             point = (right[0] + 0.07, right[1] + 0.22, right[2] + 0.62)
         limb(f'{name}-lance', tuck, point, 0.016, 0.011, timber, 5)
         head_to = (point[0] + (point[0] - tuck[0]) * 0.1,
@@ -1407,7 +1446,7 @@ def frame_model(camera):
             xs.append(local.x)
             ys.append(local.y)
     if not xs:
-        return 0.5, 0.5
+        return 0.5, 0.5, 1.0
     centre_x = (min(xs) + max(xs)) / 2
     centre_y = (min(ys) + max(ys)) / 2
     # A little room to spare: a frame that fits exactly clips the outermost
@@ -1420,15 +1459,15 @@ def frame_model(camera):
     origin = inverse @ mathutils.Vector((0.0, 0.0, 0.0))
     across = (origin.x - (centre_x - extent / 2)) / extent
     down = ((centre_y + extent / 2) - origin.y) / extent
-    return across, down
+    return across, down, extent
 
 
 def render(camera, radius, path):
     aim(camera, radius)
-    anchor = frame_model(camera)
+    across, down, extent = frame_model(camera)
     bpy.context.scene.render.filepath = path
     bpy.ops.render.render(write_still=True)
-    return anchor
+    return across, down, extent
 
 
 def read_png_pixels(path):
@@ -1572,8 +1611,8 @@ def main():
     wanted.append(('rider', lambda: oneMan(True)))
     wanted.append(('captain', lambda: general(False)))
     wanted.append(('general', lambda: general(True)))
-    # Every kind of soldier, in two kits, eight directions and seven poses.
-    # Eight hundred and ninety-six renders, and the largest single thing on
+    # Every kind of soldier, in two kits, eight directions and nine poses.
+    # Eleven hundred and fifty-two renders, and the largest single thing on
     # the sheet: the price of a battle in which the men face the men they are
     # fighting, move their legs on the way there, are not all the same man,
     # and throw away their shields when they break.
@@ -1596,8 +1635,8 @@ def main():
     for kind, options in kinds:
         for kit in range(2):
             for facing in range(8):
-                for pose in ('idle', 'pass', 'step-a', 'step-b',
-                             'fight', 'flee-a', 'flee-b'):
+                for pose in ('idle', 'pass', 'brace', 'shout', 'step-a',
+                             'step-b', 'fight', 'flee-a', 'flee-b'):
                     label = f'{kind}_{kit}_{facing}_{pose.replace("-", "")}'
                     wanted.append((
                         label,
@@ -1656,7 +1695,7 @@ def main():
     pieces = []
     for name, build in wanted:
         radius = build()
-        across, down = render(camera, radius, scratch)
+        across, down, extent = render(camera, radius, scratch)
         width, height, raw = read_png_pixels(scratch)
         cell = shrink_and_quantise(width, height, raw, CELL)
         left, top, piece_w, piece_h, bits = trim(cell, CELL)
@@ -1664,18 +1703,19 @@ def main():
             name, piece_w, piece_h, bits,
             round(across * CELL - left, 1),
             round(down * CELL - top, 1),
+            round(extent, 4),
         ))
         print(f'  {name}', flush=True)
 
     sheet_w, sheet_h, places = shelve([(p[1], p[2]) for p in pieces])
     sheet = bytearray(sheet_w * sheet_h * 4)
     index = []
-    for i, (name, piece_w, piece_h, bits, ax, ay) in enumerate(pieces):
+    for i, (name, piece_w, piece_h, bits, ax, ay, world) in enumerate(pieces):
         x, y = places[i]
         for row in range(piece_h):
             start = ((y + row) * sheet_w + x) * 4
             sheet[start:start + piece_w * 4] = bits[row * piece_w * 4:(row + 1) * piece_w * 4]
-        index.append((name, x, y, piece_w, piece_h, ax, ay))
+        index.append((name, x, y, piece_w, piece_h, ax, ay, world))
 
     os.makedirs(os.path.dirname(out_png), exist_ok=True)
     write_png(out_png, sheet_w, sheet_h, sheet)
@@ -1684,10 +1724,11 @@ def main():
 
     entries = ',\n'.join(
         f"  {name}: {{ x: {x}, y: {y}, width: {w}, height: {h}, "
-        f"anchorX: {ax}, anchorY: {ay} }}"
-        for name, x, y, w, h, ax, ay in index
+        f"anchorX: {ax}, anchorY: {ay}, world: {world} }}"
+        for name, x, y, w, h, ax, ay, world in index
     )
     cell = CELL
+    man = MAN_HEIGHT
     with open(out_ts, 'w') as handle:
         handle.write(f'''/**
  * Where each sprite sits on the sheet.
@@ -1714,6 +1755,11 @@ def main():
  * `height` differ from one to the next. `SPRITE_CELL` is the square they
  * were all rendered in: a caller asking for a sprite at a size means that
  * square, and what it gets back is the piece of it that was not air.
+ *
+ * `world` is how much of the model's world that square covered. It differs
+ * from one sprite to the next because each is framed to fit what is in it,
+ * and it is what a caller needs to draw two different sprites at the same
+ * scale as each other — see `atManHeight`.
  */
 
 export const SPRITE_MARKER = {{ r: 255, g: 0, b: 255 }} as const;
@@ -1730,6 +1776,24 @@ export const SPRITE_DEVICE = {{ r: 0, g: 255, b: 255 }} as const;
 
 /** The square every sprite was rendered in, before it was cut down. */
 export const SPRITE_CELL = {cell};
+
+/**
+ * How tall a man is, in the units the models are built in.
+ *
+ * The one number that makes the sprites comparable with each other. Every
+ * sprite is framed to fit what is in it, which spends the pixels where they
+ * are wanted and costs the one thing nobody noticed for a long time: the
+ * cell stops meaning a fixed amount of world. A swordsman's cell covers two
+ * thirds of a unit and a knight's covers nearly two, so drawing both cells
+ * at the same number of pixels makes the knight the smaller man — which is
+ * exactly what the field showed, cavalry riding past infantry that stood a
+ * head taller than them.
+ *
+ * `world` on each sprite says how much it covers. Divide by this and the
+ * answer is how many times too big that sprite is drawn at a given size,
+ * which is what `atManHeight` undoes.
+ */
+export const SPRITE_MAN = {man};
 
 /** Where the sheet is served from. */
 export const SPRITE_SHEET = 'sprites.png';
