@@ -26,7 +26,18 @@ import type { BattleState } from '../core/battle/sim';
 import { frontage, isShooting } from '../core/battle/sim';
 import type { BattleSettlement, BattleUnit, Fallen, Side } from '../core/battle/types';
 import { FIELD_DEPTH, FIELD_WIDTH } from '../core/battle/types';
-import { WATER, patchOf, rampFor, snap, snowy, stepFor, tileNoise } from './iso/palette';
+import {
+  CREST,
+  OPEN_WATER,
+  mix,
+  patchOf,
+  rampFor,
+  snap,
+  snowy,
+  stepFor,
+  swellAt,
+  tileNoise,
+} from './iso/palette';
 import { armsCanvas } from './arms';
 import {
   FALL_SECONDS,
@@ -455,7 +466,7 @@ function drawGround(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fr
   // white — and because the cover follows the sky, it melts back off over
   // the half minute a change takes.
   const cover = state.setup.naval ? 0 : snowCover(state) * 0.78;
-  const ramp = state.setup.naval ? WATER : snowy(rampFor(state.setup.terrain), cover);
+  const ramp = state.setup.naval ? OPEN_WATER : snowy(rampFor(state.setup.terrain), cover);
   const skirt = 120;
 
   const height = (tx: number, ty: number): number =>
@@ -499,10 +510,36 @@ function drawGround(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fr
       // going with the trees in it.
       const grain = Math.sin(tx * 127.1 + ty * 311.7) * 43758.5453;
       const speck = grain - Math.floor(grain) > 0.88 ? 1 : 0;
-      const place = patchOf(tx, ty, 7, 23);
+      const place = state.setup.naval ? 0.5 : patchOf(tx, ty, 7, 23);
       const nudge = speck + (place > 0.63 ? 1 : place < 0.33 ? -1 : 0);
-      const face = (which: 'top' | 'left' | 'right'): string =>
-        snap(ramp[Math.max(0, Math.min(4, stepFor(which, lean) - (which === 'top' ? nudge : 0)))]!);
+      // On water the tile takes its colour from the swell under it rather
+      // than from anything fixed to the tile, so what the eye follows is the
+      // wave crossing the field and not the grid it is drawn on.
+      const swell = state.setup.naval
+        ? swellAt((tx - ty) * metresPerTile, -(tx + ty) * metresPerTile, state.time)
+        : 0;
+      // Blended along the ladder rather than snapped to a rung of it. Water
+      // has no faces and no slope: a tile that jumps a whole step from its
+      // neighbour reads as a tiled floor, which is the one thing the sea is
+      // not. The result is still snapped to the short palette at the end, so
+      // it is a handful of blues and not a gradient.
+      const wave = (swell + 1) * 2;
+      const rung = Math.max(0, Math.min(3, Math.floor(wave)));
+      const through = Math.max(0, Math.min(1, wave - rung));
+      const face = (which: 'top' | 'left' | 'right'): string => {
+        if (state.setup.naval) {
+          // The flank of a tile is the trough beside it, a shade down.
+          const drop = which === 'top' ? 0 : 1.1;
+              const at = Math.max(0, Math.min(3, Math.floor(wave - drop)));
+          const by = Math.max(0, Math.min(1, wave - drop - at));
+          // A longer ladder than the ground gets. Twelve steps a channel is
+          // enough for grass, where the colour barely moves; on a blend that
+          // runs the whole length of the ramp it puts the green a rung up
+          // while the red stays put, and a tile of open sea comes out teal.
+          return snap(mix(ramp[at]!, ramp[at + 1]!, which === 'top' ? through : by), 20);
+        }
+        return snap(ramp[Math.max(0, Math.min(4, stepFor(which, lean) - (which === 'top' ? nudge : 0)))]!);
+      };
 
       ctx.fillStyle = face('left');
       ctx.beginPath();
@@ -535,6 +572,16 @@ function drawGround(ctx: CanvasRenderingContext2D, state: BattleState, frame: Fr
       // furrows and one in a wood among trees, which is worth having for
       // itself and is also the only thing on the field that gives the eye a
       // sense of how far away anything is.
+      if (state.setup.naval && swell > CREST && halfWidth > 3) {
+        // A wave that has got too steep for itself breaks, and what shows is
+        // a short white line along its back. One mark a tile, and only on
+        // the tiles that are actually at the top of a wave, so the whitecaps
+        // travel with the swell instead of sitting still on the water.
+        const mid = Math.round((yE + yW) / 2);
+        const run = Math.round(halfWidth * (0.3 + (swell - CREST) * 1.1));
+        ctx.fillStyle = `rgba(198, 220, 236, ${(0.16 + (swell - CREST) * 0.8).toFixed(2)})`;
+        ctx.fillRect(sx - run, mid - Math.round(halfHeight * 0.3), run * 2, 1);
+      }
       if (!state.setup.naval && halfWidth > 3) {
         grainOf(
           ctx,
@@ -642,9 +689,25 @@ function drawUnit(
   if (afloat) {
     // A hull's length is her own, not a function of how many men are aboard
     // this morning: a galley is forty metres whether she is full or half dead.
-    const length = (16 + type.soldiers * 0.28) * frame.scale;
+    const length = Math.max(16, (16 + type.soldiers * 0.28) * frame.scale);
+    // She rides on the sea the rest of the field is drawn from, so a line of
+    // ships rises and falls along the wave rather than sitting on it like a
+    // row of models on a shelf. The same swell, read at her own position.
+    const swell = swellAt(unit.position.x, unit.position.y, state.time);
+    const ride = baseY - swell * length * 0.05;
+    // And the water she is standing in is disturbed: a patch of lighter sea
+    // under the hull, which is the whole of a wake at this size and the one
+    // thing that stops a ship looking like a sticker.
+    ctx.save();
+    ctx.globalAlpha *= 0.4;
+    ctx.fillStyle = '#4a7fa0';
+    ctx.beginPath();
+    ctx.ellipse(at.x, ride + length * 0.04, length * 0.46, length * 0.46 * SQUASH * 0.6,
+      0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
     stamp(ctx, type.unitClass === 'warship' ? 'galley' : 'roundship',
-      at.x, baseY, Math.max(16, length), colour);
+      at.x, ride, length, colour, false);
     ctx.globalAlpha = 1;
     return;
   }

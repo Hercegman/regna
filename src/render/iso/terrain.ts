@@ -32,6 +32,7 @@ import {
   ROCK_LINE,
   SAND,
   SHALLOWS,
+  CREST,
   SNOW_LINE,
   WATER,
   fieldOf,
@@ -40,6 +41,7 @@ import {
   patchOf,
   snap,
   stepFor,
+  swellAt,
   tileNoise,
 } from './palette';
 import { isLand } from './landmask';
@@ -245,10 +247,20 @@ export function drawGround(
       // Depth in three steps rather than five. The elevation grid under the
       // sea is coarse and averaged, and reading five shades off it gave the
       // Mediterranean a herringbone of trenches that are not there.
+      // And it has a swell on it. Depth says which end of the ladder a
+      // stretch of sea sits at; the swell moves it a shade either side of
+      // that, in long bands running across the water rather than in
+      // anything tied to the tile. A map is not drawn often enough to let
+      // the waves travel — that would be a continent repainting itself for
+      // ever to animate a texture — but the pattern is the same one the sea
+      // fight uses, caught at one moment.
+      const lift = sea ? swellAt(tx * 6.5, ty * 6.5, 0) : 0;
       ctx.fillStyle = sea
         ? edged
-          ? SHALLOWS[2 + (jitter > 0.7 ? 1 : 0)]!
-          : WATER[Math.max(0, Math.min(3, 3 - Math.round(Math.max(0, -metres) / 1400)))]!
+          ? SHALLOWS[Math.max(0, Math.min(4, 2 + (jitter > 0.7 ? 1 : 0) + Math.round(lift)))]!
+          : WATER[Math.max(0, Math.min(4, 3
+              - Math.round(Math.max(0, -metres) / 1400)
+              + Math.round(lift * 1.2)))]!
         : faceColour('top');
       ctx.beginPath();
       ctx.moveTo(sx, yN);
@@ -265,7 +277,14 @@ export function drawGround(
         const cy = Math.round((yE + yW) / 2);
         if (sea) {
           if (edged && jitter > 0.55) surf(ctx, cx, cy, halfWidth, jitter);
-          else if (halfWidth > 5) ripple(ctx, cx, cy, halfWidth, tx, ty);
+          else if (lift > CREST && halfWidth > 4) {
+            // The back of a wave that has got too steep for itself.
+            const run = Math.max(1, Math.round(halfWidth * (0.3 + (lift - CREST) * 0.9)));
+            ctx.fillStyle = DECOR.surf;
+            ctx.globalAlpha = 0.22 + (lift - CREST) * 0.7;
+            ctx.fillRect(cx - run, cy, run * 2, 1);
+            ctx.globalAlpha = 1;
+          } else if (halfWidth > 5) ripple(ctx, cx, cy, halfWidth, tx, ty);
         } else {
           if (halfWidth > 4) {
             speckle(ctx, cx, cy, halfWidth, halfHeight, ramp, mottle, tx, ty);

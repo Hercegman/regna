@@ -1269,32 +1269,169 @@ def caravan():
     return 0.58
 
 
+def hull(name, length, beam, depth, mat, bluff=False, stations=13):
+    """A hull, lofted from a line of cross-sections.
+
+    What was here was a box with two smaller boxes on it, and at the size the
+    sea fight draws a ship that is a crate with a stick in it. A hull is the
+    one shape everybody knows by heart — drawn to a point at both ends, wider
+    amidships than anywhere else, with a deck line that sweeps up fore and
+    aft — and none of those three things survive being a box.
+
+    Five points to a section: the keel, two bilges and two gunwales. Enough
+    for the bottom to be a V and the sides to stand up off it, which is the
+    whole of a hull at this scale.
+    """
+    verts = []
+    for i in range(stations):
+        u = -1.0 + 2.0 * i / (stations - 1)
+        reach = abs(u)
+        if bluff:
+            # A round ship is full in the ends and carries her beam a long
+            # way forward: a merchantman was built to hold cargo.
+            half = beam * (1.0 - 0.86 * reach ** 3.2) ** 0.5
+        else:
+            # A galley is drawn out to a point both ends.
+            half = beam * (1.0 - reach ** 2.1)
+        half = max(half, beam * 0.045)
+        # The sheer, which is the line of the deck: lowest amidships.
+        deck = depth * (1.0 + (0.52 if bluff else 0.40) * reach ** 1.7)
+        # And the rocker, which lifts the keel out of the water at the ends.
+        keel = depth * 0.46 * reach ** 2.4
+        y = u * length / 2
+        verts.extend([
+            (0.0, y, keel),
+            (-half * 0.92, y, keel + (deck - keel) * 0.42),
+            (-half, y, deck),
+            (half, y, deck),
+            (half * 0.92, y, keel + (deck - keel) * 0.42),
+        ])
+    faces = []
+    for i in range(stations - 1):
+        a = i * 5
+        b = (i + 1) * 5
+        for j in range(4):
+            faces.append((a + j, a + j + 1, b + j + 1, b + j))
+        # The deck, closing the section across the top.
+        faces.append((a + 3, a + 2, b + 2, b + 3))
+    faces.append((0, 1, 2, 3, 4))
+    last = (stations - 1) * 5
+    faces.append((last + 4, last + 3, last + 2, last + 1, last))
+    return mesh_from(name, verts, faces, mat)
+
+
+def sail(name, width, drop, at, mat, belly=0.26, panels=5):
+    """A square sail with the wind in it.
+
+    A flat quad is a sheet of paper. Three or four panels curved away from
+    the yard is a sail, and the curve is the only thing in the rig that says
+    the ship is moving rather than moored.
+    """
+    verts = []
+    for i in range(panels + 1):
+        t = i / panels
+        across = (t - 0.5) * 2
+        x = across * width / 2
+        # The whole cloth stands clear of the mast and bellies forward from
+        # there. Hung on the mast's own line it bulged through it, and the
+        # spar came out of the middle of the sail like a seam: two sails
+        # where there is one.
+        bow = belly * (0.35 + 0.65 * (1 - across * across))
+        verts.append((x, at[1] + bow * 0.55, at[2]))
+        verts.append((x, at[1] + bow, at[2] - drop))
+    faces = []
+    for i in range(panels):
+        a = i * 2
+        faces.append((a, a + 2, a + 3, a + 1))
+    return mesh_from(name, verts, faces, mat)
+
+
 def vessel(oared):
-    """A hull: a galley with her oars out, or a round ship under sail."""
+    """A galley with her oars out, or a round ship under sail."""
     clear()
     oak = material('oak', srgb('#6b4a28'))
+    dark = material('wale', srgb('#4a3119'))
     cloth = material('cloth', MARKER)
-    pale = material('sail', srgb('#ddd6c2'))
+    rope = shared('cord', srgb('#cfc4a8'))
     length = 1.5 if oared else 1.0
-    beam = 0.22 if oared else 0.4
-    box('hull', 0, 0, 0, beam, length, 0.24, oak)
-    box('stern', 0, -length * 0.4, 0.24, beam * 0.7, length * 0.18, 0.16, oak)
-    box('bow', 0, length * 0.42, 0.24, beam * 0.6, length * 0.16, 0.12, oak)
+    beam = 0.115 if oared else 0.225
+    depth = 0.17 if oared else 0.24
+
+    hull(f'hull', length, beam, depth, oak, bluff=not oared)
+    # The wale: one dark course along the sheer each side. It costs two
+    # pieces and it is what gives a hull an edge instead of a gradient.
+    for side in (-1, 1):
+        limb(f'wale-{side}', (side * beam * 0.98, -length * 0.40, depth * 1.03),
+             (side * beam * 0.98, length * 0.40, depth * 1.03), 0.016, 0.016, dark, 4)
+    # Stem and sternpost, which are most of a ship's profile.
+    limb('stem', (0, length * 0.47, depth * 0.9),
+         (0, length * 0.52, depth * (2.1 if oared else 1.9)), 0.020, 0.013, oak, 5)
+    limb('post', (0, -length * 0.47, depth * 0.9),
+         (0, -length * 0.53, depth * (1.9 if oared else 2.2)), 0.020, 0.014, oak, 5)
+
     if oared:
+        # The ram, low and forward, which is what the hull was built around.
+        limb('ram', (0, length * 0.44, depth * 0.34),
+             (0, length * 0.55, depth * 0.20), 0.034, 0.014, dark, 5)
+        # Oars, out and back and down to the water, with blades on them. The
+        # angle is the whole of it: level oars are a comb, oars raked aft are
+        # a ship being pulled.
+        for i in range(8):
+            y = -length * 0.28 + i * length * 0.078
+            for side in (-1, 1):
+                loom = (side * beam * 0.95, y + length * 0.03, depth * 1.0)
+                tip = (side * beam * 2.5, y - length * 0.16, depth * 0.12)
+                limb(f'oar-{side}-{i}', loom, tip, 0.011, 0.008, oak, 4)
+                limb(f'blade-{side}-{i}', tip,
+                     (side * beam * 2.8, y - length * 0.21, -depth * 0.10),
+                     0.020, 0.013, dark, 4)
+        # A gangway down the middle, between the benches, and the benches.
+        taper('gangway', 0, 0, depth * 1.02, depth * 1.12,
+              beam * 0.28, length * 0.34, beam * 0.26, length * 0.34, oak)
         for i in range(6):
-            y = -length * 0.3 + i * length * 0.12
-            box(f'oar-l{i}', -beam * 0.8, y, 0.1, beam * 0.9, 0.03, 0.03, oak)
-            box(f'oar-r{i}', beam * 0.8, y, 0.1, beam * 0.9, 0.03, 0.03, oak)
-    box('mast', 0, 0, 0.18, 0.05, 0.05, 0.8, oak)
-    mesh_from('sail', [
-        (-beam * 1.1, 0.02, 0.4), (beam * 1.1, 0.02, 0.4),
-        (beam * 1.1, 0.02, 0.92), (-beam * 1.1, 0.02, 0.92),
-    ], [(0, 1, 2, 3)], pale if oared else cloth)
+            y = -length * 0.26 + i * length * 0.10
+            taper(f'bench-{i}', 0, y, depth * 1.0, depth * 1.06,
+                  beam * 0.92, 0.022, beam * 0.92, 0.022, dark)
+        # And the fighting deck aft, where the men who are not rowing stand.
+        taper('aftdeck', 0, -length * 0.36, depth * 1.0, depth * 1.42,
+              beam * 0.74, length * 0.085, beam * 0.52, length * 0.070, oak)
+        limb('aftrail', (-beam * 0.54, -length * 0.36, depth * 1.44),
+             (beam * 0.54, -length * 0.36, depth * 1.44), 0.012, 0.012, dark, 4)
+    else:
+        # Castles fore and aft, which is what a merchantman put up when it
+        # had to fight, and what tells her from a galley at any distance.
+        for tag, y, high in (('fore', length * 0.33, 0.44), ('aft', -length * 0.34, 0.56)):
+            taper(f'{tag}castle', 0, y, depth * 1.08, depth * (1.08 + high),
+                  beam * 0.78, length * 0.11, beam * 0.62, length * 0.09, oak)
+            limb(f'{tag}rail', (-beam * 0.64, y, depth * (1.10 + high)),
+                 (beam * 0.64, y, depth * (1.10 + high)), 0.013, 0.013, dark, 4)
+
+    # The rig. A mast with a yard across it, two shrouds a side, and a sail
+    # with the wind in it — in the owner's colours on a merchantman, plain on
+    # a galley, because a war galley's sail came down before she fought.
+    masthead = depth * (4.6 if oared else 4.2)
+    limb('mast', (0, 0, depth * 0.95), (0, 0, masthead), 0.022, 0.014, oak, 6)
+    yard_half = beam * (2.5 if oared else 1.85)
+    yard_z = masthead * 0.82
+    limb('yard', (-yard_half, 0.01, yard_z), (yard_half, 0.01, yard_z), 0.012, 0.012, oak, 4)
+    for side in (-1, 1):
+        for fore, at in (('f', length * 0.17), ('a', -length * 0.19)):
+            limb(f'shroud-{side}{fore}', (0.004 * side, 0, masthead * 0.86),
+                 (side * beam * 0.92, at, depth * 1.05), 0.004, 0.004, rope, 3)
+    # In the owner's colours on both, because a fleet seen from a map of
+    # Europe is four marks on the water and the sail is the only part of one
+    # big enough to carry a colour at all.
+    sail('sail', yard_half * 2 * 0.94, masthead * (0.42 if oared else 0.5),
+         (0, 0.045, yard_z - 0.01), cloth,
+         belly=beam * (1.1 if oared else 0.95))
+    # Her colours at the masthead, which is how a fleet is read at all.
+    banner('ensign', 0, -length * 0.50, depth * (1.9 if oared else 2.2),
+           depth * 2.4, oak, cloth, width=0.22)
     # The frame has to follow the model. Returning the same radius for a
     # forty-metre galley and a short round ship drew the round ship at a
     # third of its size, because the sprite is framed on this number and the
     # game stamps every sprite as a square of the same side.
-    return max(length, 1.0) * 0.72
+    return max(length, 1.0) * 0.78
 
 
 def tree(tall):

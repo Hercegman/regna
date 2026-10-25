@@ -53,6 +53,17 @@ const RAMPS: Readonly<Record<Terrain, Ramp>> = {
 export const WATER: Ramp = ['#0b1c30', '#102641', '#163154', '#1d3d67', '#25497c'];
 
 /**
+ * The sea a fight is fought on, which is not the sea on a map of Europe.
+ *
+ * The map's water is dark because it is the thing a continent is drawn
+ * against and has to stay behind the land. A sea fight has no land in it:
+ * you are on the water, in daylight, and water in daylight is not nearly
+ * that dark. The same five steps, lifted and given back the colour the map
+ * cannot afford.
+ */
+export const OPEN_WATER: Ramp = ['#173850', '#1d4766', '#25577d', '#2f6994', '#3d7cab'];
+
+/**
  * The shelf.
  *
  * A sea reads as a sea because of where it stops, so the water nearest the
@@ -270,3 +281,31 @@ export function fieldOf(tx: number, ty: number): {
     edgeY: ((ty % FIELD_TILES) + FIELD_TILES) % FIELD_TILES === 0,
   };
 }
+
+/**
+ * The swell, at a point of the sea and a moment of the clock.
+ *
+ * Water was the one thing on this map that never moved and never varied: a
+ * flat tile of one blue with, now and then, a single pale pixel for a
+ * ripple. A sea fought on that is a sheet of paper with ships standing on
+ * it, and even at rest the eye knows that water is the surface that is
+ * always doing something.
+ *
+ * Three trains of waves at different angles, lengths and speeds, summed.
+ * One would be corrugated iron, and two would beat against each other in a
+ * pattern you can see; three never quite repeat, which is what an open sea
+ * looks like. Everything is a function of where and when, so nothing is
+ * stored, the far side of the field is in the same sea as the near one, and
+ * a battle paused shows the same water it showed a moment before.
+ *
+ * Comes back between minus one and one: the trough and the crest.
+ */
+export function swellAt(x: number, y: number, seconds: number): number {
+  const long = Math.sin((x * 0.034 + y * 0.051) - seconds * 0.62);
+  const cross = Math.sin((x * -0.058 + y * 0.027) - seconds * 0.41);
+  const chop = Math.sin((x * 0.092 + y * 0.071) - seconds * 1.05);
+  return long * 0.48 + cross * 0.34 + chop * 0.18;
+}
+
+/** Above this, a wave is breaking and shows white along its back. */
+export const CREST = 0.68;
