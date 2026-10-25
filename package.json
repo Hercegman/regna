@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "diagnose": "rolldown tools/diagnose.ts --platform node --format esm --file node_modules/.cache/diagnose.mjs > /dev/null && node node_modules/.cache/diagnose.mjs"
+    "diagnose": "rolldown tools/diagnose.ts --platform node --format esm --file node_modules/.cache/diagnose.mjs > /dev/null && node node_modules/.cache/diagnose.mjs",
+    "trailer": "node tools/trailer.mjs"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

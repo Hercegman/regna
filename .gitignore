@@ -13,3 +13,6 @@ tools/blender/
 .sprite-scratch.png
 .sprite-preview.png
 .sprite-preview.ts
+
+# The trailer, which is recorded rather than kept
+trailer.mp4

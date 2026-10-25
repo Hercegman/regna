@@ -82,6 +82,9 @@ fight at sea.
   | Ploughland | belongs to the field and not to the tile: a block of tiles ploughed one way, the next block across it, and an unploughed baulk between them with whatever grew in it. Fixed to the tile, every tile turned its own way and a mile of farmland averaged out into one grey hatch |
   | Height | has the last word on the ground: above the treeline it is bare rock and above that snow, and the line wanders, because one drawn straight across a continent is a contour and not a treeline |
   | The shore | a shelf of pale water wherever the sea touches land, a strand of sand wherever the land touches sea, and the real Natural Earth coast drawn over the join |
+  | The sea | three trains of waves at different angles, lengths and speeds, summed. One would be corrugated iron and two would beat against each other in a pattern you can see; three never quite repeat, which is what open water looks like. Where a wave gets too steep for itself it breaks and shows white along its back. A sea fight is drawn on a lighter ladder than the map's, because the map's water has to stay behind a continent and a sea fight has no land in it |
+  | Hulls | lofted from a line of cross-sections rather than built out of boxes: drawn to a point at both ends, widest amidships, with a deck line that sweeps up fore and aft and a dark wale along the sheer. A galley has a ram, a gangway between the benches and eight oars a side raked aft into the water; a round ship has castles fore and aft. Both carry the realm's colours on the sail, because a fleet seen from a map of Europe is four marks on the water and the sail is the only part of one big enough to hold a colour |
+  | Riding it | a ship sits on the swell the rest of the field is drawn from, so a line of them rises and falls along the wave instead of standing on it like models on a shelf, and the water under each hull is disturbed |
   | Rivers | the great ones, drawn: the Rhine, the Danube, the Dnieper, the Volga, the Nile. A river is the strongest line in a landscape and the eye finds everything else from it |
   | Frontiers | chained into continuous runs before they are stroked, so a corner is a corner, and the whole lot drawn on its own plate and cut to the coastline — a border running across open water is the one thing that most gives away a map drawn from a diagram |
   | Arms | every realm bears its own, drawn from a blazon rather than loaded from a folder of pictures: beside the name of every town it holds, on the banner over every army it has in the field, on its crest in the chrome, and on the wall of shields at the front of the game |
@@ -547,6 +550,14 @@ npm run typecheck    # tsc --noEmit, strict
 npm run build        # typecheck, then bundle
 npm run diagnose     # two hundred turns, and what came out of them
 ```
+
+`npm run trailer` records one, out of the game actually running: a headless
+browser is opened on the development URLs above, left to play by itself, and
+photographed through the browser's own screencast while a script dispatches
+the mouse events a person would have made — a drag across Europe, a turn of
+the wheel. Nothing in it is re-enacted or composited. ffmpeg cuts the shots
+together at the end, at the frame rate the browser actually managed rather
+than one assumed in advance.
 
 Two aids for the part of the work that only an eye can judge. The sprite
 sheet is twelve hundred renders and well over an hour, so
