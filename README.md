@@ -92,6 +92,9 @@ fight at sea.
   | Position | every sprite records where its own model stood, and is stamped by that point rather than by the middle of its frame — so a town lands on its coordinates and a spear leaning out of the frame does not move the settlement carrying it |
   | Armies | the man in command. An army with a general is a horseman with his standard planted beside him, one without is a captain on foot; either way what is standing in the province is a person, not a counter |
   | Sprites | one sheet; anything belonging to an owner is rendered in magenta and swapped for his colour, which is how one drawing serves seventy-three realms. The magenta is lit rather than flat — green stays at nought while red and blue carry how brightly that face was lit — so what is swapped in is the realm's colour standing in the light the rest of the model was standing in, and a surcoat has a shoulder and a flank instead of being a rectangle of paint |
+  | The figure | a skeleton, not a stack of boxes: hip, knee, ankle, shoulder, elbow, wrist, a pelvis, a tapered chest and a round head on proportions a person actually has. Every pose is a table of the angles those joints take, so the knees fold in a stride and the elbow comes up in a lunge. At twenty pixels you cannot see a knee; you can see that the leg has one |
+  | The walk | four beats out of four pictures — step, pass, other step, pass. The pass is the leg that has swung through coming under the body with the knee up, and it is the frame the sheet did not have: with straight legs a stand will serve for it, and with a knee in them it will not. A line standing still shifts its weight too, a man at a time, because a hundred identical frozen figures read as a texture |
+  | What he carries | placed in the hand that is holding it rather than at a fixed point beside him, so a spear comes up and across as the arm that owns it does, and a couched lance is tucked under the elbow it is actually tucked under |
   | Shrinking | a ninety-pixel model becomes a twenty-pixel man by averaging, not by keeping one pixel in five. Nearest-neighbour decided whether a four-pixel limb survived by where the grid happened to fall, and the grid moves every time the camera does, which is how men used to arrive on the field with one arm. The alpha is hardened again afterwards and the outermost ring darkened, which gives every figure the line between it and the grass that it needs |
   | Battles | the same picture at the scale of one field — pulled back a regiment is a body of men under a standard, closed in it is the men themselves in their ranks and files |
   | Names | drawn afterwards at the screen's own resolution, because a place name in six-pixel type is not a style, it is unreadable — and on the town it belongs to, which means the town is stamped at its own coordinates rather than at the middle of whichever tile it fell in |
@@ -544,7 +547,7 @@ npm run diagnose     # two hundred turns, and what came out of them
 ```
 
 Two aids for the part of the work that only an eye can judge. The sprite
-sheet is eight hundred and fifty renders and the better part of an hour, so
+sheet is a thousand renders and the better part of an hour, so
 `REGNA_SPRITES=spearman_0_0_idle,knight_0_2_fight` builds only those and
 writes them to `.sprite-preview.png` instead of over the real sheet, which
 turns a change to a model into a twenty-second loop. And `/figures.html`,
