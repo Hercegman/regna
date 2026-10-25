@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-d9b55f?style=flat-square&labelColor=12161a)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white&labelColor=12161a)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-6-646cff?style=flat-square&logo=vite&logoColor=white&labelColor=12161a)](https://vite.dev)
-[![Tests](https://img.shields.io/badge/tests-453%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
+[![Tests](https://img.shields.io/badge/tests-463%20passing-7fb069?style=flat-square&labelColor=12161a)](#development)
 [![Runtime deps](https://img.shields.io/badge/runtime%20dependencies-none-8b91a0?style=flat-square&labelColor=12161a)](#architecture)
 
 [Why](#why-regna) · [The world](#the-world) · [Features](#features) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Playing](#playing) · [Architecture](#architecture) · [Roadmap](#roadmap)
@@ -93,7 +93,9 @@ fight at sea.
   | Armies | the man in command. An army with a general is a horseman with his standard planted beside him, one without is a captain on foot; either way what is standing in the province is a person, not a counter |
   | Sprites | one sheet; anything belonging to an owner is rendered in magenta and swapped for his colour, which is how one drawing serves seventy-three realms. The magenta is lit rather than flat — green stays at nought while red and blue carry how brightly that face was lit — so what is swapped in is the realm's colour standing in the light the rest of the model was standing in, and a surcoat has a shoulder and a flank instead of being a rectangle of paint |
   | The figure | a skeleton, not a stack of boxes: hip, knee, ankle, shoulder, elbow, wrist, a pelvis, a tapered chest and a round head on proportions a person actually has. Every pose is a table of the angles those joints take, so the knees fold in a stride and the elbow comes up in a lunge. At twenty pixels you cannot see a knee; you can see that the leg has one |
-  | The walk | four beats out of four pictures — step, pass, other step, pass. The pass is the leg that has swung through coming under the body with the knee up, and it is the frame the sheet did not have: with straight legs a stand will serve for it, and with a knee in them it will not. A line standing still shifts its weight too, a man at a time, because a hundred identical frozen figures read as a texture |
+  | The walk | four beats out of four pictures — step, pass, other step, pass. The pass is the leg that has swung through coming under the body with the knee up, and it is the frame the sheet did not have: with straight legs a stand will serve for it, and with a knee in them it will not |
+  | Doing nothing | which is most of a battle, and used to be two hundred identical statues. A man standing has his own slow round of it: he shifts his weight, he settles behind his shield, and he puts his head up and roars at the line opposite with his spear over his head. Spread by who he is, so no two neighbours do it together — a line where everybody shouts at once is a chorus, which is worse than a statue. In a melee the beat between swings is the guard rather than a stand, and a charge has men bellowing in it |
+  | One scale | every sprite is framed to fit what is in it, which spends the pixels where they are wanted and means the cell covers a different amount of world from one sprite to the next — two thirds of a unit for a swordsman, one and a half for a pikeman because of the pike, nearly two for a knight because of the horse. Drawn at one size they came out the same height overall, so the pikeman was two thirds the man the swordsman was and cavalry rode past infantry that stood a head taller than them. Each sprite records what it covers, and the field asks for men by the height of a man |
   | What he carries | placed in the hand that is holding it rather than at a fixed point beside him, so a spear comes up and across as the arm that owns it does, and a couched lance is tucked under the elbow it is actually tucked under |
   | Shrinking | a ninety-pixel model becomes a twenty-pixel man by averaging, not by keeping one pixel in five. Nearest-neighbour decided whether a four-pixel limb survived by where the grid happened to fall, and the grid moves every time the camera does, which is how men used to arrive on the field with one arm. The alpha is hardened again afterwards and the outermost ring darkened, which gives every figure the line between it and the grass that it needs |
   | Battles | the same picture at the scale of one field — pulled back a regiment is a body of men under a standard, closed in it is the men themselves in their ranks and files |
@@ -547,7 +549,7 @@ npm run diagnose     # two hundred turns, and what came out of them
 ```
 
 Two aids for the part of the work that only an eye can judge. The sprite
-sheet is a thousand renders and the better part of an hour, so
+sheet is twelve hundred renders and well over an hour, so
 `REGNA_SPRITES=spearman_0_0_idle,knight_0_2_fight` builds only those and
 writes them to `.sprite-preview.png` instead of over the real sheet, which
 turns a change to a model into a twenty-second loop. And `/figures.html`,
