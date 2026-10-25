@@ -30,13 +30,23 @@ export function isEngine(kind: Figure): boolean {
 /**
  * What he is doing.
  *
- * The two steps are mirrors and play either side of idle, which is a
- * four-beat walk out of three pictures. The two flights are mirrors too and
- * play straight against each other, because a man running has no moment of
- * standing still in him — and he has thrown away his shield, which is the
- * one thing that reads as a rout rather than as a march the wrong way.
+ * The two steps are mirrors, and `pass` is the beat between them: the leg
+ * that has just swung through coming under the body with the knee up before
+ * it goes out again. A four-beat walk out of four pictures — step, pass,
+ * other step, pass.
+ *
+ * It used to be three, with `idle` standing in for the pass, and that worked
+ * for exactly as long as the legs were straight posts: a man standing still
+ * and a man with his weight over one foot are the same picture when neither
+ * has a knee. They are not the same picture now, and a march that stopped
+ * dead twice a cycle was the first thing anybody noticed.
+ *
+ * The two flights are mirrors too and play straight against each other,
+ * because a man running has no moment of standing still in him — and he has
+ * thrown away his shield, which is the one thing that reads as a rout rather
+ * than as a march the wrong way.
  */
-export type Pose = 'idle' | 'stepa' | 'stepb' | 'fight' | 'fleea' | 'fleeb';
+export type Pose = 'idle' | 'pass' | 'stepa' | 'stepb' | 'fight' | 'fleea' | 'fleeb';
 
 /**
  * Which figure a kind of soldier is drawn as.
@@ -167,7 +177,16 @@ export function poseFor(
   }
   if (stance === 'advancing' || stance === 'charging') {
     const beat = Math.floor(seconds * (stance === 'charging' ? 4.5 : 2.8) + index * 0.37) % 4;
-    return beat === 0 ? 'stepa' : beat === 2 ? 'stepb' : 'idle';
+    return beat === 0 ? 'stepa' : beat === 2 ? 'stepb' : 'pass';
   }
-  return 'idle';
+  // Standing, which is not the same as being a statue.
+  //
+  // A regiment waiting in line was every man in one pose, held exactly, for
+  // as long as the order lasted — and a hundred identical frozen figures is
+  // the one arrangement that reads as a texture rather than as men. Nothing
+  // dramatic is wanted here: a man shifts his weight onto the other foot
+  // every ten seconds or so, each on his own clock, so at any moment a few
+  // in the block are moving and the rest are not. That is what a body of men
+  // standing in a field actually looks like from a distance.
+  return Math.floor(seconds * 0.6 + index * 0.31) % 7 === 0 ? 'pass' : 'idle';
 }

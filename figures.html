@@ -51,7 +51,7 @@
 
       await loadSprites();
       document.getElementById('note').textContent =
-        'Every kind at the sizes the battle uses, both kits, in two realms. Below: one rank of each at twenty-two pixels.';
+        'Every kind at the sizes the battle uses, both kits, in two realms. Then the cycle frame by frame, and a rank of each at twenty-two pixels.';
 
       const pixel = 3;
       const field = document.getElementById('field');
@@ -82,6 +82,37 @@
           x += 10;
         }
       });
+
+      // The walk, laid out as the frames it is made of.
+      //
+      // A cycle cannot be judged from one picture and it cannot be judged
+      // from the thing running either, because at a step and a half a second
+      // the eye reports that something moved and nothing else. Side by side
+      // it is obvious whether the trailing knee is folded, whether the arms
+      // swing against the legs, and whether the pass is a pass or a stand.
+      const cycle = document.createElement('canvas');
+      document.getElementById('field').after(cycle);
+      cycle.style.imageRendering = 'pixelated';
+      cycle.style.margin = '0 16px 20px';
+      const frames = ['stepa', 'pass', 'stepb', 'pass', 'idle', 'fight', 'fleea', 'fleeb'];
+      cycle.width = frames.length * 72 + 40;
+      cycle.height = 152;
+      const walk = cycle.getContext('2d');
+      walk.imageSmoothingEnabled = false;
+      walk.fillStyle = GRASS;
+      walk.fillRect(0, 0, cycle.width, cycle.height);
+      walk.font = '10px ui-monospace, monospace';
+      ['spearman', 'archer', 'knight'].forEach((kind, row) => {
+        frames.forEach((frame, i) => {
+          stamp(walk, `${kind}_0_0_${frame}`, 60 + i * 72, 46 + row * 48, 40,
+                REALMS[0].colour, true, REALMS[0].device);
+          if (row === 0) {
+            walk.fillStyle = 'rgba(12,16,10,0.6)';
+            walk.fillText(frame, 42 + i * 72, 12);
+          }
+        });
+      });
+      cycle.style.width = `${cycle.width * pixel / 2}px`;
 
       // And a block of men, which is what the field actually shows: the
       // question is never how one man looks but whether a hundred of them

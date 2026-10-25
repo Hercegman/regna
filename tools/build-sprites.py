@@ -296,249 +296,557 @@ def settlement(rank, walls):
     return spread + 0.75
 
 
+# ---------------------------------------------------------------------------
+# A person
+# ---------------------------------------------------------------------------
+#
+# What was here before was a dozen axis-aligned boxes: a slab for a torso,
+# two posts for legs, two posts for arms, a cube for a head. It read as a
+# domino with a face on it, and no amount of lighting was going to fix that,
+# because the fault was in the shape. A box has eight corners and every one
+# of them is a right angle, and a right angle is the one thing a person does
+# not have. The legs never bent. The arms never bent. A man walking was a
+# man standing with his feet moved apart.
+#
+# So: a skeleton. Hip, knee, ankle; shoulder, elbow, wrist; a pelvis, a
+# tapered chest, a neck and a round head. Every pose is a table of joint
+# angles and the limbs are built where those angles put them, which is why
+# the knees bend in a stride and the elbow comes up in a fight. At twenty
+# pixels you cannot see a knee. You can see that the leg has one.
+
+
+def norm(v):
+    length = math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+    if length < 1e-9:
+        return (0.0, 0.0, 1.0)
+    return (v[0] / length, v[1] / length, v[2] / length)
+
+
+def cross(a, b):
+    return (a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0])
+
+
+def limb(name, a, b, r0, r1, mat, sides=6):
+    """A tapered prism from one joint to the next.
+
+    The whole of what makes a jointed figure possible: it goes wherever the
+    two ends are, so a shin is the same call whether the knee is straight or
+    folded under him. Six sides rather than four, because four is a box
+    again and six at ninety pixels is a round limb once the render is
+    shrunk.
+    """
+    direction = norm((b[0] - a[0], b[1] - a[1], b[2] - a[2]))
+    helper = (0.0, 0.0, 1.0) if abs(direction[2]) < 0.9 else (1.0, 0.0, 0.0)
+    across = norm(cross(direction, helper))
+    up = cross(direction, across)
+    verts = []
+    for end, radius in ((a, r0), (b, r1)):
+        for i in range(sides):
+            angle = 2 * math.pi * i / sides
+            c, s = math.cos(angle), math.sin(angle)
+            verts.append((
+                end[0] + (across[0] * c + up[0] * s) * radius,
+                end[1] + (across[1] * c + up[1] * s) * radius,
+                end[2] + (across[2] * c + up[2] * s) * radius,
+            ))
+    faces = []
+    for i in range(sides):
+        j = (i + 1) % sides
+        faces.append((i, j, sides + j, sides + i))
+    faces.append(tuple(range(sides - 1, -1, -1)))
+    faces.append(tuple(range(sides, sides * 2)))
+    return mesh_from(name, verts, faces, mat)
+
+
+def ball(name, centre, rx, ry, rz, mat, rings=4, segments=8):
+    """A head. Low enough in the poles that it is still a few flat faces."""
+    verts = []
+    for ring in range(1, rings):
+        phi = math.pi * ring / rings
+        for seg in range(segments):
+            theta = 2 * math.pi * seg / segments
+            verts.append((
+                centre[0] + math.sin(phi) * math.cos(theta) * rx,
+                centre[1] + math.sin(phi) * math.sin(theta) * ry,
+                centre[2] + math.cos(phi) * rz,
+            ))
+    top = len(verts)
+    verts.append((centre[0], centre[1], centre[2] + rz))
+    bottom = len(verts)
+    verts.append((centre[0], centre[1], centre[2] - rz))
+    faces = []
+    for ring in range(rings - 2):
+        for seg in range(segments):
+            nxt = (seg + 1) % segments
+            a = ring * segments + seg
+            b = ring * segments + nxt
+            faces.append((a, b, (ring + 1) * segments + nxt, (ring + 1) * segments + seg))
+    for seg in range(segments):
+        nxt = (seg + 1) % segments
+        faces.append((top, seg, nxt))
+        last = (rings - 2) * segments
+        faces.append((bottom, last + nxt, last + seg))
+    return mesh_from(name, verts, faces, mat)
+
+
+def taper(name, cx, cy, z0, z1, hx0, hy0, hx1, hy1, mat, lean=0.0):
+    """A trunk: a prism that is one width at the bottom and another at the top.
+
+    A torso is wide at the shoulders and narrow at the waist, and that one
+    fact is most of what says the shape is a person rather than a crate.
+    """
+    top_y = cy + lean
+    verts = [
+        (cx - hx0, cy - hy0, z0), (cx + hx0, cy - hy0, z0),
+        (cx + hx0, cy + hy0, z0), (cx - hx0, cy + hy0, z0),
+        (cx - hx1, top_y - hy1, z1), (cx + hx1, top_y - hy1, z1),
+        (cx + hx1, top_y + hy1, z1), (cx - hx1, top_y + hy1, z1),
+    ]
+    faces = [(0, 1, 2, 3), (4, 7, 6, 5), (0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0)]
+    return mesh_from(name, verts, faces, mat)
+
+
+def trunk(name, cx, cy, z0, z1, rx0, ry0, rx1, ry1, mat, sides=8, lean=0.0):
+    """A body: an oval in section, wide at the shoulders and narrow at the waist.
+
+    `taper` builds the same shape out of four flat sides, which is a crate.
+    A chest is not a crate and at twenty pixels the difference is the whole
+    of whether the thing on top of the legs is a person or a parcel: eight
+    sides give it a front, two flanks and a back that catch the light
+    differently, and the silhouette stops having corners in it.
+    """
+    verts = []
+    for z, rx, ry, shift in ((z0, rx0, ry0, 0.0), (z1, rx1, ry1, lean)):
+        for i in range(sides):
+            angle = 2 * math.pi * i / sides
+            verts.append((cx + math.cos(angle) * rx, cy + shift + math.sin(angle) * ry, z))
+    faces = []
+    for i in range(sides):
+        j = (i + 1) % sides
+        faces.append((i, j, sides + j, sides + i))
+    faces.append(tuple(range(sides - 1, -1, -1)))
+    faces.append(tuple(range(sides, sides * 2)))
+    return mesh_from(name, verts, faces, mat)
+
+
+def swing(origin, angle, length, sideways=0.0):
+    """Where a limb ends, given the angle it hangs at.
+
+    Nought is straight down and forward is positive, which is the way a man
+    faces on this sheet. `sideways` is how far the joint itself sits out from
+    the middle of him.
+    """
+    radians = math.radians(angle)
+    return (
+        origin[0] + sideways,
+        origin[1] + math.sin(radians) * length,
+        origin[2] - math.cos(radians) * length,
+    )
+
+
+#: Where every joint is, in the units the rest of the file is built in.
+#:
+#: Taken off the proportions a person actually has rather than off what fits
+#: in a stack of boxes: the hips a little under half way up, the shoulders at
+#: four fifths, the head a seventh of him. Both the figures this replaced
+#: were wrong in the same direction and for different reasons — the boxes
+#: made a five-head dwarf, and the first jointed one put the hips too high
+#: and turned him into a pair of stilts with a parcel on top. The trunk is
+#: the part the eye measures everything else against, and it has to be the
+#: longest single run on the figure.
+ANKLE = 0.028
+KNEE = 0.158
+HIP = 0.292
+WAIST = 0.368
+SHOULDER = 0.502
+NECK = 0.530
+SKULL = 0.565
+THIGH = HIP - KNEE
+SHIN = KNEE - ANKLE
+UPPER_ARM = 0.112
+FOREARM = 0.100
+HIP_SPREAD = 0.038
+SHOULDER_SPREAD = 0.068
+
+#: What every pose is, as the angles of the joints that make it.
+#:
+#: `lean` tips the whole trunk forward, `drop` takes his height off him. The
+#: legs run hip and knee, the arms shoulder and elbow; the left side carries
+#: the shield and the right side the weapon. A knee only folds one way, so
+#: the shin's angle is the thigh's less the bend, never more.
+#:
+#: `pass` is the frame the old sheet did not have, and the walk did not work
+#: without it: a leg that has swung through has to come under the body with
+#: the knee up before it goes out again. Standing still in the middle of a
+#: stride is not a walk, it is two men taking turns.
+STANCE = {
+    'idle':   dict(lean=2,  drop=0.0,   hipL=5,   kneeL=4,  hipR=-6,  kneeR=7,
+                   shoL=-7,  elbL=14, shoR=7,   elbR=14),
+    'pass':   dict(lean=5,  drop=0.012, hipL=3,   kneeL=7,  hipR=-7,  kneeR=48,
+                   shoL=8,   elbL=22, shoR=-8,  elbR=22),
+    'step-a': dict(lean=7,  drop=0.004, hipL=29,  kneeL=9,  hipR=-25, kneeR=30,
+                   shoL=-26, elbL=26, shoR=25,  elbR=20),
+    'step-b': dict(lean=7,  drop=0.004, hipL=-25, kneeL=30, hipR=29,  kneeR=9,
+                   shoL=25,  elbL=20, shoR=-26, elbR=26),
+    'fight':  dict(lean=15, drop=0.022, hipL=27,  kneeL=36, hipR=-31, kneeR=11,
+                   shoL=-16, elbL=44, shoR=34,  elbR=46),
+    'flee-a': dict(lean=21, drop=0.012, hipL=48,  kneeL=20, hipR=-34, kneeR=78,
+                   shoL=-48, elbL=74, shoR=42,  elbR=66),
+    'flee-b': dict(lean=21, drop=0.012, hipL=-34, kneeL=78, hipR=48,  kneeR=20,
+                   shoL=42,  elbL=66, shoR=-48, elbR=74),
+    'fall-a': dict(lean=-6, drop=0.06,  hipL=32,  kneeL=62, hipR=-8,  kneeR=44,
+                   shoL=-74, elbL=26, shoR=62,  elbR=34),
+    'fall-b': dict(lean=-18, drop=0.14, hipL=22,  kneeL=92, hipR=12,  kneeR=84,
+                   shoL=-98, elbL=16, shoR=88,  elbR=20),
+}
+
+#: A man on a horse has his own: thighs out and forward over the barrel,
+#: knees bent back under him, and he does not walk.
+SEATED = dict(lean=4, drop=0.0, hipL=58, kneeL=66, hipR=58, kneeR=66,
+              shoL=-8, elbL=28, shoR=10, elbR=26)
+
+
 def man(name, x, y, mail, cloth, spear_mat, skin, mounted=False, shield=True,
         spear=True, cloak=False, weapon='spear', barded=False, pose='idle', kit=0):
-    """One figure, built like a person rather than like a token.
+    """One figure, built on a skeleton rather than out of boxes.
 
-    Legs apart, a torso in his lord's colours, two arms, a head with a helmet
-    on it, a shield on the left arm and a spear in the right. It is a dozen
-    boxes where it used to be four, and at the size the battlefield draws him
-    that is the difference between a man and a domino: you can see which way
-    he is facing, where his shield is, and whether he is on a horse.
+    Hip, knee, ankle; shoulder, elbow, wrist. Every pose in `STANCE` is a
+    table of the angles those joints take, and the limbs are built wherever
+    the angles put them — which is what makes a stride a stride, with the
+    trailing knee folded and the leading one nearly straight, instead of two
+    posts moved apart.
 
-    Everything is in units where a man is about six tenths tall, which is
-    what the rest of the file is built in.
+    What he is carrying is placed in the hand that is holding it rather than
+    at a fixed point beside him, so a spear comes up and across as the arm
+    that owns it does.
     """
+    leather = shared('leather', srgb('#45321f'))
+    steel = shared('steel', srgb('#a8aab0'))
+    # Hose. Legs in mail made a man grey from the neck down and, now that the
+    # legs are thin, made them read as two metal rods: the commonest thing a
+    # soldier had on his legs was wool, and it is the darkest value on the
+    # figure, which is exactly where the eye wants one.
+    hose = shared('hose', srgb('#3b382c'))
+    legs = mail if kit else hose
+
     base = 0.0
     if mounted:
-        # The horse: a barrel on four legs with a neck and a head, which is
-        # all there is room for and all a horse needs to read as one.
-        hide = spear_mat
-        box(f'{name}-barrel', x, y, 0.22, 0.17, 0.44, 0.19, hide)
-        if barded:
-            # A trapper over the horse in his lord's colours, which is what
-            # tells a knight from a man on a horse at any distance.
-            box(f'{name}-bard', x, y, 0.16, 0.21, 0.42, 0.14, cloth)
-            box(f'{name}-chamfron', x, y + 0.25, 0.46, 0.1, 0.13, 0.09, cloth)
-        for i, (dx, dy) in enumerate(((-0.065, 0.16), (0.065, 0.16),
-                                      (-0.065, -0.16), (0.065, -0.16))):
-            box(f'{name}-hoof-{i}', x + dx, y + dy, 0, 0.05, 0.05, 0.23, hide)
-        box(f'{name}-neck', x, y + 0.2, 0.34, 0.1, 0.12, 0.16, hide)
-        box(f'{name}-head', x, y + 0.25, 0.46, 0.09, 0.16, 0.09, hide)
-        box(f'{name}-tail', x, y - 0.23, 0.3, 0.05, 0.05, 0.12, hide)
-        base = 0.41
+        base = horse(name, x, y, spear_mat, cloth, barded)
+        angles = dict(SEATED)
+    else:
+        angles = dict(STANCE.get(pose, STANCE['idle']))
 
-    # Where the pose puts him. A man is the same dozen boxes in every one of
-    # them; what moves is his legs, his arms and how far forward he is
-    # leaning, which at the size a battle draws him is all there is room for
-    # and all a walk needs to read as one.
-    #
-    # The two stepping poses are mirrors of each other, and the game plays
-    # them as step, stand, other step, stand — which is a four-beat cycle out
-    # of three pictures, and the cheapest honest walk there is.
-    fleeing = pose.startswith('flee')
+    lean = angles['lean']
+    drop = angles['drop']
     falling = pose.startswith('fall')
-    stride = {
-        'step-a': 0.075, 'step-b': -0.075,
-        'flee-a': 0.125, 'flee-b': -0.125,
-        'fall-a': 0.06, 'fall-b': -0.03,
-    }.get(pose, 0.0)
-    lean = 0.09 if fleeing else 0.055 if pose == 'fight' else abs(stride) * 0.25
-    crouch = 0.018 if pose == 'fight' else abs(stride) * 0.1
-    if falling:
-        # A man going down, in the one second between being hit and being a
-        # body. The knee folds under him and he loses his height; which way
-        # he goes over is not here at all, because pitching the whole figure
-        # is `pitch`'s job and turning twelve boxes one at a time is not.
-        lean = 0.0
-        crouch = 0.055 if pose == 'fall-a' else 0.115
+    fleeing = pose.startswith('flee')
     if fleeing or falling:
         # A man running for the treeline has thrown away what he was
         # carrying. It is the one thing that reads as a rout rather than as
         # a march in the wrong direction — and a man being killed lets go of
-        # the same things in the same order, which is why the body he turns
-        # into has its spear lying beside it rather than in its hand.
+        # the same things in the same order.
         shield = False
         spear = False
 
-    # Leather and steel: the two values the figure did not have.
-    #
-    # A man made of mail, cloth, wood and skin has four colours in him, and
-    # three of them are close enough in value that at twenty pixels he is a
-    # coloured block with a face on top. Boots, hands, a belt and a head on
-    # the spear are not detail for its own sake: they are the dark line
-    # where a leg meets the ground, the light one where an arm ends, and the
-    # bright point that says the thing he is holding is a weapon.
-    leather = shared('leather', srgb('#45321f'))
-    steel = shared('steel', srgb('#a8aab0'))
+    # The trunk, tipped forward about the hips. Everything above the waist
+    # moves with it, which is why the shoulders and the head are worked out
+    # from the lean rather than stacked straight up.
+    tip = math.radians(lean)
+    def above(height):
+        """A point on the spine, `height` up from the hips, after the lean."""
+        reach = height - (HIP - drop)
+        return (x,
+                y + math.sin(tip) * reach,
+                base + (HIP - drop) + math.cos(tip) * reach)
 
-    box(f'{name}-leg-l', x - 0.045, y + stride, base, 0.055, 0.08, 0.17 - crouch, mail)
-    box(f'{name}-leg-r', x + 0.045, y - stride, base, 0.055, 0.08, 0.17 - crouch, mail)
-    if not falling:
-        # Boots. A leg that stops is a leg that has been cut off at the
-        # ankle; a leg that ends in something darker than itself is standing
-        # on the ground. Slightly over the width of the leg so that the step
-        # is visible from the side the camera is on.
-        box(f'{name}-boot-l', x - 0.045, y + stride, base, 0.063, 0.09, 0.042, leather)
-        box(f'{name}-boot-r', x + 0.045, y - stride, base, 0.063, 0.09, 0.042, leather)
+    hips = (x, y, base + HIP - drop)
+    chest = above(SHOULDER)
+    crown = above(NECK)
+    head_at = above(SKULL)
+
+    # ---- the legs ----------------------------------------------------------
+    for side, hip_angle, knee_bend, tag in (
+        (-1, angles['hipL'], angles['kneeL'], 'l'),
+        (1, angles['hipR'], angles['kneeR'], 'r'),
+    ):
+        hip = (x + side * HIP_SPREAD, y, base + HIP - drop)
+        knee = swing(hip, hip_angle, THIGH)
+        ankle = swing(knee, hip_angle - knee_bend, SHIN)
+        limb(f'{name}-thigh-{tag}', hip, knee, 0.032, 0.025, legs)
+        limb(f'{name}-shin-{tag}', knee, ankle, 0.024, 0.019, legs)
+        if not falling:
+            # The boot: the dark the figure needs where it meets the ground.
+            toe = (ankle[0], ankle[1] + 0.042, max(base, ankle[2] - 0.018))
+            limb(f'{name}-boot-{tag}', (ankle[0], ankle[1] - 0.012, ankle[2]),
+                 toe, 0.027, 0.020, leather)
+
+    # ---- the trunk ---------------------------------------------------------
+    trunk(f'{name}-pelvis', x, y, base + HIP - drop - 0.030, base + WAIST - drop,
+          0.056, 0.038, 0.048, 0.034, mail)
+    body = cloth if not kit else mail
+    trunk(f'{name}-torso', x, y, base + WAIST - drop, chest[2],
+          0.048, 0.034, 0.074, 0.040, body, lean=chest[1] - y)
     if kit:
         # The second man in every two: mail to the chest with a coloured
-        # band over it rather than a surcoat of his lord's colours all the
-        # way down. It is the strongest difference available at this size —
-        # a block in which half the men are mostly grey and half are mostly
-        # coloured stops being one man drawn a hundred and twenty times.
-        box(f'{name}-torso', x, y + lean, base + 0.17 - crouch, 0.17, 0.11, 0.2, mail)
-        box(f'{name}-band', x, y + lean, base + 0.25 - crouch, 0.178, 0.118, 0.07, cloth)
+        # band over it rather than a surcoat all the way down. It is the
+        # strongest difference available at this size.
+        belt_at = above(WAIST + 0.054)
+        trunk(f'{name}-band', x, belt_at[1] - (chest[1] - y) * 0.2,
+              belt_at[2], belt_at[2] + 0.054, 0.060, 0.038, 0.066, 0.040, cloth)
     else:
-        box(f'{name}-torso', x, y + lean, base + 0.17 - crouch, 0.17, 0.11, 0.2, cloth)
-    # Arms swing against the legs, which is the thing that makes a walk a
-    # walk rather than a hop. In a rout they go up instead.
-    swing = 0.0 if falling else 0.4 if fleeing else 0.8
-    raised = 0.12 if falling else 0.1 if fleeing else 0.0
-    # Thrown wide as he goes: a man who is falling is not holding his line.
-    flail = 0.055 if falling else 0.0
-    box(f'{name}-arm-l', x - 0.105 - flail, y - stride * swing, base + 0.2 + raised - crouch,
-        0.05, 0.09, 0.16, mail)
-    box(f'{name}-arm-r', x + 0.105 + flail, y + stride * swing + lean, base + 0.2 + raised - crouch,
-        0.05, 0.09, 0.16, mail)
-    # The belt, which is where a man stops being a chest and starts being
-    # legs. One dark course across the middle of him, and the surcoat above
-    # it reads as cloth hanging off a body rather than as a painted panel.
-    box(f'{name}-belt', x, y + lean, base + 0.185 - crouch, 0.176, 0.117, 0.028, leather)
-    # And the hands, at the bottom of the arms where they belong. Two light
-    # pixels against the mail, and the arm has an end.
-    box(f'{name}-hand-l', x - 0.105 - flail, y - stride * swing,
-        base + 0.2 + raised - crouch, 0.056, 0.095, 0.045, skin)
-    box(f'{name}-hand-r', x + 0.105 + flail, y + stride * swing + lean,
-        base + 0.2 + raised - crouch, 0.056, 0.095, 0.045, skin)
+        waist_at = above(WAIST + 0.004)
+        trunk(f'{name}-belt', x, waist_at[1], waist_at[2], waist_at[2] + 0.022,
+              0.052, 0.037, 0.052, 0.037, leather)
     if cloak:
         # Hung off the shoulders and down the back, which is the one thing
-        # that says a man is somebody at this size.
-        box(f'{name}-cloak', x, y - 0.062 + lean, base + 0.14, 0.165, 0.04, 0.24, cloth)
-    box(f'{name}-neck', x, y + lean, base + 0.37 - crouch, 0.07, 0.07, 0.04, skin)
-    box(f'{name}-head', x, y + lean, base + 0.41 - crouch, 0.1, 0.1, 0.09, skin)
+        # that says a man is somebody at this size. Behind him and thin,
+        # not around him: a cloak built as a limb came out as a slab of his
+        # lord's colours with a head on top, and the man was gone.
+        trunk(f'{name}-cloak', x, y + 0.040 + (chest[1] - y) * 0.4,
+              base + KNEE + 0.03, chest[2] + 0.014,
+              0.054, 0.013, 0.078, 0.017, cloth, 6)
+
+    # ---- the head ----------------------------------------------------------
+    limb(f'{name}-neck', crown, (crown[0], crown[1] + 0.004, crown[2] + 0.018),
+         0.024, 0.022, skin)
+    ball(f'{name}-head', head_at, 0.048, 0.045, 0.052, skin)
     if kit:
         # A conical helm with a nasal rather than a flat-topped one, which is
         # a different silhouette and so tells one man from the next even
         # where the colour does not.
-        cone(f'{name}-helm', x, y + lean, base + 0.46 - crouch, 0.068, 0.11, mail, 6)
-        box(f'{name}-nasal', x, y + lean + 0.055, base + 0.44 - crouch, 0.022, 0.03, 0.07, mail)
+        cone(f'{name}-helm', head_at[0], head_at[1], head_at[2] - 0.016,
+             0.052, 0.092, mail, 7)
+        limb(f'{name}-nasal', (head_at[0], head_at[1] + 0.038, head_at[2] + 0.028),
+             (head_at[0], head_at[1] + 0.040, head_at[2] - 0.030), 0.010, 0.009, mail)
     else:
-        box(f'{name}-helm', x, y + lean, base + 0.47 - crouch, 0.115, 0.115, 0.06, mail)
-        # A brim under the flat helm and a dark course where the eyes are.
-        # Between them they turn a grey cube into a head wearing something,
-        # and they are the difference the first rank of a block shows.
-        box(f'{name}-brim', x, y + lean, base + 0.452 - crouch, 0.132, 0.132, 0.024, leather)
-        box(f'{name}-slit', x, y + lean + 0.05, base + 0.452 - crouch, 0.08, 0.04, 0.02, leather)
-    if shield:
-        # Brought up and across in a fight, which is what a shield is for.
-        up = 0.04 if pose == 'fight' else 0.0
-        device = device_material()
-        # A cross on the face of it, in the realm's second tincture. It is
-        # the commonest thing a medieval shield carried and the only device
-        # that survives being eighteen pixels tall — a lion at this size is
-        # four dark pixels. The bars run right through the board so that
-        # whichever face the camera has, it has the cross: a shield seen from
-        # the inside edge shows nothing either way.
-        if kit:
-            # A round shield, which is the other shape there was and reads as
-            # a different thing at twenty pixels.
-            disc = cone(f'{name}-shield', 0, 0, 0, 0.095, 0.03, cloth, 8, 0.92)
-            disc.rotation_euler = (math.radians(90), 0, 0)
-            dx = x - 0.14
-            dy = y - 0.01 + lean * 1.4
-            dz = base + 0.27 + up - crouch
-            disc.location = (dx, dy, dz)
-            box(f'{name}-shield-pale', dx, dy - 0.015, dz - 0.085, 0.032, 0.04, 0.17, device)
-            box(f'{name}-shield-fess', dx, dy - 0.015, dz - 0.016, 0.17, 0.04, 0.032, device)
-        else:
-            box(f'{name}-shield', x - 0.135, y - 0.01 + lean * 1.4, base + 0.19 + up - crouch,
-                0.03, 0.13, 0.17, cloth)
-            box(f'{name}-shield-pale', x - 0.142, y - 0.01 + lean * 1.4,
-                base + 0.19 + up - crouch, 0.034, 0.045, 0.17, device)
-            box(f'{name}-shield-fess', x - 0.142, y - 0.01 + lean * 1.4,
-                base + 0.255 + up - crouch, 0.034, 0.13, 0.04, device)
+        ball(f'{name}-helm', (head_at[0], head_at[1], head_at[2] + 0.008),
+             0.054, 0.052, 0.050, mail, 3, 8)
+        limb(f'{name}-brim', (head_at[0], head_at[1] - 0.004, head_at[2] - 0.019),
+             (head_at[0], head_at[1] + 0.004, head_at[2] - 0.014), 0.058, 0.058, leather, 8)
 
-    # What he is carrying, which is the whole of what tells one kind of
-    # soldier from another in a silhouette this size.
-    if not spear or weapon == 'none':
-        pass
-    elif weapon == 'spear':
-        if pose == 'fight':
-            # Levelled and thrust, which is what a spear line did and the one
-            # thing that reads at this size as fighting rather than standing.
-            placed(f'{name}-spear', 0.028, 0.6, 0.028, spear_mat,
-                   (x + 0.13, y + 0.2, base + 0.31), (math.radians(6), 0, 0))
-            # The head, which is the only part of a spear anybody was afraid
-            # of and the only part that catches the light.
-            placed(f'{name}-spear-head', 0.042, 0.12, 0.042, steel,
-                   (x + 0.13, y + 0.47, base + 0.338), (math.radians(6), 0, 0))
+    # ---- the arms ----------------------------------------------------------
+    hands = {}
+    elbows = {}
+    for side, shoulder_angle, elbow_bend, tag in (
+        (-1, angles['shoL'], angles['elbL'], 'l'),
+        (1, angles['shoR'], angles['elbR'], 'r'),
+    ):
+        shoulder = (chest[0] + side * SHOULDER_SPREAD, chest[1] - 0.004, chest[2] - 0.012)
+        elbow = swing(shoulder, shoulder_angle, UPPER_ARM)
+        wrist = swing(elbow, shoulder_angle + elbow_bend, FOREARM)
+        limb(f'{name}-upper-{tag}', shoulder, elbow, 0.026, 0.021, mail)
+        limb(f'{name}-fore-{tag}', elbow, wrist, 0.021, 0.017, mail)
+        ball(f'{name}-hand-{tag}', wrist, 0.021, 0.021, 0.021, skin, 3, 6)
+        hands[tag] = wrist
+        elbows[tag] = elbow
+
+    if shield:
+        board_shield(name, hands['l'], elbows['l'], cloth, kit)
+
+    if spear and weapon != 'none':
+        carry(name, weapon, pose, hands, elbows, mail, steel, spear_mat, cloth, leather, base)
+
+
+def board_shield(name, wrist, elbow, cloth, kit):
+    """The shield, on the arm that is carrying it rather than beside him.
+
+    A cross on the face of it, in the realm's second tincture. It is the
+    commonest thing a medieval shield carried and the only device that
+    survives being eighteen pixels tall — a lion at this size is four dark
+    pixels. The bars run right through the board so that whichever face the
+    camera has, it has the cross.
+    """
+    device = device_material()
+    # Strapped across the forearm and standing a little out from it, with the
+    # face of it turned the way he is: a board that covers a man is broad
+    # across him and thin front to back, which is the one thing the first
+    # version of this had the wrong way round — it gave every soldier a plank
+    # sticking out of his side.
+    cx = (wrist[0] + elbow[0]) / 2 - 0.022
+    cy = (wrist[1] + elbow[1]) / 2 - 0.008
+    cz = (wrist[2] + elbow[2]) / 2 + 0.034
+    face = cy - 0.016
+    if kit:
+        disc = cone(f'{name}-shield', 0, 0, 0, 0.082, 0.024, cloth, 8, 0.92)
+        disc.rotation_euler = (math.radians(90), 0, 0)
+        disc.location = (cx, cy, cz)
+        box(f'{name}-shield-pale', cx, face, cz - 0.074, 0.026, 0.014, 0.148, device)
+        box(f'{name}-shield-fess', cx, face, cz - 0.013, 0.148, 0.014, 0.026, device)
+    else:
+        # A kite: broad at the shoulder and drawn to a point at the foot.
+        taper(f'{name}-shield', cx, cy, cz - 0.118, cz + 0.064,
+              0.016, 0.013, 0.080, 0.018, cloth)
+        box(f'{name}-shield-pale', cx, face, cz - 0.102, 0.024, 0.011, 0.170, device)
+        box(f'{name}-shield-fess', cx, face, cz + 0.016, 0.138, 0.011, 0.024, device)
+
+
+def carry(name, weapon, pose, hands, elbows, mail, steel, timber, cloth, leather, base):
+    """What he is holding, held where his hand is.
+
+    The whole of what tells one kind of soldier from another in a silhouette
+    this size, and the reason the hand positions are worked out before this
+    runs: a spear that is levelled because the arm that owns it came forward
+    is a different picture from a spear drawn at a fixed angle beside a man
+    who happens to be leaning.
+    """
+    right = hands['r']
+    left = hands['l']
+    fighting = pose == 'fight'
+
+    if weapon == 'spear':
+        if fighting:
+            butt = (right[0], right[1] - 0.16, right[2] - 0.02)
+            point = (right[0], right[1] + 0.40, right[2] + 0.03)
         else:
-            box(f'{name}-spear', x + 0.14, y - 0.02 + lean, base + 0.08,
-                0.028, 0.028, 0.52, spear_mat)
-            box(f'{name}-spear-head', x + 0.14, y - 0.02 + lean, base + 0.58,
-                0.042, 0.042, 0.1, steel)
+            butt = (right[0] + 0.004, right[1] - 0.01, base + 0.01)
+            point = (right[0] + 0.004, right[1] + 0.01, base + 0.60)
+        limb(f'{name}-spear', butt, point, 0.014, 0.012, timber, 5)
+        head_to = (point[0] + (point[0] - butt[0]) * 0.16,
+                   point[1] + (point[1] - butt[1]) * 0.16,
+                   point[2] + (point[2] - butt[2]) * 0.16)
+        limb(f'{name}-spear-head', point, head_to, 0.022, 0.004, steel, 5)
+
     elif weapon == 'pike':
-        if pose == 'fight':
-            # Brought down to the level: a pike hedge, not a forest.
-            placed(f'{name}-pike', 0.028, 0.028, 0.95, spear_mat,
-                   (x + 0.14, y + 0.28, base + 0.3), (math.radians(72), 0, 0))
-            placed(f'{name}-pike-head', 0.042, 0.042, 0.11, steel,
-                   (x + 0.14, y + 0.28 - 0.452 * math.sin(math.radians(72)),
-                    base + 0.3 + 0.452 * math.cos(math.radians(72))),
-                   (math.radians(72), 0, 0))
+        if fighting:
+            # Brought down to the level: a hedge, not a forest. Both hands on
+            # it, which is why it comes across the body.
+            butt = (right[0], right[1] - 0.30, right[2] - 0.06)
+            point = (right[0] - 0.02, right[1] + 0.70, right[2] + 0.02)
         else:
-            box(f'{name}-pike', x + 0.14, y - 0.02 + lean, base + 0.04,
-                0.028, 0.028, 0.95, spear_mat)
-            box(f'{name}-pike-head', x + 0.14, y - 0.02 + lean, base + 0.96,
-                0.042, 0.042, 0.11, steel)
+            butt = (right[0] + 0.004, right[1] - 0.01, base + 0.01)
+            point = (right[0] + 0.004, right[1] + 0.01, base + 1.02)
+        limb(f'{name}-pike', butt, point, 0.014, 0.011, timber, 5)
+        head_to = (point[0] + (point[0] - butt[0]) * 0.1,
+                   point[1] + (point[1] - butt[1]) * 0.1,
+                   point[2] + (point[2] - butt[2]) * 0.1)
+        limb(f'{name}-pike-head', point, head_to, 0.020, 0.004, steel, 5)
+
     elif weapon == 'sword':
         # Raised, because a sword held down is a stick against the leg.
-        high = 0.1 if pose == 'fight' else 0.0
-        box(f'{name}-arm-up', x + 0.11, y + lean, base + 0.3 + high - crouch, 0.05, 0.08, 0.14, mail)
-        box(f'{name}-grip', x + 0.11, y - 0.01 + lean, base + 0.4 + high - crouch,
-            0.03, 0.03, 0.05, leather)
-        box(f'{name}-sword', x + 0.11, y - 0.01 + lean, base + 0.46 + high - crouch,
-            0.035, 0.035, 0.24, steel)
-        box(f'{name}-guard', x + 0.11, y - 0.01 + lean, base + 0.44 + high - crouch,
-            0.12, 0.04, 0.03, steel)
+        high = 0.10 if fighting else 0.0
+        tip = (right[0] + 0.012, right[1] - 0.03 + high * 0.4, right[2] + 0.24 + high)
+        limb(f'{name}-grip', right, (right[0] + 0.004, right[1] - 0.008, right[2] + 0.046),
+             0.015, 0.014, leather, 5)
+        limb(f'{name}-sword', (right[0] + 0.004, right[1] - 0.008, right[2] + 0.046),
+             tip, 0.017, 0.009, steel, 4)
+        limb(f'{name}-guard', (right[0] - 0.052, right[1] - 0.008, right[2] + 0.044),
+             (right[0] + 0.060, right[1] - 0.008, right[2] + 0.044), 0.009, 0.009, steel, 4)
+
     elif weapon == 'bow':
-        # A stave taller than he is, held out from the body. No shield goes
-        # with it, and that absence is half of what says archer. Drawn, the
-        # stave comes across the body and the arm goes back to the ear.
-        drawn = pose == 'fight'
-        placed(f'{name}-bow', 0.022, 0.035, 0.58, spear_mat,
-               (x + (0.02 if drawn else 0.17), y + (0.17 if drawn else -0.02), base + 0.31),
-               (0, math.radians(-10), math.radians(80 if drawn else 0)))
-        box(f'{name}-string', x + (0.02 if drawn else 0.11), y + (0.08 if drawn else -0.02),
-            base + 0.1, 0.012, 0.012, 0.42, skin)
-        if drawn:
-            box(f'{name}-arrow', x + 0.02, y + 0.06, base + 0.3, 0.018, 0.34, 0.018, spear_mat)
-        box(f'{name}-quiver', x - 0.1, y - 0.08, base + 0.18, 0.06, 0.06, 0.2, spear_mat)
+        # A stave taller than he is, held out in the left hand. No shield
+        # goes with it, and that absence is half of what says archer. Drawn,
+        # the stave comes across the body and the right hand goes to the ear.
+        if fighting:
+            top = (left[0], left[1] + 0.02, left[2] + 0.30)
+            foot = (left[0], left[1] - 0.02, left[2] - 0.30)
+            limb(f'{name}-bow', foot, top, 0.009, 0.009, timber, 4)
+            limb(f'{name}-string', foot, right, 0.004, 0.004, skin_thread(), 3)
+            limb(f'{name}-string-b', right, top, 0.004, 0.004, skin_thread(), 3)
+            limb(f'{name}-arrow', (right[0], right[1] - 0.02, right[2]),
+                 (left[0], left[1] + 0.03, left[2] + 0.01), 0.006, 0.006, timber, 3)
+        else:
+            top = (left[0] + 0.01, left[1], left[2] + 0.32)
+            foot = (left[0] + 0.01, left[1], left[2] - 0.28)
+            limb(f'{name}-bow', foot, top, 0.009, 0.009, timber, 4)
+            limb(f'{name}-string', foot, top, 0.004, 0.004, skin_thread(), 3)
+        limb(f'{name}-quiver', (left[0] - 0.02, left[1] - 0.09, base + 0.30),
+             (left[0] - 0.03, left[1] - 0.12, base + 0.46), 0.024, 0.022, leather, 5)
+
     elif weapon == 'crossbow':
         # Held level across the chest: a cross shape, which is exactly how
         # the thing was recognised. Brought up to the shoulder to shoot.
-        aim = 0.06 if pose == 'fight' else 0.0
-        box(f'{name}-stock', x + 0.06, y - 0.06 + lean + aim, base + 0.3 + aim - crouch,
-            0.05, 0.3, 0.04, spear_mat)
-        box(f'{name}-prod', x + 0.06, y - 0.17 + lean + aim, base + 0.3 + aim - crouch,
-            0.3, 0.04, 0.04, spear_mat)
+        mid = ((right[0] + left[0]) / 2, (right[1] + left[1]) / 2 + 0.02,
+               (right[2] + left[2]) / 2 + (0.05 if fighting else 0.0))
+        limb(f'{name}-stock', (mid[0], mid[1] - 0.14, mid[2] - 0.01),
+             (mid[0], mid[1] + 0.16, mid[2]), 0.016, 0.012, timber, 4)
+        limb(f'{name}-prod', (mid[0] - 0.15, mid[1] + 0.12, mid[2]),
+             (mid[0] + 0.15, mid[1] + 0.12, mid[2]), 0.012, 0.012, steel, 4)
+
     elif weapon == 'gun':
-        placed(f'{name}-gun', 0.04, 0.34, 0.04, steel,
-               (x + 0.08, y - 0.1, base + 0.34), (math.radians(-10), 0, 0))
-        box(f'{name}-stock-butt', x + 0.08, y - 0.26, base + 0.3,
-            0.045, 0.1, 0.055, leather)
-        box(f'{name}-rest', x + 0.2, y - 0.04, base, 0.025, 0.025, 0.36, spear_mat)
+        mid = ((right[0] + left[0]) / 2 + 0.01, (right[1] + left[1]) / 2,
+               (right[2] + left[2]) / 2 + 0.06)
+        limb(f'{name}-butt', (mid[0], mid[1] - 0.17, mid[2] - 0.03),
+             (mid[0], mid[1] - 0.04, mid[2] - 0.01), 0.022, 0.016, leather, 5)
+        limb(f'{name}-barrel', (mid[0], mid[1] - 0.04, mid[2] - 0.01),
+             (mid[0], mid[1] + 0.24, mid[2] + 0.02), 0.014, 0.012, steel, 5)
+        limb(f'{name}-rest', (mid[0] + 0.07, mid[1] + 0.16, base),
+             (mid[0] + 0.05, mid[1] + 0.14, mid[2]), 0.010, 0.010, timber, 4)
+
     elif weapon == 'lance':
-        down = pose == 'fight'
-        placed(f'{name}-lance', 0.03, 0.78, 0.03, spear_mat,
-               (x + 0.15, y + (0.14 if down else 0.06), base + (0.22 if down else 0.26)),
-               (math.radians(2 if down else -9), 0, 0))
-        placed(f'{name}-lance-head', 0.044, 0.12, 0.044, steel,
-               (x + 0.15, y + (0.52 if down else 0.44), base + (0.235 if down else 0.32)),
-               (math.radians(2 if down else -9), 0, 0))
-        box(f'{name}-pennon', x + 0.15, y + (0.4 if down else 0.3),
-            base + (0.24 if down else 0.3), 0.02, 0.14, 0.1, cloth)
+        # Couched: tucked under the arm and run forward past the horse's head.
+        tuck = (elbows['r'][0] + 0.012, elbows['r'][1] - 0.16, elbows['r'][2] - 0.01)
+        point = (right[0] + 0.004, right[1] + 0.74, right[2] + 0.02)
+        if pose != 'fight':
+            point = (right[0] + 0.07, right[1] + 0.22, right[2] + 0.62)
+        limb(f'{name}-lance', tuck, point, 0.016, 0.011, timber, 5)
+        head_to = (point[0] + (point[0] - tuck[0]) * 0.1,
+                   point[1] + (point[1] - tuck[1]) * 0.1,
+                   point[2] + (point[2] - tuck[2]) * 0.1)
+        limb(f'{name}-lance-head', point, head_to, 0.020, 0.004, steel, 5)
+        pennon = (point[0] + (tuck[0] - point[0]) * 0.22,
+                  point[1] + (tuck[1] - point[1]) * 0.22,
+                  point[2] + (tuck[2] - point[2]) * 0.22)
+        box(f'{name}-pennon', pennon[0], pennon[1], pennon[2], 0.012, 0.09, 0.07, cloth)
+
+
+def skin_thread():
+    """A bowstring, which is the one thing on the sheet that is almost nothing."""
+    return shared('cord', srgb('#cfc4a8'))
+
+
+def horse(name, x, y, hide, cloth, barded):
+    """The animal under him, built the same way the man is.
+
+    Four legs with knees in them, a barrel that is deeper than it is wide, a
+    neck that rises and a head that comes down off it. A horse is the other
+    half of a cavalry silhouette and it used to be a box on four posts.
+
+    Returns how high the saddle is, which is where the rider is built from.
+    """
+    leather = shared('leather', srgb('#45321f'))
+    # A horse is longer than a man is tall and stands as high at the withers
+    # as he does at the shoulder, which the box on four posts never was: it
+    # was a pony, and the rider sat on it like a man on a stool.
+    back = 0.435
+    belly = 0.315
+    # The barrel, nose to tail, with the chest deeper than the flank.
+    trunk(f'{name}-barrel', x, y - 0.01, belly - 0.020, back,
+          0.092, 0.275, 0.084, 0.262, hide)
+    limb(f'{name}-chest', (x, y + 0.255, belly + 0.02), (x, y + 0.295, back - 0.03),
+         0.082, 0.064, hide, 6)
+    limb(f'{name}-croup', (x, y - 0.255, back - 0.01), (x, y - 0.315, back - 0.09),
+         0.080, 0.058, hide, 6)
+    # Neck and head, which is what a horse is recognised by at any size.
+    withers = (x, y + 0.262, back - 0.005)
+    poll = (x, y + 0.360, back + 0.160)
+    limb(f'{name}-neck', withers, poll, 0.060, 0.036, hide, 6)
+    muzzle = (x, y + 0.455, back + 0.092)
+    limb(f'{name}-head', poll, muzzle, 0.036, 0.024, hide, 6)
+    limb(f'{name}-tail', (x, y - 0.312, back - 0.02), (x, y - 0.375, belly - 0.14),
+         0.024, 0.010, hide, 5)
+    # The legs: a hock halfway down each, so they are not four posts.
+    for i, (dx, dy, fore) in enumerate((
+        (-0.066, 0.215, True), (0.066, 0.215, True),
+        (-0.066, -0.205, False), (0.066, -0.205, False),
+    )):
+        top = (x + dx, y + dy, belly + 0.01)
+        hock = (x + dx, y + dy + (0.014 if fore else -0.026), belly - 0.155)
+        hoof = (x + dx, y + dy + (0.004 if fore else 0.014), 0.0)
+        limb(f'{name}-upper-{i}', top, hock, 0.040, 0.025, hide, 5)
+        limb(f'{name}-lower-{i}', hock, hoof, 0.023, 0.018, hide, 5)
+    if barded:
+        # A trapper over the horse in his lord's colours, which is what tells
+        # a knight from a man on a horse at any distance.
+        trunk(f'{name}-bard', x, y - 0.01, belly - 0.085, back - 0.01,
+              0.106, 0.268, 0.098, 0.256, cloth)
+        limb(f'{name}-chamfron', (x, y + 0.365, back + 0.155), (x, y + 0.445, back + 0.098),
+             0.040, 0.030, cloth, 6)
+    # The saddle, and the height it puts him at.
+    trunk(f'{name}-saddle', x, y - 0.015, back - 0.012, back + 0.024,
+          0.074, 0.112, 0.062, 0.094, leather, 6)
+    return back + 0.034 - HIP
 
 
 def spin(degrees):
@@ -651,7 +959,7 @@ def fighter(weapon, mounted=False, shield=True, barded=False, pose='idle', facin
     # to the line it is fighting.
     spin((360 - facing * 45) % 360)
     tall = {'pike': 1.05, 'bow': 0.72}.get(weapon, 0.62)
-    return tall if not mounted else 0.9
+    return tall if not mounted else 1.02
 
 
 def falling(pose, facing, kit):
@@ -713,23 +1021,50 @@ def fallen(variant):
     """
     clear()
     mail, cloth, timber, skin = palette_for_men()
+    leather = shared('leather', srgb('#45321f'))
+    hose = shared('hose', srgb('#3b382c'))
     turn = 0.32 if variant else -0.26
-    # Laid out along y, which the camera reads as lying across the picture.
-    box('legs-l', -0.05, -0.2, 0, 0.055, 0.2, 0.055, mail)
-    box('legs-r', 0.05, -0.22, 0, 0.055, 0.2, 0.055, mail)
-    box('torso', 0, 0.02, 0, 0.17, 0.24, 0.07, cloth)
-    box('arm-l', -0.13, 0.04, 0, 0.07, 0.16, 0.05, mail)
-    box('arm-r', 0.13, 0.0, 0, 0.07, 0.16, 0.05, mail)
-    box('head', 0, 0.2, 0, 0.1, 0.1, 0.08, skin)
-    box('helm', 0, 0.22, 0.05, 0.11, 0.11, 0.05, mail)
+    # Laid out along y, which the camera reads as lying across the picture,
+    # and built out of the same joints he had standing up: a knee that is
+    # still bent under him, an arm thrown out, a head fallen off to one side.
+    # A body with the same bones as the men around it is the thing that makes
+    # a field after a fight read as men rather than as marks.
+    deep = 0.028
+    for side, tag, splay in ((-1, 'l', 0.06 if variant else 0.11),
+                             (1, 'r', 0.12 if variant else 0.05)):
+        hip = (side * 0.042, -0.07, deep)
+        knee = (side * (0.042 + splay), -0.21, deep)
+        ankle = (side * (0.042 + splay * 0.4), -0.335, deep)
+        limb(f'thigh-{tag}', hip, knee, 0.032, 0.025, hose)
+        limb(f'shin-{tag}', knee, ankle, 0.024, 0.019, hose)
+        limb(f'boot-{tag}', ankle, (ankle[0], ankle[1] - 0.038, deep + 0.012),
+             0.025, 0.019, leather)
+    trunk('pelvis', 0, -0.055, deep - 0.030, deep + 0.030, 0.056, 0.048, 0.050, 0.044, mail)
+    # The trunk lies along y rather than standing up z, so it is built as a
+    # limb between the hips and the shoulders instead of as a tapered post.
+    limb('torso', (0, -0.055, deep), (0, 0.095, deep + 0.004), 0.050, 0.072, cloth, 8)
+    for side, tag, out in ((-1, 'l', 0.055), (1, 'r', 0.04)):
+        shoulder = (side * 0.066, 0.075, deep)
+        elbow = (side * (0.066 + out), 0.015 if variant else 0.105, deep - 0.004)
+        wrist = (side * (0.066 + out * 1.7), -0.055 if variant else 0.155, deep - 0.006)
+        limb(f'upper-{tag}', shoulder, elbow, 0.026, 0.021, mail)
+        limb(f'fore-{tag}', elbow, wrist, 0.021, 0.017, mail)
+        ball(f'hand-{tag}', wrist, 0.020, 0.020, 0.018, skin, 3, 6)
+    head_at = (0.02 if variant else -0.03, 0.165, deep + 0.012)
+    ball('head', head_at, 0.046, 0.046, 0.040, skin)
+    ball('helm', (head_at[0], head_at[1] + 0.006, head_at[2] + 0.016),
+         0.050, 0.050, 0.036, mail, 3, 8)
     if variant:
-        box('shield', -0.24, -0.04, 0, 0.14, 0.17, 0.03, cloth)
-        # The same cross he was carrying when he was standing up.
-        box('shield-pale', -0.24, -0.04, 0.03, 0.04, 0.17, 0.004, device_material())
+        # The shield where it fell, with the same cross on it he was
+        # carrying when he was standing up.
+        taper('shield', -0.185, -0.045, deep - 0.01, deep + 0.012,
+              0.052, 0.082, 0.052, 0.082, cloth)
+        box('shield-pale', -0.185, -0.045, deep + 0.012, 0.020, 0.155, 0.006, device_material())
     else:
-        box('spear', 0.2, -0.02, 0, 0.5, 0.028, 0.028, timber)
+        limb('spear', (0.145, -0.25, deep - 0.006), (0.195, 0.27, deep - 0.006),
+             0.013, 0.011, timber, 5)
     spin(math.degrees(turn) * 3)
-    return 0.42
+    return 0.46
 
 
 def engine(pose):
@@ -842,14 +1177,26 @@ def agent():
     cloak = material('cloak', MARKER)
     dark = material('dark', srgb('#3b372f'))
     skin = material('skin', srgb('#b98f6a'))
-    box('leg-l', -0.04, 0, 0, 0.05, 0.07, 0.14, dark)
-    box('leg-r', 0.04, 0, 0, 0.05, 0.07, 0.14, dark)
-    box('cloak', 0, 0, 0.14, 0.2, 0.13, 0.26, cloak)
-    box('arm', 0.1, 0, 0.17, 0.05, 0.08, 0.16, cloak)
-    box('face', 0, 0.01, 0.4, 0.08, 0.07, 0.07, skin)
-    cone('hood', 0, 0, 0.38, 0.1, 0.16, dark, 6)
-    box('staff', 0.13, -0.02, 0, 0.026, 0.026, 0.62, dark)
-    return 0.52
+    # Built on the same joints as a soldier so that he reads as the same
+    # species standing in the same province, with everything that says
+    # soldier taken off him: no mail, no shield, no colour but the cloak.
+    for side, tag in ((-1, 'l'), (1, 'r')):
+        hip = (side * 0.034, 0, HIP)
+        knee = swing(hip, side * 5, THIGH)
+        ankle = swing(knee, side * 5 - 6, SHIN)
+        limb(f'thigh-{tag}', hip, knee, 0.030, 0.024, dark)
+        limb(f'shin-{tag}', knee, ankle, 0.023, 0.018, dark)
+        limb(f'boot-{tag}', (ankle[0], ankle[1] - 0.012, ankle[2]),
+             (ankle[0], ankle[1] + 0.040, 0.012), 0.026, 0.019, dark)
+    # The cloak: one shape from the shoulders to the shins, which is what a
+    # man who does not want to be recognised looks like from any distance.
+    trunk('cloak', 0, 0, KNEE + 0.02, SHOULDER + 0.01, 0.084, 0.064, 0.072, 0.050, cloak)
+    limb('arm', (0.058, -0.004, SHOULDER - 0.01), (0.082, 0.052, SHOULDER - 0.21),
+         0.028, 0.022, cloak)
+    ball('face', (0, 0.012, SKULL - 0.01), 0.042, 0.040, 0.046, skin)
+    cone('hood', 0, -0.004, SKULL - 0.055, 0.058, 0.115, dark, 7)
+    limb('staff', (0.096, -0.012, 0.004), (0.112, 0.004, 0.62), 0.012, 0.010, dark, 5)
+    return 0.62
 
 
 def caravan():
@@ -857,13 +1204,30 @@ def caravan():
     clear()
     beast = material('beast', srgb('#5b452c'))
     load = material('load', MARKER)
-    box('body', 0, 0, 0.14, 0.18, 0.46, 0.18, beast)
-    box('neck', 0, 0.24, 0.26, 0.12, 0.14, 0.16, beast)
-    box('head', 0, 0.3, 0.4, 0.11, 0.16, 0.1, beast)
-    for i, (dx, dy) in enumerate(((-0.07, 0.17), (0.07, 0.17), (-0.07, -0.17), (0.07, -0.17))):
-        box(f'leg-{i}', dx, dy, 0, 0.05, 0.05, 0.15, beast)
-    box('pack', 0, -0.02, 0.32, 0.24, 0.3, 0.16, load)
-    return 0.55
+    # A mule on the same bones as the warhorse, shorter in the leg and
+    # heavier in the barrel, with the load where a rider would be.
+    back = 0.30
+    belly = 0.205
+    trunk('body', 0, -0.01, belly - 0.020, back, 0.082, 0.215, 0.076, 0.205, beast)
+    limb('chest', (0, 0.195, belly + 0.02), (0, 0.228, back - 0.02), 0.070, 0.056, beast, 6)
+    limb('croup', (0, -0.198, back - 0.01), (0, -0.244, back - 0.07), 0.068, 0.050, beast, 6)
+    withers = (0, 0.205, back - 0.005)
+    poll = (0, 0.272, back + 0.118)
+    limb('neck', withers, poll, 0.050, 0.032, beast, 6)
+    limb('head', poll, (0, 0.348, back + 0.064), 0.032, 0.022, beast, 6)
+    limb('tail', (0, -0.242, back - 0.02), (0, -0.282, belly - 0.10), 0.018, 0.008, beast, 5)
+    for i, (dx, dy, fore) in enumerate((
+        (-0.056, 0.165, True), (0.056, 0.165, True),
+        (-0.056, -0.158, False), (0.056, -0.158, False),
+    )):
+        top = (dx, dy, belly + 0.01)
+        hock = (dx, dy + (0.010 if fore else -0.020), belly - 0.105)
+        hoof = (dx, dy + (0.004 if fore else 0.010), 0.0)
+        limb(f'upper-{i}', top, hock, 0.033, 0.021, beast, 5)
+        limb(f'lower-{i}', hock, hoof, 0.020, 0.016, beast, 5)
+    # The load, which is the part that belongs to whoever is trading.
+    trunk('pack', 0, -0.01, back - 0.012, back + 0.098, 0.078, 0.124, 0.070, 0.110, load, 6)
+    return 0.58
 
 
 def vessel(oared):
@@ -1208,11 +1572,17 @@ def main():
     wanted.append(('rider', lambda: oneMan(True)))
     wanted.append(('captain', lambda: general(False)))
     wanted.append(('general', lambda: general(True)))
-    # Every kind of soldier, in two kits, eight directions and six poses.
-    # Seven hundred and sixty-eight renders, and the largest single thing on
+    # Every kind of soldier, in two kits, eight directions and seven poses.
+    # Eight hundred and ninety-six renders, and the largest single thing on
     # the sheet: the price of a battle in which the men face the men they are
     # fighting, move their legs on the way there, are not all the same man,
     # and throw away their shields when they break.
+    #
+    # Seven and not six because of `pass`. A walk is four beats and the old
+    # sheet had three pictures for it — the two strides and a stand between
+    # them — which worked only while the legs were straight posts and nobody
+    # could tell a stand from a passing leg. With a knee in them it reads as
+    # what it is: two steps with a pause in the middle of each.
     kinds = (
         ('spearman', dict(weapon='spear')),
         ('swordsman', dict(weapon='sword')),
@@ -1226,7 +1596,8 @@ def main():
     for kind, options in kinds:
         for kit in range(2):
             for facing in range(8):
-                for pose in ('idle', 'step-a', 'step-b', 'fight', 'flee-a', 'flee-b'):
+                for pose in ('idle', 'pass', 'step-a', 'step-b',
+                             'fight', 'flee-a', 'flee-b'):
                     label = f'{kind}_{kit}_{facing}_{pose.replace("-", "")}'
                     wanted.append((
                         label,
